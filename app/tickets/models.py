@@ -1,0 +1,497 @@
+from django.contrib.auth.models import AbstractUser
+from django.core.validators import RegexValidator
+from django.db import models
+from django.utils import timezone
+
+
+# --------------------------------------------------------------------------
+# Masters
+# --------------------------------------------------------------------------
+class Centre(models.Model):
+    code = models.CharField(
+        "short code", max_length=5, unique=True,
+        validators=[RegexValidator(r"^[A-Z0-9]{2,5}$", "Use 2 to 5 capital letters or digits.")],
+        help_text="Used as the ticket number prefix, for example KKP gives KKP-000123.",
+    )
+    name = models.CharField(max_length=120)
+    city = models.CharField(max_length=80, blank=True)
+    active = models.BooleanField(default=True, help_text="Untick to hide a closed centre. Its old tickets stay.")
+    next_seq = models.PositiveIntegerField(default=1, editable=False)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Department(models.Model):
+    ROUND_ROBIN, LEAST_LOADED, MANUAL = "round_robin", "least_loaded", "manual"
+    MODES = [
+        (ROUND_ROBIN, "Round robin: each agent in turn"),
+        (LEAST_LOADED, "Least loaded: agent with fewest open tickets"),
+        (MANUAL, "Manual: the department head assigns"),
+    ]
+    name = models.CharField(max_length=80, unique=True)
+    head = models.ForeignKey(
+        "User", null=True, blank=True, on_delete=models.SET_NULL, related_name="heads",
+        help_text="Receives unassigned tickets and escalations for this department.",
+    )
+    assignment_mode = models.CharField("how tickets are assigned", max_length=20, choices=MODES, default=ROUND_ROBIN)
+    handles_equipment = models.BooleanField(
+        "receives equipment tickets", default=False,
+        help_text="Tick for one department only (Biomedical). Any ticket with equipment selected goes here.",
+    )
+    active = models.BooleanField(default=True)
+    last_assigned = models.ForeignKey("User", null=True, blank=True, editable=False,
+                                      on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Priority(models.TextChoices):
+    P1 = "P1", "P1 Critical"
+    P2 = "P2", "P2 High"
+    P3 = "P3", "P3 Medium"
+    P4 = "P4", "P4 Low"
+
+
+class Category(models.Model):
+    name = models.CharField(max_length=120)
+    department = models.ForeignKey(Department, on_delete=models.PROTECT, related_name="categories",
+                                   help_text="Tickets in this category are sent to this department.")
+    default_priority = models.CharField(max_length=2, choices=Priority.choices, default=Priority.P3)
+    asks_equipment = models.BooleanField(
+        "ask which equipment", default=False,
+        help_text="Tick to show the equipment list when this category is chosen.",
+    )
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["department__name", "name"]
+        verbose_name_plural = "categories"
+        unique_together = [("department", "name")]
+
+    def __str__(self):
+        return self.name
+
+
+class CategoryField(models.Model):
+    TEXT, NUMBER, CHOICE = "text", "number", "choice"
+    KINDS = [(TEXT, "Text"), (NUMBER, "Number"), (CHOICE, "Pick from a list")]
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="fields")
+    label = models.CharField(max_length=60, help_text="For example: Error code, Room number.")
+    kind = models.CharField(max_length=10, choices=KINDS, default=TEXT)
+    choices = models.CharField(max_length=300, blank=True,
+                               help_text="Only for 'Pick from a list'. Separate options with commas.")
+    required = models.BooleanField(default=False)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "extra question"
+
+    def __str__(self):
+        return self.label
+
+    def choice_list(self):
+        return [c.strip() for c in self.choices.split(",") if c.strip()]
+
+
+class User(AbstractUser):
+    REQUESTER, AGENT, DEPT_HEAD = "requester", "agent", "dept_head"
+    CENTRE_MANAGER, AREA_MANAGER, MANAGEMENT, ADMIN = "centre_manager", "area_manager", "management", "admin"
+    ROLES = [
+        (REQUESTER, "Requester: raises tickets"),
+        (AGENT, "Agent: resolves tickets"),
+        (DEPT_HEAD, "Department head"),
+        (CENTRE_MANAGER, "Centre manager"),
+        (AREA_MANAGER, "Area manager"),
+        (MANAGEMENT, "Management: view only"),
+        (ADMIN, "Administrator"),
+    ]
+    role = models.CharField(max_length=20, choices=ROLES, default=REQUESTER)
+    mobile = models.CharField(max_length=15, blank=True,
+                              help_text="With country code, for SMS and WhatsApp alerts. Example: 919876543210")
+    centres = models.ManyToManyField(
+        Centre, blank=True, related_name="users",
+        help_text="Centres this person works at or looks after. An agent with none ticked covers every centre.",
+    )
+    departments = models.ManyToManyField(
+        Department, blank=True, related_name="members",
+        help_text="Only for agents and department heads: the teams they work in.",
+    )
+
+    class Meta:
+        ordering = ["first_name", "username"]
+
+    @property
+    def display_name(self):
+        return self.get_full_name() or self.username
+
+    @property
+    def initials(self):
+        parts = self.display_name.split()
+        return (parts[0][:1] + (parts[-1][:1] if len(parts) > 1 else "")).upper()
+
+    @property
+    def role_label(self):
+        return self.get_role_display().split(":")[0]
+
+    @property
+    def is_admin(self):
+        return self.is_superuser or self.role == self.ADMIN
+
+    @property
+    def sees_everything(self):
+        return self.is_admin or self.role == self.MANAGEMENT
+
+    @property
+    def is_resolver(self):
+        return self.role in (self.AGENT, self.DEPT_HEAD) or self.is_admin
+
+    def __str__(self):
+        return self.display_name
+
+
+class Vendor(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    contact_person = models.CharField(max_length=80, blank=True)
+    phone = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Equipment(models.Model):
+    centre = models.ForeignKey(Centre, on_delete=models.PROTECT, related_name="equipment")
+    name = models.CharField(max_length=120, help_text="For example: MRI 1.5T, CT 128 slice.")
+    make = models.CharField(max_length=80, blank=True)
+    model = models.CharField(max_length=80, blank=True)
+    serial_no = models.CharField("serial number", max_length=80, blank=True)
+    vendor = models.ForeignKey(Vendor, null=True, blank=True, on_delete=models.SET_NULL)
+    amc_expiry = models.DateField("AMC expiry date", null=True, blank=True)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["centre__name", "name"]
+        verbose_name_plural = "equipment"
+
+    def __str__(self):
+        return f"{self.name} ({self.centre.code})"
+
+
+class SlaPolicy(models.Model):
+    department = models.ForeignKey(
+        Department, null=True, blank=True, on_delete=models.CASCADE,
+        help_text="Leave empty for the default that applies to every department.",
+    )
+    priority = models.CharField(max_length=2, choices=Priority.choices)
+    response_minutes = models.PositiveIntegerField("respond within (minutes)")
+    resolution_minutes = models.PositiveIntegerField("resolve within (minutes)")
+
+    class Meta:
+        ordering = ["department__name", "priority"]
+        unique_together = [("department", "priority")]
+        verbose_name = "SLA time"
+
+    def __str__(self):
+        return f"{self.department or 'All departments'} {self.priority}"
+
+
+class EscalationRule(models.Model):
+    RESPONSE, RESOLUTION = "response", "resolution"
+    BASIS = [(RESPONSE, "Response time"), (RESOLUTION, "Resolution time")]
+    name = models.CharField(max_length=120)
+    basis = models.CharField("clock", max_length=12, choices=BASIS, default=RESOLUTION)
+    percent = models.PositiveIntegerField(
+        "percent of time used", default=100,
+        help_text="75 = warn before the deadline. 100 = at the deadline. 150 = half as long again after it.",
+    )
+    priorities = models.CharField(max_length=20, blank=True,
+                                  help_text="Leave empty for all. Or list, for example: P1,P2")
+    notify_assignee = models.BooleanField("alert the assigned agent", default=False)
+    notify_dept_head = models.BooleanField("alert the department head", default=True)
+    notify_centre_manager = models.BooleanField("alert the centre manager", default=False)
+    notify_area_manager = models.BooleanField("alert the area manager", default=False)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["basis", "percent"]
+
+    def __str__(self):
+        return self.name
+
+    def applies_to(self, priority):
+        wanted = [p.strip().upper() for p in self.priorities.split(",") if p.strip()]
+        return not wanted or priority in wanted
+
+
+# --------------------------------------------------------------------------
+# Tickets
+# --------------------------------------------------------------------------
+class Status(models.TextChoices):
+    NEW = "new", "New"
+    ASSIGNED = "assigned", "Assigned"
+    IN_PROGRESS = "in_progress", "In progress"
+    ON_HOLD = "on_hold", "On hold"
+    RESOLVED = "resolved", "Resolved"
+    CLOSED = "closed", "Closed"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+OPEN_STATUSES = [Status.NEW, Status.ASSIGNED, Status.IN_PROGRESS, Status.ON_HOLD]
+RUNNING_STATUSES = [Status.NEW, Status.ASSIGNED, Status.IN_PROGRESS]
+
+HOLD_REASONS = [
+    ("requester", "Awaiting requester"),
+    ("vendor", "Awaiting vendor"),
+    ("parts", "Awaiting parts"),
+]
+
+
+class Ticket(models.Model):
+    number = models.CharField(max_length=16, unique=True, editable=False)
+    centre = models.ForeignKey(Centre, on_delete=models.PROTECT, related_name="tickets")
+    category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="tickets")
+    department = models.ForeignKey(Department, on_delete=models.PROTECT, related_name="tickets")
+    requester = models.ForeignKey(User, on_delete=models.PROTECT, related_name="raised")
+    assignee = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="assigned")
+    priority = models.CharField(max_length=2, choices=Priority.choices, default=Priority.P3)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.NEW)
+    subject = models.CharField(max_length=160)
+    description = models.TextField()
+    equipment = models.ForeignKey(Equipment, null=True, blank=True, on_delete=models.SET_NULL, related_name="tickets")
+    patient_impact = models.BooleanField(default=False)
+    extra = models.JSONField(default=dict, blank=True)
+
+    hold_reason = models.CharField(max_length=12, choices=HOLD_REASONS, blank=True)
+    resolution_note = models.TextField(blank=True)
+    rating = models.PositiveSmallIntegerField(null=True, blank=True)
+    priority_raised = models.BooleanField(default=False)
+    reopen_count = models.PositiveSmallIntegerField(default=0)
+
+    # SLA clock (24x7). Times on hold are added to both deadlines.
+    sla_started_at = models.DateTimeField()
+    response_minutes = models.PositiveIntegerField()
+    resolution_minutes = models.PositiveIntegerField()
+    response_due = models.DateTimeField()
+    resolution_due = models.DateTimeField()
+    first_response_at = models.DateTimeField(null=True, blank=True)
+    hold_started_at = models.DateTimeField(null=True, blank=True)
+    hold_seconds = models.PositiveIntegerField(default=0)
+    response_breached = models.BooleanField(default=False)
+    resolution_breached = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["status", "department"]), models.Index(fields=["centre", "status"])]
+
+    def __str__(self):
+        return self.number
+
+    @property
+    def is_open(self):
+        return self.status in OPEN_STATUSES
+
+    def elapsed_seconds(self, now=None):
+        """Working seconds used on the SLA clock, excluding time on hold."""
+        now = now or timezone.now()
+        end = self.resolved_at if self.resolved_at and not self.is_open else now
+        if self.hold_started_at:
+            end = min(end, self.hold_started_at)
+        return max(0, (end - self.sla_started_at).total_seconds() - self.hold_seconds)
+
+    def percent_used(self, basis="resolution", now=None):
+        minutes = self.resolution_minutes if basis == "resolution" else self.response_minutes
+        return 100.0 * self.elapsed_seconds(now) / max(1, minutes * 60)
+
+    @property
+    def sla_state(self):
+        """ok, warn, breach, paused or done: drives the countdown colour."""
+        if self.status == Status.ON_HOLD:
+            return "paused"
+        if not self.is_open:
+            return "breach" if self.resolution_breached else "done"
+        pct = self.percent_used()
+        return "breach" if pct >= 100 else "warn" if pct >= 75 else "ok"
+
+    @property
+    def sla_percent(self):
+        return min(100, round(self.percent_used()))
+
+
+def attachment_path(instance, filename):
+    return f"tickets/{instance.ticket.number}/{timezone.now():%Y%m%d%H%M%S}-{filename}"
+
+
+class TicketComment(models.Model):
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="comments")
+    author = models.ForeignKey(User, on_delete=models.PROTECT)
+    body = models.TextField()
+    internal = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at"]
+
+
+class TicketAttachment(models.Model):
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="attachments")
+    comment = models.ForeignKey(TicketComment, null=True, blank=True, on_delete=models.CASCADE,
+                                related_name="attachments")
+    file = models.FileField(upload_to=attachment_path, max_length=300)
+    name = models.CharField(max_length=200)
+    size = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(User, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    @property
+    def is_image(self):
+        return self.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png", "gif", "webp")
+
+
+class TicketHistory(models.Model):
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="history")
+    actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    text = models.CharField(max_length=300)
+    field = models.CharField(max_length=30, blank=True)
+    old = models.CharField(max_length=200, blank=True)
+    new = models.CharField(max_length=200, blank=True)
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        verbose_name_plural = "ticket history"
+
+
+class DowntimeLog(models.Model):
+    equipment = models.ForeignKey(Equipment, on_delete=models.CASCADE, related_name="downtime")
+    ticket = models.OneToOneField(Ticket, on_delete=models.CASCADE, related_name="downtime")
+    start = models.DateTimeField()
+    end = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-start"]
+
+    def seconds(self, now=None, since=None):
+        end = self.end or now or timezone.now()
+        start = max(self.start, since) if since else self.start
+        return max(0, (end - start).total_seconds())
+
+
+class EscalationLog(models.Model):
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="escalations")
+    rule = models.ForeignKey(EscalationRule, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        unique_together = [("ticket", "rule")]
+
+
+# --------------------------------------------------------------------------
+# Alerts
+# --------------------------------------------------------------------------
+class Notification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    ticket = models.ForeignKey(Ticket, null=True, blank=True, on_delete=models.CASCADE)
+    title = models.CharField(max_length=200)
+    body = models.CharField(max_length=400, blank=True)
+    urgent = models.BooleanField(default=False)
+    read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class OutboundMessage(models.Model):
+    EMAIL, SMS, WHATSAPP = "email", "sms", "whatsapp"
+    CHANNELS = [(EMAIL, "Email"), (SMS, "SMS"), (WHATSAPP, "WhatsApp")]
+    PENDING, SENT, FAILED = "pending", "sent", "failed"
+    channel = models.CharField(max_length=10, choices=CHANNELS)
+    to = models.CharField(max_length=200)
+    subject = models.CharField(max_length=200, blank=True)
+    body = models.TextField()
+    status = models.CharField(max_length=10, default=PENDING,
+                              choices=[(PENDING, "Waiting"), (SENT, "Sent"), (FAILED, "Failed")])
+    error = models.CharField(max_length=300, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "sent alert"
+
+
+class SiteSettings(models.Model):
+    """One row only. Edited on the Settings screen."""
+    org_name = models.CharField("organisation name", max_length=120, default="DiagTrack")
+    site_url = models.CharField(
+        "address of this system", max_length=200, blank=True,
+        help_text="Used for links in emails, for example http://diagtrack.local")
+
+    inapp_enabled = models.BooleanField("In-app alerts (bell)", default=True)
+    email_enabled = models.BooleanField("Email alerts", default=False)
+    sms_enabled = models.BooleanField("SMS alerts", default=False)
+    whatsapp_enabled = models.BooleanField("WhatsApp alerts", default=False)
+    area_manager_all = models.BooleanField("Alert the area manager on every new ticket", default=True)
+
+    auto_close_days = models.PositiveSmallIntegerField("close resolved tickets after (days)", default=3)
+    reopen_days = models.PositiveSmallIntegerField("allow reopening for (days)", default=7)
+    max_attachment_mb = models.PositiveSmallIntegerField("largest attachment (MB)", default=10)
+
+    smtp_host = models.CharField("mail server", max_length=120, blank=True)
+    smtp_port = models.PositiveIntegerField("port", default=587)
+    smtp_user = models.CharField("user name", max_length=120, blank=True)
+    smtp_password = models.CharField("password", max_length=200, blank=True)
+    smtp_security = models.CharField("security", max_length=8, default="tls",
+                                     choices=[("tls", "STARTTLS (port 587)"), ("ssl", "SSL (port 465)"), ("none", "None")])
+    from_email = models.CharField("send from", max_length=160, blank=True,
+                                  help_text="For example: DiagTrack <helpdesk@yourdomain.in>")
+
+    sms_url = models.CharField("SMS gateway address", max_length=400, blank=True)
+    sms_headers = models.TextField("SMS headers", blank=True,
+                                   help_text="One per line, Name: value. For example  authkey: abc123")
+    sms_body = models.TextField("SMS message format", blank=True,
+                                help_text="What your provider expects. Use {to} and {message} as placeholders.")
+    whatsapp_url = models.CharField("WhatsApp gateway address", max_length=400, blank=True)
+    whatsapp_headers = models.TextField("WhatsApp headers", blank=True)
+    whatsapp_body = models.TextField("WhatsApp message format", blank=True)
+
+    class Meta:
+        verbose_name_plural = "site settings"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class Heartbeat(models.Model):
+    name = models.CharField(max_length=40, unique=True)
+    at = models.DateTimeField()
+    detail = models.CharField(max_length=300, blank=True)

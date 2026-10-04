@@ -1,0 +1,1 @@
+<label class="field {% if f.errors %}has-error{% endif %}"><span>{{ f.label|capfirst }}</span>{{ f }}{% if f.help_text %}<small>{{ f.help_text }}</small>{% endif %}{% for e in f.errors %}<small class="bad-text">{{ e }}</small>{% endfor %}</label>

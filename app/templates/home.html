@@ -1,0 +1,69 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Hello, {{ request.user.first_name|default:request.user.username }}</h1>
+  <p class="sub">{% now "l, j F" %}{% if request.user.role != 'requester' %}. {{ head.open }} open ticket{{ head.open|pluralize }} across what you look after.{% endif %}</p></div>
+  {% if request.user.role != 'management' or request.user.is_superuser %}<a class="btn btn-primary" href="{% url 'ticket_new' %}">{% icon 'circle-plus' %}Raise a ticket</a>{% endif %}
+</div>
+
+{% if request.user.role != 'requester' %}
+<section class="band" aria-label="Open tickets at a glance">
+  <a class="band-cell" href="{% url 'ticket_list' %}?view=all"><span class="band-n">{{ head.open }}</span><span class="band-l">Open</span></a>
+  <a class="band-cell {% if head.breached %}is-bad{% endif %}" href="{% url 'ticket_list' %}?view=all&sla=breached"><span class="band-n">{{ head.breached }}</span><span class="band-l">Past the deadline</span></a>
+  <a class="band-cell {% if head.due_soon %}is-warn{% endif %}" href="{% url 'ticket_list' %}?view=all&sla=soon"><span class="band-n">{{ head.due_soon }}</span><span class="band-l">Due within 4 hours</span></a>
+  <a class="band-cell" href="{% url 'ticket_list' %}?view=all&unassigned=1"><span class="band-n">{{ head.unassigned }}</span><span class="band-l">Unassigned</span></a>
+  <a class="band-cell" href="{% url 'ticket_list' %}?view=all&status=on_hold"><span class="band-n">{{ head.on_hold }}</span><span class="band-l">On hold</span></a>
+  <a class="band-cell" href="{% url 'ticket_list' %}?view=all&status=resolved"><span class="band-n">{{ head.to_confirm }}</span><span class="band-l">Waiting for confirmation</span></a>
+</section>
+{% endif %}
+
+<div class="grid-2">
+  <div class="stack">
+    {% if to_confirm %}
+    <section class="panel panel-note">
+      <header><h2>Resolved, please confirm</h2></header>
+      <p class="panel-sub">Open each one and confirm it is fixed, or reopen it. They close by themselves after {{ cfg.auto_close_days }} days.</p>
+      {% include "_rows.html" with tickets=to_confirm %}
+    </section>
+    {% endif %}
+
+    {% if request.user.is_resolver %}
+    <section class="panel">
+      <header><h2>Assigned to you</h2>{% if work_count %}<a href="{% url 'ticket_list' %}?view=work">All {{ work_count }}</a>{% endif %}</header>
+      {% if work %}{% include "_rows.html" with tickets=work %}
+      {% else %}<p class="empty">Nothing is assigned to you right now.</p>{% endif %}
+    </section>
+    {% endif %}
+
+    {% if unassigned %}
+    <section class="panel">
+      <header><h2>Needs assigning</h2><a href="{% url 'ticket_list' %}?view=queue&unassigned=1">See all</a></header>
+      {% include "_rows.html" with tickets=unassigned %}
+    </section>
+    {% endif %}
+
+    {% if request.user.role != 'management' or request.user.is_superuser %}
+    <section class="panel">
+      <header><h2>Your open tickets</h2><a href="{% url 'ticket_list' %}?view=mine">All yours</a></header>
+      {% if mine_open %}{% include "_rows.html" with tickets=mine_open show_owner=True %}
+      {% else %}<p class="empty">You have no open tickets. If something is not working, <a href="{% url 'ticket_new' %}">raise a ticket</a>.</p>{% endif %}
+    </section>
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    {% if at_risk %}
+    <section class="panel">
+      <header><h2>Closest to the deadline</h2><a href="{% url 'ticket_list' %}?view=all&sort=due">By deadline</a></header>
+      {% include "_rows.html" with tickets=at_risk show_owner=True %}
+    </section>
+    {% endif %}
+    <section class="panel">
+      <header><h2>Latest activity</h2></header>
+      {% if recent %}{% include "_rows.html" with tickets=recent show_owner=True %}
+      {% else %}<p class="empty">No tickets yet.</p>{% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

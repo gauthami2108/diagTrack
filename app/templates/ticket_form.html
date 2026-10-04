@@ -1,0 +1,52 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Raise a ticket{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Raise a ticket</h1><p class="sub">Pick what the issue is about. It goes to the right team by itself.</p></div></div>
+<form class="form-card" method="post" enctype="multipart/form-data" novalidate data-raise>
+  {% csrf_token %}
+  {% if errors %}<div class="callout callout-bad" role="alert">{% icon 'circle-alert' %}<div><strong>The ticket was not raised.</strong><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div></div>{% endif %}
+  <div class="field-row">
+    <label class="field"><span>Centre</span>
+      <select name="centre" required data-centre>
+        {% if centres|length > 1 %}<option value="">Choose the centre</option>{% endif %}
+        {% for c in centres %}<option value="{{ c.pk }}" {% if posted.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>What is it about?</span>
+      <select name="category" required data-category>
+        <option value="">Choose a category</option>
+        {% for dept, cats in grouped.items %}<optgroup label="{{ dept }}">
+          {% for c in cats %}<option value="{{ c.pk }}" {% if posted.category == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </optgroup>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <p class="route" data-route hidden>{% icon 'arrow-up-right' %}<span></span></p>
+
+  <div data-equipment-block hidden>
+    <label class="field"><span>Which equipment?</span>
+      <select name="equipment" data-equipment data-selected="{{ posted.equipment }}"><option value="">Choose the equipment</option></select>
+    </label>
+    <label class="check"><input type="checkbox" name="equipment_down" {% if posted.equipment_down %}checked{% endif %}><span><b>It is not working at all right now</b><small>Starts the downtime clock for this equipment.</small></span></label>
+  </div>
+  <div class="field-row" data-extra></div>
+
+  <label class="field"><span>Short title</span><input type="text" name="subject" maxlength="160" required value="{{ posted.subject }}" placeholder="For example: Billing counter printer not printing"></label>
+  <label class="field"><span>What happened?</span><textarea name="description" rows="5" required placeholder="What you saw, when it started, and anything you already tried.">{{ posted.description }}</textarea></label>
+
+  <label class="check check-alert"><input type="checkbox" name="patient_impact" {% if posted.patient_impact %}checked{% endif %}><span><b>Patient services are stopped because of this</b><small>Marks the ticket P1 Critical and alerts the managers at once. Use only when patients cannot be served.</small></span></label>
+
+  <div class="field"><span>Photos or files</span>
+    <label class="drop" data-drop>
+      <input type="file" name="files" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt">
+      {% icon 'upload' %}<span><b>Add photos or files</b><small>Drop them here, or tap to take a photo. Up to {{ cfg.max_attachment_mb }} MB each.</small></span>
+    </label>
+    <ul class="file-list" data-file-list></ul>
+  </div>
+
+  <div class="form-foot"><a class="btn" href="{% url 'home' %}">Cancel</a><button class="btn btn-primary" type="submit">Raise ticket</button></div>
+</form>
+{{ meta|json_script:"cat-meta" }}
+{{ equipment_map|json_script:"equip-meta" }}
+{{ posted_extra|json_script:"posted-extra" }}
+{% endblock %}

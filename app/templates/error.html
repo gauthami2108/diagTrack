@@ -1,0 +1,3 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}<div class="empty-big">{% icon 'circle-alert' %}<h2>{{ title }}</h2><p>{{ text }}</p><a class="btn btn-primary" href="{% url 'home' %}">Go to Home</a></div>{% endblock %}

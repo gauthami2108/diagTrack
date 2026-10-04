@@ -1,0 +1,10 @@
+{
+  "name": "DiagTrack",
+  "short_name": "DiagTrack",
+  "description": "Internal ticketing for diagnostic centres",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d1b2e",
+  "theme_color": "#0d1b2e",
+  "icons": [{"src": "/static/img/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+}

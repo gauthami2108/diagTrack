@@ -1,0 +1,4 @@
+<span class="sla sla-{{ state }}{% if compact %} sla-compact{% endif %}" title="Resolve by {{ t.resolution_due|date:'d M, H:i' }}">
+  <span class="sla-track" aria-hidden="true"><span class="sla-fill" style="width:{{ pct }}%"></span></span>
+  <span class="sla-label">{{ label }}</span>
+</span>

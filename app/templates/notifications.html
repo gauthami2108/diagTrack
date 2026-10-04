@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Alerts{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Alerts</h1><p class="sub">{{ unread_count }} unread</p></div>
+  {% if unread_count %}<form method="post">{% csrf_token %}<button class="btn">{% icon 'check-check' %}Mark all as read</button></form>{% endif %}</div>
+<section class="panel narrow">
+  {% for n in page %}<a class="alert-row alert-row-l {% if not n.read %}unread{% endif %} {% if n.urgent %}urgent{% endif %}" href="{% url 'notification_open' n.pk %}"><span><b>{{ n.title }}</b>{% if n.body %}<em>{{ n.body }}</em>{% endif %}</span><small>{{ n.created_at|date:"d M, H:i" }}</small></a>
+  {% empty %}<p class="empty">No alerts yet. You will see ticket updates here.</p>{% endfor %}
+</section>
+{% if page.paginator.num_pages > 1 %}<nav class="pager">{% if page.has_previous %}<a class="btn" href="?page={{ page.previous_page_number }}">Previous</a>{% endif %}<span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a class="btn" href="?page={{ page.next_page_number }}">Next</a>{% endif %}</nav>{% endif %}
+{% endblock %}

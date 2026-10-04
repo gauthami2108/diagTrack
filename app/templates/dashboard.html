@@ -1,0 +1,62 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Dashboard</h1><p class="sub">Open load now, and performance over the last {{ d.days }} days. Select any bar to open its tickets.</p></div>
+  <form class="filters filters-inline" method="get" data-autosubmit>
+    <div class="seg" role="group" aria-label="Period">
+      <label><input type="radio" name="days" value="7" {% if d.days == 7 %}checked{% endif %}><span>7 days</span></label>
+      <label><input type="radio" name="days" value="30" {% if d.days == 30 %}checked{% endif %}><span>30 days</span></label>
+      <label><input type="radio" name="days" value="90" {% if d.days == 90 %}checked{% endif %}><span>90 days</span></label>
+    </div>
+    <select name="centre" aria-label="Centre"><option value="">All centres</option>{% for c in centres %}<option value="{{ c.pk }}" {% if centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+    <select name="department" aria-label="Department"><option value="">All departments</option>{% for x in departments %}<option value="{{ x.pk }}" {% if department == x.pk|stringformat:"s" %}selected{% endif %}>{{ x.name }}</option>{% endfor %}</select>
+  </form>
+</div>
+
+<section class="band" aria-label="Key numbers">
+  <div class="band-cell"><span class="band-n">{{ d.head.open }}</span><span class="band-l">Open now</span></div>
+  <div class="band-cell {% if d.head.breached %}is-bad{% endif %}"><span class="band-n">{{ d.head.breached }}</span><span class="band-l">Past the deadline</span></div>
+  <div class="band-cell"><span class="band-n">{{ d.raised }}</span><span class="band-l">Raised in {{ d.days }} days</span></div>
+  <div class="band-cell"><span class="band-n">{{ d.resolved }}</span><span class="band-l">Resolved in {{ d.days }} days</span></div>
+  <div class="band-cell {% if d.sla_pct is not None and d.sla_pct < 80 %}is-warn{% endif %}"><span class="band-n">{% if d.sla_pct is None %}-{% else %}{{ d.sla_pct }}%{% endif %}</span><span class="band-l">Resolved in time{% if d.sla_total %} ({{ d.sla_met }} of {{ d.sla_total }}){% endif %}</span></div>
+  <div class="band-cell"><span class="band-n">{% if d.resp_pct is None %}-{% else %}{{ d.resp_pct }}%{% endif %}</span><span class="band-l">Responded in time</span></div>
+</section>
+
+<div class="grid-2 grid-even">
+  <section class="panel panel-wide">
+    <header><h2>Raised and resolved each day</h2><span class="legend"><span><i class="sw sw-1"></i>Raised</span><span><i class="sw sw-2"></i>Resolved</span></span></header>
+    {% with c=d.trend %}
+    <div class="chart" data-chart>
+      <svg viewBox="0 0 {{ c.width }} {{ c.height }}" role="img" aria-label="Tickets raised and resolved per day over the last 14 days">
+        {% for g in c.grid %}<line class="grid" x1="{{ c.pad_l }}" x2="{{ c.width }}" y1="{{ g.y }}" y2="{{ g.y }}"/><text class="tick" x="{{ c.pad_l|add:-8 }}" y="{{ g.y|add:4 }}" text-anchor="end">{{ g.v }}</text>{% endfor %}
+        <polyline class="line line-2" points="{{ c.resolved_path }}"/>
+        <polyline class="line line-1" points="{{ c.raised_path }}"/>
+        {% for p in c.points %}
+        {% if p.label %}<text class="tick" x="{{ p.x }}" y="{{ c.height|add:-6 }}" text-anchor="middle">{{ p.day|date:"j M" }}</text>{% endif %}
+        <g class="pt" data-day="{{ p.day|date:'D j M' }}" data-raised="{{ p.raised }}" data-resolved="{{ p.resolved }}">
+          <line class="cross" x1="{{ p.x }}" x2="{{ p.x }}" y1="{{ c.pad_t }}" y2="{{ c.base_y }}"/>
+          <circle class="mk mk-2" cx="{{ p.x }}" cy="{{ p.y_resolved }}" r="4"/>
+          <circle class="mk mk-1" cx="{{ p.x }}" cy="{{ p.y_raised }}" r="4"/>
+          <rect class="hit" x="{{ p.hit_x }}" y="0" width="{{ c.step }}" height="{{ c.height }}"/>
+        </g>
+        {% endfor %}
+      </svg>
+      <div class="tip" hidden></div>
+    </div>
+    <details class="table-view"><summary>Show as a table</summary>
+      <table class="table table-s"><thead><tr><th>Day</th><th class="num-col">Raised</th><th class="num-col">Resolved</th></tr></thead><tbody>
+      {% for p in c.points %}<tr><td>{{ p.day|date:"D j M" }}</td><td class="num-col">{{ p.raised }}</td><td class="num-col">{{ p.resolved }}</td></tr>{% endfor %}
+      </tbody></table>
+    </details>
+    {% endwith %}
+  </section>
+
+  <section class="panel"><header><h2>Open tickets by centre</h2></header>{% include "_bars.html" with bars=d.by_centre %}</section>
+  <section class="panel"><header><h2>Open tickets by department</h2></header>{% include "_bars.html" with bars=d.by_department %}</section>
+  <section class="panel"><header><h2>Open tickets by status</h2></header>{% include "_bars.html" with bars=d.by_status %}</section>
+  <section class="panel"><header><h2>Open tickets by priority</h2></header>{% include "_bars.html" with bars=d.by_priority %}</section>
+  <section class="panel"><header><h2>How long open tickets have waited</h2></header>{% include "_bars.html" with bars=d.ageing %}</section>
+  <section class="panel"><header><h2>Most raised categories, {{ d.days }} days</h2></header>{% include "_bars.html" with bars=d.by_category state="any" %}</section>
+</div>
+{% endblock %}

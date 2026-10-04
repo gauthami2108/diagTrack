@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}{{ e.name }}{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="{% url 'equipment_list' %}">Equipment</a>{% icon 'chevron-right' %}<span>{{ e.name }}</span></nav>
+<div class="page-head"><div><h1>{{ e.name }}</h1><p class="sub">{{ e.centre.name }}{% if e.make %}, {{ e.make }} {{ e.model }}{% endif %}{% if e.serial_no %}, serial {{ e.serial_no }}{% endif %}</p></div>
+  {% if stats.is_down %}<span class="status status-down status-l">Down right now</span>{% else %}<span class="status status-up status-l">Working</span>{% endif %}</div>
+<section class="band">
+  <div class="band-cell {% if stats.uptime_pct < 95 %}is-warn{% endif %}"><span class="band-n">{{ stats.uptime_pct }}%</span><span class="band-l">Uptime, 30 days</span></div>
+  <div class="band-cell"><span class="band-n">{{ stats.down_seconds|span }}</span><span class="band-l">Downtime, 30 days</span></div>
+  <div class="band-cell"><span class="band-n">{{ stats90.uptime_pct }}%</span><span class="band-l">Uptime, 90 days</span></div>
+  <div class="band-cell"><span class="band-n">{{ tickets|length }}</span><span class="band-l">Tickets so far</span></div>
+</section>
+<div class="grid-2">
+  <section class="panel"><header><h2>Tickets</h2></header>
+    {% if tickets %}{% include "_rows.html" with tickets=tickets show_owner=True %}{% else %}<p class="empty">No tickets have been raised for this equipment.</p>{% endif %}
+  </section>
+  <div class="stack">
+    <section class="panel"><header><h2>Downtime log</h2></header>
+      {% if downtime %}<table class="table table-s"><thead><tr><th>From</th><th>To</th><th class="num-col">Length</th><th>Ticket</th></tr></thead><tbody>
+      {% for x in downtime %}<tr><td>{{ x.start|date:"d M, H:i" }}</td><td>{% if x.end %}{{ x.end|date:"d M, H:i" }}{% else %}<span class="bad-text">Still down</span>{% endif %}</td><td class="num-col">{{ x.seconds|span }}</td><td><a class="num" href="{% url 'ticket_detail' x.ticket.number %}">{{ x.ticket.number }}</a></td></tr>{% endfor %}
+      </tbody></table>{% else %}<p class="empty">No downtime recorded.</p>{% endif %}
+    </section>
+    <section class="panel"><header><h2>Service vendor</h2></header>
+      {% if e.vendor %}<dl class="kv"><div><dt>Vendor</dt><dd>{{ e.vendor.name }}</dd></div>{% if e.vendor.phone %}<div><dt>Phone</dt><dd>{{ e.vendor.phone }}</dd></div>{% endif %}{% if e.amc_expiry %}<div><dt>AMC until</dt><dd>{{ e.amc_expiry|date:"d M Y" }}</dd></div>{% endif %}</dl>
+      {% else %}<p class="empty">No vendor recorded.</p>{% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

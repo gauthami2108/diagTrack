@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Equipment{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Equipment</h1><p class="sub">{{ items|length }} item{{ items|length|pluralize }}{% if down_count %}, <span class="bad-text">{{ down_count }} down right now</span>{% else %}, all working{% endif %}. Uptime is for the last 30 days.</p></div>
+  <form class="filters filters-inline" method="get" data-autosubmit>
+    <input type="search" name="q" value="{{ q }}" placeholder="Name, make or serial" aria-label="Search equipment">
+    <select name="centre" aria-label="Centre"><option value="">All centres</option>{% for c in centres %}<option value="{{ c.pk }}" {% if request.GET.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  </form>
+</div>
+{% if items %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Equipment</th><th>Centre</th><th>Make and model</th><th>Serial</th><th>State</th><th class="num-col">Uptime</th><th class="num-col">Downtime</th><th class="num-col">Open tickets</th></tr></thead>
+  <tbody>{% for e in items %}
+  <tr data-href="{% url 'equipment_detail' e.pk %}">
+    <td class="cell-title"><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a></td>
+    <td data-l="Centre">{{ e.centre.name }}</td>
+    <td data-l="Make and model">{{ e.make }} {{ e.model }}</td>
+    <td data-l="Serial" class="muted">{{ e.serial_no|default:"" }}</td>
+    <td data-l="State">{% if e.stats.is_down %}<span class="status status-down">Down</span>{% else %}<span class="status status-up">Working</span>{% endif %}</td>
+    <td data-l="Uptime" class="num-col">{{ e.stats.uptime_pct }}%</td>
+    <td data-l="Downtime" class="num-col">{% if e.stats.down_seconds %}{{ e.stats.down_seconds|span }}{% else %}<span class="muted">None</span>{% endif %}</td>
+    <td data-l="Open tickets" class="num-col">{{ e.open_tickets }}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'scan-line' %}<h2>No equipment found</h2><p>{% if request.user.is_admin %}Add equipment under Masters and rules.{% else %}Ask the administrator to add equipment for your centre.{% endif %}</p></div>
+{% endif %}
+{% endblock %}

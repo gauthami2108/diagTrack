@@ -1,0 +1,169 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}{{ t.number }}{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="{% url 'ticket_list' %}">Tickets</a>{% icon 'chevron-right' %}<span>{{ t.number }}</span></nav>
+<div class="ticket-head">
+  <div>
+    <p class="ticket-num">{{ t.number }}</p>
+    <h1>{{ t.subject }}</h1>
+    <p class="badges">{% include "_badges.html" %}{% if t.reopen_count %}<span class="flag flag-quiet">Reopened {{ t.reopen_count }} time{{ t.reopen_count|pluralize }}</span>{% endif %}</p>
+  </div>
+  <div class="actions">
+    {% if 'start' in can %}<form method="post" action="{% url 'ticket_action' t.number 'start' %}">{% csrf_token %}<button class="btn btn-primary">{% icon 'play' %}Start work</button></form>{% endif %}
+    {% if 'resolve' in can %}<button class="btn btn-primary" data-open="dlg-resolve">{% icon 'check' %}Resolve</button>{% endif %}
+    {% if 'resume' in can %}<form method="post" action="{% url 'ticket_action' t.number 'resume' %}">{% csrf_token %}<button class="btn btn-primary">{% icon 'play' %}Resume work</button></form>{% endif %}
+    {% if 'close' in can %}<button class="btn btn-primary" data-open="dlg-close">{% icon 'check-check' %}Confirm it is fixed</button>{% endif %}
+    {% if 'reopen' in can %}<button class="btn" data-open="dlg-reopen">{% icon 'rotate-ccw' %}Reopen</button>{% endif %}
+    {% if 'hold' in can %}<button class="btn" data-open="dlg-hold">{% icon 'pause' %}Hold</button>{% endif %}
+    {% if 'assign' in can %}<button class="btn" data-open="dlg-assign">{% icon 'user-plus' %}{% if t.assignee %}Reassign{% else %}Assign{% endif %}</button>{% endif %}
+    {% if 'transfer' in can %}<button class="btn" data-open="dlg-transfer">{% icon 'arrow-right-left' %}Transfer</button>{% endif %}
+    {% if 'set_priority' in can or 'raise_priority' in can %}<button class="btn" data-open="dlg-priority">{% icon 'flag' %}{% if 'set_priority' in can %}Change priority{% else %}Raise priority{% endif %}</button>{% endif %}
+    {% if 'cancel' in can %}<button class="btn btn-quiet-bad" data-open="dlg-cancel">{% icon 'x' %}Cancel ticket</button>{% endif %}
+  </div>
+</div>
+
+<div class="ticket-grid">
+  <div class="stack">
+    <section class="panel">
+      <p class="desc">{{ t.description|linebreaksbr }}</p>
+      {% if t.extra %}<dl class="kv kv-inline">{% for k, v in t.extra.items %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
+      {% if files %}<div class="thumbs">{% for f in files %}{% include "_file.html" %}{% endfor %}</div>{% endif %}
+    </section>
+
+    {% if t.status == 'resolved' or t.status == 'closed' %}
+    <section class="panel panel-good">
+      <header><h2>{% icon 'circle-check' %} Resolution</h2><small>{{ t.resolved_at|date:"d M Y, H:i" }}</small></header>
+      <p class="desc">{{ t.resolution_note|linebreaksbr }}</p>
+      {% if t.rating %}<p class="stars" aria-label="Rated {{ t.rating }} of 5">{% for i in "12345" %}<span class="{% if forloop.counter <= t.rating %}on{% endif %}">{% icon 'star' %}</span>{% endfor %}</p>{% endif %}
+    </section>
+    {% endif %}
+
+    <section class="panel">
+      <header><h2>Timeline</h2></header>
+      <ol class="timeline">
+        {% for item in timeline %}
+        {% if item.kind == 'comment' %}{% with c=item.o %}
+        <li class="tl-comment {% if c.internal %}tl-internal{% endif %}">
+          <span class="avatar">{{ c.author.initials }}</span>
+          <div class="bubble">
+            <p class="bubble-head"><b>{{ c.author.display_name }}</b>{% if c.internal %}<span class="flag flag-quiet">{% icon 'lock' %}Internal note</span>{% endif %}<time title="{{ c.created_at|date:'d M Y, H:i' }}">{{ c.created_at|timesince }} ago</time></p>
+            {% if c.body %}<p>{{ c.body|linebreaksbr }}</p>{% endif %}
+            {% if c.attachments.all %}<div class="thumbs">{% for f in c.attachments.all %}{% include "_file.html" %}{% endfor %}</div>{% endif %}
+          </div>
+        </li>
+        {% endwith %}{% else %}{% with h=item.o %}
+        <li class="tl-event">
+          <span class="tl-dot" aria-hidden="true"></span>
+          <p>{% if h.actor %}<b>{{ h.actor.display_name }}</b> {{ h.text|slice:":1"|lower }}{{ h.text|slice:"1:" }}{% else %}{{ h.text }}{% endif %}<time title="{{ h.created_at|date:'d M Y, H:i' }}">{{ h.created_at|date:"d M, H:i" }}</time></p>
+          {% if h.note %}<p class="tl-note">{{ h.note|linebreaksbr }}</p>{% endif %}
+        </li>
+        {% endwith %}{% endif %}
+        {% endfor %}
+      </ol>
+      {% if 'comment' in can %}
+      <form class="composer" method="post" action="{% url 'ticket_action' t.number 'comment' %}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <textarea name="body" rows="3" placeholder="Write a reply" aria-label="Reply"></textarea>
+        <ul class="file-list" data-file-list></ul>
+        <div class="composer-foot">
+          <label class="btn btn-ghost attach" data-drop>{% icon 'paperclip' %}Attach<input type="file" name="files" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"></label>
+          {% if 'internal_note' in can and request.user.pk != t.requester_id %}<label class="chip-check"><input type="checkbox" name="internal"><span>{% icon 'lock' %}Internal note, hidden from the requester</span></label>{% endif %}
+          <button class="btn btn-primary" type="submit">Send</button>
+        </div>
+      </form>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside class="stack">
+    <section class="panel sla-panel sla-{{ t.sla_state }}">
+      <header><h2>Time to resolve</h2></header>
+      {% sla t %}
+      <dl class="kv">
+        <div><dt>Resolve by</dt><dd>{{ t.resolution_due|date:"d M, H:i" }}</dd></div>
+        <div><dt>First response</dt><dd>{% if response_state == 'met' %}<span class="ok-text">In time, {{ t.first_response_at|date:"d M, H:i" }}</span>{% elif response_state == 'missed' %}<span class="bad-text">Missed{% if t.first_response_at %}, {{ t.first_response_at|date:"d M, H:i" }}{% endif %}</span>{% else %}By {{ t.response_due|date:"d M, H:i" }}{% endif %}</dd></div>
+        {% if t.status == 'on_hold' %}<div><dt>On hold</dt><dd>{{ t.get_hold_reason_display }}, since {{ t.hold_started_at|date:"d M, H:i" }}</dd></div>{% endif %}
+        {% if t.hold_seconds %}<div><dt>Time paused</dt><dd>{{ t.hold_seconds|span }}</dd></div>{% endif %}
+      </dl>
+    </section>
+
+    <section class="panel">
+      <header><h2>Details</h2></header>
+      <dl class="kv">
+        <div><dt>Centre</dt><dd>{{ t.centre.name }}</dd></div>
+        <div><dt>Department</dt><dd>{{ t.department.name }}</dd></div>
+        <div><dt>Category</dt><dd>{{ t.category.name }}</dd></div>
+        <div><dt>Owner</dt><dd>{% if t.assignee %}<span class="person"><span class="avatar avatar-s">{{ t.assignee.initials }}</span>{{ t.assignee.display_name }}</span>{% else %}<span class="muted">Unassigned</span>{% endif %}</dd></div>
+        <div><dt>Raised by</dt><dd><span class="person"><span class="avatar avatar-s">{{ t.requester.initials }}</span>{{ t.requester.display_name }}</span>{% if t.requester.mobile %}<small class="muted">{{ t.requester.mobile }}</small>{% endif %}</dd></div>
+        <div><dt>Raised</dt><dd>{{ t.created_at|date:"d M Y, H:i" }}</dd></div>
+      </dl>
+    </section>
+
+    {% if t.equipment %}
+    <section class="panel">
+      <header><h2>Equipment</h2>{% if request.user.role != 'requester' %}<a href="{% url 'equipment_detail' t.equipment.pk %}">History</a>{% endif %}</header>
+      <dl class="kv">
+        <div><dt>Item</dt><dd>{{ t.equipment.name }}</dd></div>
+        {% if t.equipment.make %}<div><dt>Make and model</dt><dd>{{ t.equipment.make }} {{ t.equipment.model }}</dd></div>{% endif %}
+        {% if t.equipment.serial_no %}<div><dt>Serial</dt><dd>{{ t.equipment.serial_no }}</dd></div>{% endif %}
+        {% if downtime %}<div><dt>Downtime</dt><dd>{% if downtime.end %}{{ downtime.seconds|span }} ({{ downtime.start|date:"d M, H:i" }} to {{ downtime.end|date:"d M, H:i" }}){% else %}<span class="bad-text">Down since {{ downtime.start|date:"d M, H:i" }}</span>{% endif %}</dd></div>{% endif %}
+      </dl>
+    </section>
+    {% endif %}
+  </aside>
+</div>
+
+{% if 'resolve' in can %}<dialog class="dialog" id="dlg-resolve"><form method="post" action="{% url 'ticket_action' t.number 'resolve' %}">{% csrf_token %}
+  <h2>Resolve {{ t.number }}</h2><p>The requester is asked to confirm. The ticket closes by itself after {{ cfg.auto_close_days }} days.</p>
+  <label class="field"><span>What was done?</span><textarea name="note" rows="4" required></textarea></label>
+  {% if downtime and not downtime.end %}<label class="field"><span>When did {{ t.equipment.name }} start working again?</span><input type="datetime-local" name="downtime_end" value="{{ now_local }}" max="{{ now_local }}" required></label>{% endif %}
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Resolve ticket</button></div>
+</form></dialog>{% endif %}
+
+{% if 'hold' in can %}<dialog class="dialog" id="dlg-hold"><form method="post" action="{% url 'ticket_action' t.number 'hold' %}">{% csrf_token %}
+  <h2>Put {{ t.number }} on hold</h2><p>The SLA clock pauses until work resumes.</p>
+  <label class="field"><span>Why?</span><select name="reason" required>{% for k, l in hold_reasons %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+  <label class="field"><span>Note for the requester</span><textarea name="note" rows="2"></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Put on hold</button></div>
+</form></dialog>{% endif %}
+
+{% if 'assign' in can %}<dialog class="dialog" id="dlg-assign"><form method="post" action="{% url 'ticket_action' t.number 'assign' %}">{% csrf_token %}
+  <h2>Assign {{ t.number }}</h2>
+  {% if agents %}<label class="field"><span>Who should work on it?</span><select name="assignee" required>{% for a in agents %}<option value="{{ a.pk }}" {% if a.pk == t.assignee_id %}selected{% endif %}>{{ a.display_name }}</option>{% endfor %}</select></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Assign</button></div>
+  {% else %}<p>No agent in {{ t.department.name }} covers {{ t.centre.name }} yet. Add one under Masters and rules, Users.</p><div class="form-foot"><button class="btn" type="button" data-close>Close</button></div>{% endif %}
+</form></dialog>{% endif %}
+
+{% if 'transfer' in can %}<dialog class="dialog" id="dlg-transfer"><form method="post" action="{% url 'ticket_action' t.number 'transfer' %}">{% csrf_token %}
+  <h2>Transfer {{ t.number }}</h2><p>The new department gets a fresh SLA clock. The history stays on the ticket.</p>
+  <label class="field"><span>Send to</span><select name="department" required>{% for d in departments %}<option value="{{ d.pk }}">{{ d.name }}</option>{% endfor %}</select></label>
+  <label class="field"><span>Reason</span><textarea name="note" rows="2" required></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Transfer</button></div>
+</form></dialog>{% endif %}
+
+{% if 'set_priority' in can or 'raise_priority' in can %}<dialog class="dialog" id="dlg-priority"><form method="post" action="{% url 'ticket_action' t.number 'priority' %}">{% csrf_token %}
+  <h2>{% if 'set_priority' in can %}Change{% else %}Raise{% endif %} the priority</h2>
+  {% if 'set_priority' not in can %}<p>You can raise the priority once. The team is alerted.</p>{% endif %}
+  <label class="field"><span>New priority</span><select name="priority" required>{% for k, l in priorities %}{% if k != t.priority %}{% if 'set_priority' in can or k < t.priority %}<option value="{{ k }}">{{ l }}</option>{% endif %}{% endif %}{% endfor %}</select></label>
+  <label class="field"><span>Reason</span><textarea name="note" rows="2" required></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Change priority</button></div>
+</form></dialog>{% endif %}
+
+{% if 'close' in can %}<dialog class="dialog" id="dlg-close"><form method="post" action="{% url 'ticket_action' t.number 'close' %}">{% csrf_token %}
+  <h2>Confirm it is fixed</h2><p>How well was it handled? The rating is optional.</p>
+  <div class="rate" role="radiogroup" aria-label="Rating">{% for i in "54321" %}<input type="radio" name="rating" id="r{{ i }}" value="{{ i }}"><label for="r{{ i }}" aria-label="{{ i }} of 5">{% icon 'star' %}</label>{% endfor %}</div>
+  <div class="form-foot"><button class="btn" type="button" data-close>Not yet</button><button class="btn btn-primary" type="submit">Close ticket</button></div>
+</form></dialog>{% endif %}
+
+{% if 'reopen' in can %}<dialog class="dialog" id="dlg-reopen"><form method="post" action="{% url 'ticket_action' t.number 'reopen' %}">{% csrf_token %}
+  <h2>Reopen {{ t.number }}</h2><p>It goes back to {{ t.assignee.display_name|default:"the team" }}.</p>
+  <label class="field"><span>What is still wrong?</span><textarea name="note" rows="3" required></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Reopen ticket</button></div>
+</form></dialog>{% endif %}
+
+{% if 'cancel' in can %}<dialog class="dialog" id="dlg-cancel"><form method="post" action="{% url 'ticket_action' t.number 'cancel' %}">{% csrf_token %}
+  <h2>Cancel {{ t.number }}</h2><p>A cancelled ticket cannot be reopened.</p>
+  <label class="field"><span>Reason</span><textarea name="note" rows="2" required></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Keep ticket</button><button class="btn btn-bad" type="submit">Cancel ticket</button></div>
+</form></dialog>{% endif %}
+{% endblock %}

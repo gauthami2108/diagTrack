@@ -1,0 +1,9 @@
+data
+.env
+**/__pycache__
+**/*.pyc
+app/db.sqlite3
+app/media
+app/staticfiles
+app/status
+docs

@@ -1,0 +1,10 @@
+<ul class="bars">
+{% for b in bars %}
+  <li>{% if b.param %}<a href="{% url 'ticket_list' %}?view=all&state={{ state|default:'open' }}&{{ b.param }}={{ b.id }}{{ extra }}" title="{{ b.label }}: {{ b.value }} ticket{{ b.value|pluralize }}. Open the list.">{% else %}<span title="{{ b.label }}: {{ b.value }}">{% endif %}
+    <span class="bar-label">{{ b.label }}</span>
+    <span class="bar-track"><span class="bar-fill{% if tone %} bar-{{ tone }}{% endif %}" style="width:{{ b.pct }}%"></span></span>
+    <span class="bar-value">{{ b.value }}</span>
+  {% if b.param %}</a>{% else %}</span>{% endif %}</li>
+{% empty %}<li class="empty-s">No tickets in this view.</li>
+{% endfor %}
+</ul>

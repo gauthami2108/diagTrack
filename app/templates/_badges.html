@@ -1,0 +1,1 @@
+{% load dt %}<span class="prio prio-{{ t.priority }}">{{ t.priority }}</span><span class="status status-{{ t.status }}">{{ t.get_status_display }}</span>{% if t.patient_impact %}<span class="flag" title="Patient services affected">{% icon 'heart-pulse' %}Patients affected</span>{% endif %}

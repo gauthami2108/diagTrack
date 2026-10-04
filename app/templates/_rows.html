@@ -1,0 +1,13 @@
+{% load dt %}
+<div class="rows">
+{% for t in tickets %}
+  <a class="row" href="{% url 'ticket_detail' t.number %}">
+    <span class="row-main">
+      <span class="row-top"><span class="num">{{ t.number }}</span><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span><span class="status status-{{ t.status }}">{{ t.get_status_display }}</span></span>
+      <span class="row-title">{{ t.subject }}</span>
+      <span class="row-meta">{{ t.centre.name }}, {{ t.category.name }}{% if show_owner %}, {{ t.assignee.display_name|default:"unassigned" }}{% endif %}</span>
+    </span>
+    {% if t.is_open %}{% sla t True %}{% endif %}
+  </a>
+{% endfor %}
+</div>

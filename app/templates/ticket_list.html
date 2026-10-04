@@ -1,0 +1,64 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>{{ title }}</h1><p class="sub">{{ total }} ticket{{ total|pluralize }}{% if q %} matching "{{ q }}"{% endif %}</p></div>
+  <div class="head-actions">
+    <a class="btn" href="{% url 'export_csv' %}?{% qs page=None %}">{% icon 'download' %}Export to Excel</a>
+    {% if request.user.role != 'management' or request.user.is_superuser %}<a class="btn btn-primary" href="{% url 'ticket_new' %}">{% icon 'circle-plus' %}Raise a ticket</a>{% endif %}
+  </div>
+</div>
+
+{% if views|length > 1 %}<div class="tabs" role="tablist">
+  {% for key, label in views.items %}<a role="tab" href="?view={{ key }}" {% if key == view %}aria-selected="true"{% endif %}>{{ label }}</a>{% endfor %}
+</div>{% endif %}
+
+<form class="filters" method="get" data-autosubmit>
+  <input type="hidden" name="view" value="{{ view }}">
+  {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+  <div class="seg" role="group" aria-label="Open or finished">
+    <label><input type="radio" name="state" value="open" {% if state == 'open' %}checked{% endif %}><span>Open</span></label>
+    <label><input type="radio" name="state" value="done" {% if state == 'done' %}checked{% endif %}><span>Finished</span></label>
+    <label><input type="radio" name="state" value="any" {% if state == 'any' %}checked{% endif %}><span>All</span></label>
+  </div>
+  <select name="status" aria-label="Status"><option value="">Any status</option>{% for k, l in statuses %}<option value="{{ k }}" {% if request.GET.status == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select name="priority" aria-label="Priority"><option value="">Any priority</option>{% for k, l in priorities %}<option value="{{ k }}" {% if request.GET.priority == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  {% if request.user.role != 'requester' %}
+  <select name="centre" aria-label="Centre"><option value="">Any centre</option>{% for c in centres %}<option value="{{ c.pk }}" {% if request.GET.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <select name="department" aria-label="Department"><option value="">Any department</option>{% for d in departments %}<option value="{{ d.pk }}" {% if request.GET.department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
+  <select name="sla" aria-label="Deadline"><option value="">Any deadline</option><option value="breached" {% if request.GET.sla == 'breached' %}selected{% endif %}>Past the deadline</option><option value="soon" {% if request.GET.sla == 'soon' %}selected{% endif %}>Due within 4 hours</option></select>
+  {% endif %}
+  <select name="sort" aria-label="Sort"><option value="due" {% if sort == 'due' %}selected{% endif %}>Sort: deadline first</option><option value="new" {% if sort == 'new' %}selected{% endif %}>Sort: newest first</option><option value="updated" {% if sort == 'updated' %}selected{% endif %}>Sort: latest activity</option><option value="priority" {% if sort == 'priority' %}selected{% endif %}>Sort: priority</option></select>
+  {% if request.GET.unassigned %}<input type="hidden" name="unassigned" value="1">{% endif %}
+  <a class="link-quiet" href="?view={{ view }}">Clear filters</a>
+</form>
+
+{% if page.object_list %}
+<div class="table-wrap">
+<table class="table">
+  <thead><tr><th>Ticket</th><th>Title</th><th>Centre</th><th>Department</th><th>Owner</th><th>Status</th><th>Deadline</th><th class="num-col">Raised</th></tr></thead>
+  <tbody>
+  {% for t in page %}
+  <tr data-href="{% url 'ticket_detail' t.number %}">
+    <td data-l="Ticket"><a class="num" href="{% url 'ticket_detail' t.number %}">{{ t.number }}</a></td>
+    <td class="cell-title"><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span> <span>{{ t.subject }}</span><small>{{ t.category.name }}{% if t.equipment %}, {{ t.equipment.name }}{% endif %}</small></td>
+    <td data-l="Centre">{{ t.centre.name }}</td>
+    <td data-l="Department">{{ t.department.name }}</td>
+    <td data-l="Owner">{% if t.assignee %}<span class="person"><span class="avatar avatar-s">{{ t.assignee.initials }}</span>{{ t.assignee.display_name }}</span>{% else %}<span class="muted">Unassigned</span>{% endif %}</td>
+    <td data-l="Status"><span class="status status-{{ t.status }}">{{ t.get_status_display }}</span></td>
+    <td data-l="Deadline">{% sla t True %}</td>
+    <td data-l="Raised" class="num-col muted">{{ t.created_at|date:"d M, H:i" }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if page.paginator.num_pages > 1 %}<nav class="pager" aria-label="Pages">
+  {% if page.has_previous %}<a class="btn" href="?{% qs page=page.previous_page_number %}">{% icon 'chevron-left' %}Previous</a>{% endif %}
+  <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a class="btn" href="?{% qs page=page.next_page_number %}">Next{% icon 'chevron-right' %}</a>{% endif %}
+</nav>{% endif %}
+{% else %}
+<div class="empty-big">{% icon 'inbox' %}<h2>No tickets match</h2><p>Try All instead of Open, or clear the filters.</p><a class="btn" href="?view={{ view }}&state=any">Show all</a></div>
+{% endif %}
+{% endblock %}

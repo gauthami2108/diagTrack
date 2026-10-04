@@ -1,0 +1,56 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Settings and health{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Settings and health</h1><p class="sub">Alert channels, mail server and a check that the system is running well.</p></div></div>
+
+<section class="health" aria-label="System health">
+  <div class="health-item {% if health.worker_ok %}ok{% else %}bad{% endif %}">{% icon 'activity' %}<div><b>Background worker</b><span>{% if health.worker_ok %}Running. Last check {{ health.worker.at|timesince }} ago.{% elif health.worker %}Stopped {{ health.worker.at|timesince }} ago. SLA alerts are not going out. See the runbook, section 4.{% else %}Not started yet. See the runbook, section 4.{% endif %}</span></div></div>
+  <div class="health-item {% if health.backup.ok %}ok{% else %}bad{% endif %}">{% icon 'hard-drive' %}<div><b>Backup to NAS</b><span>{{ health.backup.text }}{% if health.backup.when %} Last run {{ health.backup.when|date:"d M, H:i" }}{% if health.backup.size %}, {{ health.backup.size }}{% endif %}.{% endif %}</span></div></div>
+  <div class="health-item {% if health.failed %}bad{% else %}ok{% endif %}">{% icon 'mail' %}<div><b>Alerts sent out</b><span>{% if health.failed %}{{ health.failed }} failed this week. Last reason: {{ health.last_failed.error }}{% else %}No failures this week.{% endif %} {{ health.pending }} waiting.</span></div></div>
+  <div class="health-item ok">{% icon 'server' %}<div><b>In use</b><span>{{ health.tickets }} tickets, {{ health.users }} active users.</span></div></div>
+</section>
+
+<form method="post" class="settings">
+  {% csrf_token %}
+  <section class="panel">
+    <header><h2>Alert channels</h2></header>
+    <p class="panel-sub">Switch each channel on or off. SMS and WhatsApp are used only for P1 tickets and escalations.</p>
+    <div class="switches">
+      {% include "_switch.html" with f=form.inapp_enabled note="The bell at the top of every screen." %}
+      {% include "_switch.html" with f=form.email_enabled note="Needs the mail server below." %}
+      {% include "_switch.html" with f=form.sms_enabled note="Needs an SMS provider account and internet." %}
+      {% include "_switch.html" with f=form.whatsapp_enabled note="Needs a WhatsApp Business provider and internet." %}
+      {% include "_switch.html" with f=form.area_manager_all note="When off, area managers are alerted only for P1 tickets and escalations." %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <header><h2>General</h2></header>
+    <div class="field-row">{% include "_field.html" with f=form.org_name %}{% include "_field.html" with f=form.site_url %}</div>
+    <div class="field-row field-row-3">{% include "_field.html" with f=form.auto_close_days %}{% include "_field.html" with f=form.reopen_days %}{% include "_field.html" with f=form.max_attachment_mb %}</div>
+  </section>
+
+  <section class="panel">
+    <header><h2>Mail server</h2><button class="btn btn-s" name="test" value="email" formnovalidate>Send me a test email</button></header>
+    <p class="panel-sub">Save first, then send a test. The test goes to your own email address.</p>
+    <div class="field-row">{% include "_field.html" with f=form.smtp_host %}{% include "_field.html" with f=form.from_email %}</div>
+    <div class="field-row field-row-3">{% include "_field.html" with f=form.smtp_port %}{% include "_field.html" with f=form.smtp_security %}{% include "_field.html" with f=form.smtp_user %}</div>
+    {% include "_field.html" with f=form.smtp_password %}
+  </section>
+
+  <section class="panel">
+    <header><h2>SMS gateway</h2><button class="btn btn-s" name="test" value="sms" formnovalidate>Send me a test SMS</button></header>
+    <p class="panel-sub">Copy these three values from your SMS provider's API page. The administrator manual, section 7, has worked examples.</p>
+    {% include "_field.html" with f=form.sms_url %}
+    <div class="field-row">{% include "_field.html" with f=form.sms_headers %}{% include "_field.html" with f=form.sms_body %}</div>
+  </section>
+
+  <section class="panel">
+    <header><h2>WhatsApp gateway</h2><button class="btn btn-s" name="test" value="whatsapp" formnovalidate>Send me a test WhatsApp</button></header>
+    {% include "_field.html" with f=form.whatsapp_url %}
+    <div class="field-row">{% include "_field.html" with f=form.whatsapp_headers %}{% include "_field.html" with f=form.whatsapp_body %}</div>
+  </section>
+
+  <div class="save-bar"><span>Departments, categories, users, SLA times and escalation rules are under <a href="{% url 'admin:index' %}">Masters and rules</a>.</span><button class="btn btn-primary" type="submit">Save settings</button></div>
+</form>
+{% endblock %}

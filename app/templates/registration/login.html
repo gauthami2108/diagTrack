@@ -1,0 +1,12 @@
+{% extends "registration/auth_base.html" %}
+{% block card %}
+<h1>Sign in</h1>
+<form method="post" novalidate>{% csrf_token %}
+  {% if form.errors %}<div class="callout callout-bad" role="alert"><div>That user name and password did not match. Check both and try again.</div></div>{% endif %}
+  <label class="field"><span>User name</span><input type="text" name="username" autocomplete="username" autofocus required value="{{ form.username.value|default:'' }}"></label>
+  <label class="field"><span>Password</span><input type="password" name="password" autocomplete="current-password" required></label>
+  <input type="hidden" name="next" value="{{ next }}">
+  <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+</form>
+<p class="auth-foot"><a href="{% url 'password_reset' %}">Forgot your password?</a></p>
+{% endblock %}

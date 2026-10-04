@@ -1,0 +1,10 @@
+# Front door for DiagTrack. Normally you never edit this file:
+# the address and HTTPS choice come from the .env file.
+{$SITE_ADDRESS:http://} {
+	{$HTTPS_MODE}
+	encode gzip
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy web:8000
+}

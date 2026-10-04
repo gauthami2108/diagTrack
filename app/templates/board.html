@@ -1,0 +1,45 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Board{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Board</h1><p class="sub">Drag a card to the next column to start, hold or resolve it.</p></div>
+  <form class="filters filters-inline" method="get" data-autosubmit>
+    <select name="centre" aria-label="Centre"><option value="">Any centre</option>{% for c in centres %}<option value="{{ c.pk }}" {% if request.GET.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+    <select name="department" aria-label="Department"><option value="">Any department</option>{% for d in departments %}<option value="{{ d.pk }}" {% if request.GET.department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
+    <label class="chip-check"><input type="checkbox" name="mine" value="1" {% if request.GET.mine %}checked{% endif %}><span>Only mine</span></label>
+  </form>
+</div>
+<div class="board" data-board>
+  {% for col in columns %}
+  <section class="col" data-col="{{ col.key }}" data-accepts="{{ col.accepts }}">
+    <header><h2>{{ col.title }}</h2><span class="count">{{ col.tickets|length }}</span>{% if col.hint %}<small>{{ col.hint }}</small>{% endif %}</header>
+    <div class="col-body">
+      {% for t in col.tickets %}
+      <article class="card prio-edge-{{ t.priority }}" draggable="{% if t.can %}true{% else %}false{% endif %}" data-number="{{ t.number }}" data-can="{{ t.can }}" data-from="{{ col.key }}" data-downtime="{% if t.downtime and not t.downtime.end %}1{% endif %}">
+        <a href="{% url 'ticket_detail' t.number %}">
+          <span class="row-top"><span class="num">{{ t.number }}</span><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>{% if t.patient_impact %}<span class="flag">{% icon 'heart-pulse' %}</span>{% endif %}</span>
+          <span class="card-title">{{ t.subject }}</span>
+          <span class="row-meta">{{ t.centre.name }}, {{ t.department.name }}</span>
+        </a>
+        <footer>{% if t.assignee %}<span class="person"><span class="avatar avatar-s">{{ t.assignee.initials }}</span>{{ t.assignee.first_name }}</span>{% else %}<span class="muted">Unassigned</span>{% endif %}{% if col.key != 'resolved' %}{% sla t True %}{% endif %}</footer>
+      </article>
+      {% empty %}<p class="empty-s">Nothing here.</p>{% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+
+<form method="post" data-board-form hidden>{% csrf_token %}<input type="hidden" name="next" value="board"></form>
+<dialog class="dialog" id="dlg-hold"><form method="post" data-board-dialog="hold">{% csrf_token %}<input type="hidden" name="next" value="board">
+  <h2>Put <span data-num></span> on hold</h2><p>The SLA clock pauses until work resumes.</p>
+  <label class="field"><span>Why?</span><select name="reason" required>{% for k, l in hold_reasons %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+  <label class="field"><span>Note for the requester</span><textarea name="note" rows="2"></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Put on hold</button></div>
+</form></dialog>
+<dialog class="dialog" id="dlg-resolve"><form method="post" data-board-dialog="resolve">{% csrf_token %}<input type="hidden" name="next" value="board">
+  <h2>Resolve <span data-num></span></h2>
+  <label class="field"><span>What was done?</span><textarea name="note" rows="3" required></textarea></label>
+  <p class="hint" data-downtime-hint hidden>This ticket has equipment downtime running. It will be stopped at this moment. To enter a different time, resolve from the ticket page.</p>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Resolve ticket</button></div>
+</form></dialog>
+{% endblock %}

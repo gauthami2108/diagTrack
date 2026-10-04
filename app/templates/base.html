@@ -1,0 +1,103 @@
+{% load static dt %}<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1b2e">
+<title>{% block title %}DiagTrack{% endblock %} | {{ cfg.org_name }}</title>
+<link rel="manifest" href="{% static 'manifest.json' %}">
+<link rel="icon" href="{% static 'img/icon.svg' %}" type="image/svg+xml">
+<script>
+(function(){try{var t=localStorage.getItem('dt-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+document.documentElement.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')document.documentElement.dataset.nav='mini';}catch(e){}})();
+</script>
+<link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+  <aside class="nav" id="nav">
+    <a class="brand" href="{% url 'home' %}">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="brand-text"><b>DiagTrack</b><small>{{ cfg.org_name }}</small></span>
+    </a>
+    {% with r=request.user.role p=request.resolver_match.url_name v=request.GET.view %}
+    <nav aria-label="Main">
+      <a href="{% url 'home' %}" {% if p == 'home' %}aria-current="page"{% endif %}>{% icon 'house' %}<span>Home</span></a>
+      {% if r != 'management' or request.user.is_superuser %}
+      <a href="{% url 'ticket_new' %}" {% if p == 'ticket_new' %}aria-current="page"{% endif %}>{% icon 'circle-plus' %}<span>Raise a ticket</span></a>
+      <a href="{% url 'ticket_list' %}?view=mine" {% if p == 'ticket_list' and v == 'mine' %}aria-current="page"{% endif %}>{% icon 'ticket' %}<span>My tickets</span></a>
+      {% endif %}
+      {% if request.user.is_resolver %}
+      <p class="nav-group">Resolve</p>
+      <a href="{% url 'ticket_list' %}?view=work" {% if p == 'ticket_list' and v == 'work' %}aria-current="page"{% endif %}>{% icon 'inbox' %}<span>Assigned to me</span></a>
+      <a href="{% url 'ticket_list' %}?view=queue" {% if p == 'ticket_list' and v == 'queue' %}aria-current="page"{% endif %}>{% icon 'users' %}<span>Team queue</span></a>
+      {% endif %}
+      {% if r != 'requester' or request.user.is_superuser %}
+      <p class="nav-group">Oversee</p>
+      <a href="{% url 'ticket_list' %}?view=all" {% if p == 'ticket_list' and v == 'all' %}aria-current="page"{% endif %}>{% icon 'list' %}<span>All tickets</span></a>
+      <a href="{% url 'board' %}" {% if p == 'board' %}aria-current="page"{% endif %}>{% icon 'square-kanban' %}<span>Board</span></a>
+      <a href="{% url 'equipment_list' %}" {% if p == 'equipment_list' or p == 'equipment_detail' %}aria-current="page"{% endif %}>{% icon 'scan-line' %}<span>Equipment</span></a>
+      <a href="{% url 'dashboard' %}" {% if p == 'dashboard' %}aria-current="page"{% endif %}>{% icon 'chart-column' %}<span>Dashboard</span></a>
+      {% endif %}
+      {% if request.user.is_admin %}
+      <p class="nav-group">Administer</p>
+      <a href="{% url 'admin:index' %}">{% icon 'sliders-horizontal' %}<span>Masters and rules</span></a>
+      <a href="{% url 'settings' %}" {% if p == 'settings' %}aria-current="page"{% endif %}>{% icon 'settings' %}<span>Settings and health</span></a>
+      {% endif %}
+    </nav>
+    {% endwith %}
+    <button class="nav-fold" type="button" data-nav-fold aria-label="Collapse menu">{% icon 'panel-left' %}<span>Collapse menu</span></button>
+  </aside>
+  <div class="scrim" data-nav-close></div>
+
+  <div class="page">
+    <header class="top">
+      <button class="icon-btn only-mobile" type="button" data-nav-open aria-label="Open menu">{% icon 'menu' %}</button>
+      <form class="search" action="{% url 'ticket_list' %}" role="search">
+        {% icon 'search' %}
+        <input type="search" name="q" placeholder="Search tickets by number, title or person" aria-label="Search tickets" value="{{ q|default:'' }}" data-search>
+        <input type="hidden" name="state" value="any"><input type="hidden" name="view" value="{% if request.user.role == 'requester' %}mine{% else %}all{% endif %}">
+        <kbd>/</kbd>
+      </form>
+      <div class="top-actions">
+        <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch between light and dark">{% icon 'moon' 'when-light' %}{% icon 'sun' 'when-dark' %}</button>
+        <div class="menu">
+          <button class="icon-btn" type="button" data-menu aria-label="Alerts{% if unread_count %}, {{ unread_count }} unread{% endif %}" aria-expanded="false">
+            {% icon 'bell' %}{% if unread_count %}<b class="dot">{{ unread_count }}</b>{% endif %}
+          </button>
+          <div class="pop pop-wide" hidden>
+            <div class="pop-head"><strong>Alerts</strong><a href="{% url 'notifications' %}">See all</a></div>
+            {% for n in recent_alerts %}
+            <a class="alert-row {% if not n.read %}unread{% endif %} {% if n.urgent %}urgent{% endif %}" href="{% url 'notification_open' n.pk %}">
+              <span>{{ n.title }}</span><small>{{ n.created_at|timesince }} ago</small>
+            </a>
+            {% empty %}<p class="empty-s">No alerts yet. You will see ticket updates here.</p>{% endfor %}
+          </div>
+        </div>
+        <div class="menu">
+          <button class="avatar-btn" type="button" data-menu aria-expanded="false" aria-label="Your account">
+            <span class="avatar">{{ request.user.initials }}</span>
+            <span class="who"><b>{{ request.user.display_name }}</b><small>{{ request.user.role_label }}</small></span>
+            {% icon 'chevron-down' %}
+          </button>
+          <div class="pop" hidden>
+            <a class="pop-item" href="{% url 'password_change' %}">{% icon 'key-round' %} Change password</a>
+            <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="pop-item" type="submit">{% icon 'log-out' %} Sign out</button></form>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      {% if messages %}<div class="toasts" role="status">
+        {% for m in messages %}<div class="toast {{ m.tags }}">{% if 'error' in m.tags %}{% icon 'circle-alert' %}{% elif 'warning' in m.tags %}{% icon 'triangle-alert' %}{% else %}{% icon 'circle-check' %}{% endif %}<span>{{ m }}</span><button type="button" data-dismiss aria-label="Dismiss">{% icon 'x' %}</button></div>{% endfor %}
+      </div>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<script src="{% static 'js/app.js' %}" defer></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
