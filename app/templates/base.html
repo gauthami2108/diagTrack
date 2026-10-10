@@ -3,22 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0d1b2e">
+<meta name="theme-color" content="#0b1726">
 <title>{% block title %}DiagTrack{% endblock %} | {{ cfg.org_name }}</title>
 <link rel="manifest" href="{% static 'manifest.json' %}">
-<link rel="icon" href="{% static 'img/icon.svg' %}" type="image/svg+xml">
+<link rel="icon" href="{% if cfg.logo %}{% url 'brand_logo' %}{% else %}{% static 'img/icon.svg' %}{% endif %}">
 <script>
-(function(){try{var t=localStorage.getItem('dt-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
-document.documentElement.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')document.documentElement.dataset.nav='mini';}catch(e){}})();
+(function(){try{var d=document.documentElement,t=localStorage.getItem('dt-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini';var x=localStorage.getItem('dt-density');if(x)d.dataset.density=x;}catch(e){}})();
 </script>
 <link rel="stylesheet" href="{% static 'css/app.css' %}">
+<style>:root{--brand:{{ cfg.brand_color|default:"#2a5bd7" }}}</style>
 </head>
-<body>
+<body data-last-alert="{{ last_alert_id|default:0 }}" data-popups="{% if cfg.popups_enabled %}1{% endif %}">
 <a class="skip" href="#main">Skip to content</a>
 <div class="shell">
   <aside class="nav" id="nav">
     <a class="brand" href="{% url 'home' %}">
-      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      {% if cfg.logo %}<img class="brand-logo" src="{% url 'brand_logo' %}" alt="">{% else %}<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>{% endif %}
       <span class="brand-text"><b>DiagTrack</b><small>{{ cfg.org_name }}</small></span>
     </a>
     {% with r=request.user.role p=request.resolver_match.url_name v=request.GET.view %}
@@ -32,13 +33,15 @@ document.documentElement.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mi
       <p class="nav-group">Resolve</p>
       <a href="{% url 'ticket_list' %}?view=work" {% if p == 'ticket_list' and v == 'work' %}aria-current="page"{% endif %}>{% icon 'inbox' %}<span>Assigned to me</span></a>
       <a href="{% url 'ticket_list' %}?view=queue" {% if p == 'ticket_list' and v == 'queue' %}aria-current="page"{% endif %}>{% icon 'users' %}<span>Team queue</span></a>
+      <a href="{% url 'board' %}" {% if p == 'board' %}aria-current="page"{% endif %}>{% icon 'square-kanban' %}<span>Board</span></a>
       {% endif %}
       {% if r != 'requester' or request.user.is_superuser %}
       <p class="nav-group">Oversee</p>
       <a href="{% url 'ticket_list' %}?view=all" {% if p == 'ticket_list' and v == 'all' %}aria-current="page"{% endif %}>{% icon 'list' %}<span>All tickets</span></a>
-      <a href="{% url 'board' %}" {% if p == 'board' %}aria-current="page"{% endif %}>{% icon 'square-kanban' %}<span>Board</span></a>
-      <a href="{% url 'equipment_list' %}" {% if p == 'equipment_list' or p == 'equipment_detail' %}aria-current="page"{% endif %}>{% icon 'scan-line' %}<span>Equipment</span></a>
+      {% if not request.user.is_resolver %}<a href="{% url 'board' %}" {% if p == 'board' %}aria-current="page"{% endif %}>{% icon 'square-kanban' %}<span>Board</span></a>{% endif %}
       <a href="{% url 'dashboard' %}" {% if p == 'dashboard' %}aria-current="page"{% endif %}>{% icon 'chart-column' %}<span>Dashboard</span></a>
+      <a href="{% url 'centres' %}" {% if p == 'centres' %}aria-current="page"{% endif %}>{% icon 'building-2' %}<span>Centres</span></a>
+      <a href="{% url 'equipment_list' %}" {% if p == 'equipment_list' or p == 'equipment_detail' %}aria-current="page"{% endif %}>{% icon 'scan-line' %}<span>Equipment</span></a>
       {% endif %}
       {% if request.user.is_admin %}
       <p class="nav-group">Administer</p>
@@ -54,34 +57,40 @@ document.documentElement.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mi
   <div class="page">
     <header class="top">
       <button class="icon-btn only-mobile" type="button" data-nav-open aria-label="Open menu">{% icon 'menu' %}</button>
-      <form class="search" action="{% url 'ticket_list' %}" role="search">
-        {% icon 'search' %}
-        <input type="search" name="q" placeholder="Search tickets by number, title or person" aria-label="Search tickets" value="{{ q|default:'' }}" data-search>
-        <input type="hidden" name="state" value="any"><input type="hidden" name="view" value="{% if request.user.role == 'requester' %}mine{% else %}all{% endif %}">
-        <kbd>/</kbd>
-      </form>
+      <button class="search" type="button" data-palette-open aria-label="Search tickets and go to any screen">
+        {% icon 'search' %}<span>Search tickets, or jump to a screen</span><kbd data-mod-key>Ctrl K</kbd>
+      </button>
       <div class="top-actions">
+        <span class="live" title="Updates arrive by themselves"><i></i><span>Live</span></span>
         <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch between light and dark">{% icon 'moon' 'when-light' %}{% icon 'sun' 'when-dark' %}</button>
         <div class="menu">
-          <button class="icon-btn" type="button" data-menu aria-label="Alerts{% if unread_count %}, {{ unread_count }} unread{% endif %}" aria-expanded="false">
-            {% icon 'bell' %}{% if unread_count %}<b class="dot">{{ unread_count }}</b>{% endif %}
+          <button class="icon-btn" type="button" data-menu data-bell aria-label="Alerts" aria-expanded="false">
+            {% icon 'bell' %}<b class="dot" data-unread {% if not unread_count %}hidden{% endif %}>{{ unread_count }}</b>
           </button>
           <div class="pop pop-wide" hidden>
             <div class="pop-head"><strong>Alerts</strong><a href="{% url 'notifications' %}">See all</a></div>
+            <div data-alert-list>
             {% for n in recent_alerts %}
             <a class="alert-row {% if not n.read %}unread{% endif %} {% if n.urgent %}urgent{% endif %}" href="{% url 'notification_open' n.pk %}">
-              <span>{{ n.title }}</span><small>{{ n.created_at|timesince }} ago</small>
+              <span class="k k-{{ n.kind }}" aria-hidden="true"></span><span>{{ n.title }}</span><small>{{ n.created_at|timesince }}</small>
             </a>
-            {% empty %}<p class="empty-s">No alerts yet. You will see ticket updates here.</p>{% endfor %}
+            {% empty %}<p class="empty-s">No alerts yet. Ticket updates appear here.</p>{% endfor %}
+            </div>
+            <div class="pop-foot">
+              <label class="mini-switch"><input type="checkbox" data-sound-toggle><i></i><span>Sound for new tickets</span></label>
+              <button class="link-btn" type="button" data-desktop-alerts>Desktop alerts</button>
+            </div>
           </div>
         </div>
         <div class="menu">
           <button class="avatar-btn" type="button" data-menu aria-expanded="false" aria-label="Your account">
-            <span class="avatar">{{ request.user.initials }}</span>
+            {% avatar request.user %}
             <span class="who"><b>{{ request.user.display_name }}</b><small>{{ request.user.role_label }}</small></span>
             {% icon 'chevron-down' %}
           </button>
           <div class="pop" hidden>
+            <a class="pop-item" href="{% url 'profile' %}">{% icon 'user' %} My profile</a>
+            <button class="pop-item" type="button" data-density-toggle>{% icon 'list' %} <span data-density-label>Compact rows</span></button>
             <a class="pop-item" href="{% url 'password_change' %}">{% icon 'key-round' %} Change password</a>
             <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="pop-item" type="submit">{% icon 'log-out' %} Sign out</button></form>
           </div>
@@ -97,6 +106,45 @@ document.documentElement.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mi
     </main>
   </div>
 </div>
+
+<div class="popups" id="popups" aria-live="polite"></div>
+
+<aside class="drawer" id="drawer" hidden aria-label="Ticket preview">
+  <div class="drawer-body" data-drawer-body></div>
+</aside>
+<div class="drawer-scrim" data-drawer-close hidden></div>
+
+<dialog class="palette" id="palette" aria-label="Search and go">
+  <div class="palette-in">{% icon 'search' %}<input type="text" placeholder="Type a ticket number, a word, or a screen" data-palette-input autocomplete="off" aria-label="Search"><kbd>Esc</kbd></div>
+  <ul class="palette-list" data-palette-list role="listbox"></ul>
+  <p class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> to move</span><span><kbd>Enter</kbd> to open</span></p>
+</dialog>
+
+<div class="lightbox" id="lightbox" hidden>
+  <button class="lb-close icon-btn" type="button" data-lb-close aria-label="Close">{% icon 'x' %}</button>
+  <button class="lb-nav lb-prev icon-btn" type="button" data-lb-prev aria-label="Previous photo">{% icon 'chevron-left' %}</button>
+  <figure><img alt="" data-lb-img><figcaption data-lb-cap></figcaption></figure>
+  <button class="lb-nav lb-next icon-btn" type="button" data-lb-next aria-label="Next photo">{% icon 'chevron-right' %}</button>
+</div>
+
+<script id="palette-screens" type="application/json">[
+  {"t":"Home","u":"{% url 'home' %}","i":"house"},
+  {% if request.user.role != 'management' or request.user.is_superuser %}{"t":"Raise a ticket","u":"{% url 'ticket_new' %}","i":"circle-plus"},
+  {"t":"My tickets","u":"{% url 'ticket_list' %}?view=mine","i":"ticket"},{% endif %}
+  {% if request.user.is_resolver %}{"t":"Assigned to me","u":"{% url 'ticket_list' %}?view=work","i":"inbox"},
+  {"t":"Team queue","u":"{% url 'ticket_list' %}?view=queue","i":"users"},{% endif %}
+  {% if request.user.role != 'requester' or request.user.is_superuser %}{"t":"Board","u":"{% url 'board' %}","i":"square-kanban"},
+  {"t":"All tickets","u":"{% url 'ticket_list' %}?view=all","i":"list"},
+  {"t":"Past the deadline","u":"{% url 'ticket_list' %}?view=all&sla=breached","i":"triangle-alert"},
+  {"t":"Dashboard","u":"{% url 'dashboard' %}","i":"chart-column"},
+  {"t":"Centres","u":"{% url 'centres' %}","i":"building-2"},
+  {"t":"Equipment","u":"{% url 'equipment_list' %}","i":"scan-line"},{% endif %}
+  {% if request.user.is_admin %}{"t":"Masters and rules","u":"{% url 'admin:index' %}","i":"sliders-horizontal"},
+  {"t":"Settings and health","u":"{% url 'settings' %}","i":"settings"},{% endif %}
+  {"t":"Alerts","u":"{% url 'notifications' %}","i":"bell"},
+  {"t":"My profile","u":"{% url 'profile' %}","i":"user"}
+]</script>
+<script>window.DT_ICONS = "{% static 'icons.svg' %}";</script>
 <script src="{% static 'js/app.js' %}" defer></script>
 {% block scripts %}{% endblock %}
 </body>

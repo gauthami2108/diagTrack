@@ -10,7 +10,7 @@
   <div class="health-item ok">{% icon 'server' %}<div><b>In use</b><span>{{ health.tickets }} tickets, {{ health.users }} active users.</span></div></div>
 </section>
 
-<form method="post" class="settings">
+<form method="post" class="settings" enctype="multipart/form-data">
   {% csrf_token %}
   <section class="panel">
     <header><h2>Alert channels</h2></header>
@@ -21,6 +21,20 @@
       {% include "_switch.html" with f=form.sms_enabled note="Needs an SMS provider account and internet." %}
       {% include "_switch.html" with f=form.whatsapp_enabled note="Needs a WhatsApp Business provider and internet." %}
       {% include "_switch.html" with f=form.area_manager_all note="When off, area managers are alerted only for P1 tickets and escalations." %}
+      {% include "_switch.html" with f=form.managers_on_close note="Centre and area managers see a pop-up when a ticket at their centre is closed." %}
+      {% include "_switch.html" with f=form.popups_enabled note="New tickets, closures and escalations slide in on screen as they happen." %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <header><h2>Brand</h2></header>
+    <p class="panel-sub">Your logo and colour appear in the menu, buttons and the sign-in page.</p>
+    <div class="brand-row">
+      <div class="brand-preview" style="--brand: {{ form.brand_color.value }}">{% if cfg.logo %}<img src="{% url 'brand_logo' %}" alt="Current logo">{% else %}<span class="brand-mark brand-mark-l"><i></i><i></i><i></i></span>{% endif %}<span class="btn btn-primary">Sample button</span></div>
+      <div class="stack-s">
+        <label class="field"><span>Logo</span><input type="file" name="logo" accept="image/png,image/svg+xml,image/jpeg,image/webp"><small>{{ form.logo.help_text }}</small>{% if cfg.logo %}<label class="chip-check"><input type="checkbox" name="logo-clear"><span>Remove the current logo</span></label>{% endif %}</label>
+        {% include "_field.html" with f=form.brand_color %}
+      </div>
     </div>
   </section>
 
@@ -28,6 +42,7 @@
     <header><h2>General</h2></header>
     <div class="field-row">{% include "_field.html" with f=form.org_name %}{% include "_field.html" with f=form.site_url %}</div>
     <div class="field-row field-row-3">{% include "_field.html" with f=form.auto_close_days %}{% include "_field.html" with f=form.reopen_days %}{% include "_field.html" with f=form.max_attachment_mb %}</div>
+    <div class="field-row field-row-3">{% include "_field.html" with f=form.amc_alert_days %}</div>
   </section>
 
   <section class="panel">

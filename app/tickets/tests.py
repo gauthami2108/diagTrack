@@ -359,3 +359,162 @@ class DashboardTests(Base):
         self.assertEqual(sum(b["value"] for b in d["by_status"]), 6)
         self.assertEqual(sum(b["value"] for b in d["by_priority"]), 6)
         self.assertEqual(sum(b["value"] for b in d["by_centre"]), 6)
+
+
+class Phase2Tests(Base):
+    """Vendor calls, AMC alerts, @mentions, comment edits, pop-up feed and the new screens."""
+
+    def test_vendor_call_measures_response_time(self):
+        from .models import Vendor
+        vendor = Vendor.objects.create(name="MediServe")
+        t0 = timezone.now()
+        with at(t0):
+            t = self.raise_ticket(self.mri_cat, equipment=self.mri, equipment_down=True)
+            call = services.log_vendor_call(t, self.naveen, vendor, "CMP-77")
+        with self.assertRaises(services.NotAllowed):
+            services.log_vendor_call(t, self.req, vendor)  # requesters cannot
+        with at(t0 + timedelta(hours=3)):
+            services.vendor_attended(call, self.naveen, "Ramesh")
+        call.refresh_from_db()
+        self.assertEqual(call.response_seconds(), 3 * 3600)
+        self.assertTrue(t.history.filter(text__contains="engineer attended after 3h 0m").exists())
+        from . import reports
+        perf = reports.vendor_performance()
+        self.assertEqual((perf[0]["calls"], perf[0]["avg_hours"]), (1, 3.0))
+
+    def test_amc_alerts_at_each_stage_once(self):
+        today = timezone.localdate()
+        self.mri.amc_expiry = today + timedelta(days=45)
+        self.mri.save()
+        self.assertEqual(services.amc_checks(today), 1)
+        self.assertEqual(services.amc_checks(today), 0)  # not again the same day
+        self.assertTrue(Notification.objects.filter(user=self.bio_head, kind="amc").exists())
+        self.assertEqual(services.amc_checks(today + timedelta(days=16)), 1)  # 29 days left
+        self.assertEqual(services.amc_checks(today + timedelta(days=46)), 1)  # expired
+        self.mri.amc_expiry = today + timedelta(days=400)  # renewed
+        self.mri.save()
+        self.assertEqual(services.amc_checks(today + timedelta(days=47)), 0)
+
+    def test_mentions_alert_only_people_who_can_see_the_ticket(self):
+        t = self.raise_ticket()
+        Notification.objects.all().delete()
+        services.add_comment(t, t.assignee, "Can @srinivas approve? Also @divya and @nobody.")
+        self.assertTrue(Notification.objects.filter(user=self.it_head, kind="mention").exists())
+        self.assertFalse(Notification.objects.filter(user=self.other).exists())  # divya cannot see KKP IT tickets
+        services.add_comment(t, t.assignee, "Internal for @meena", internal=True)
+        self.assertFalse(Notification.objects.filter(user=self.req, kind="mention").exists())
+
+    def test_comment_edit_by_author_within_a_day(self):
+        t = self.raise_ticket()
+        c, _ = services.add_comment(t, self.req, "Printer at counter 2")
+        with self.assertRaises(services.NotAllowed):
+            services.edit_comment(c, t.assignee, "changed")
+        services.edit_comment(c, self.req, "Printer at counter 3")
+        c.refresh_from_db()
+        self.assertEqual(c.body, "Printer at counter 3")
+        self.assertIsNotNone(c.edited_at)
+        with at(timezone.now() + timedelta(hours=25)):
+            with self.assertRaises(services.NotAllowed):
+                services.edit_comment(c, self.req, "too late")
+
+    def test_close_alerts_owner_head_and_managers(self):
+        t = self.raise_ticket()
+        services.start_work(t, t.assignee)
+        services.resolve(t, t.assignee, "Done")
+        Notification.objects.all().delete()
+        services.close(t, self.req, 5)
+        for person in (t.assignee, self.it_head, self.cm, self.am):
+            self.assertTrue(Notification.objects.filter(user=person, kind="closed").exists(), person)
+        self.assertFalse(Notification.objects.filter(user=self.req).exists())
+
+    def test_rich_text_is_safe(self):
+        from .templatetags.dt import rich
+        html = rich('**bold** <script>alert(1)</script> [x](javascript:alert(1)) @srinivas')
+        self.assertIn("<strong>bold</strong>", html)
+        self.assertNotIn("<script>", html)
+        self.assertNotIn('href="javascript', html)
+        self.assertIn('class="mention">@Srinivas', html)
+
+    def test_live_feed_returns_only_new_alerts_for_me(self):
+        self.client.force_login(self.it_head)
+        first = self.client.get(reverse("api_live")).json()
+        t = services.create_ticket(self.req, self.kkp, self.printer, "x", "y", patient_impact=True)
+        feed = self.client.get(reverse("api_live") + f"?after={first['last']}").json()
+        self.assertTrue(any(i["kind"] == "raised" and i["number"] == t.number and i["urgent"] for i in feed["items"]))
+        again = self.client.get(reverse("api_live") + f"?after={feed['last']}").json()
+        self.assertEqual(again["items"], [])
+
+    def test_search_and_people_feeds_respect_visibility(self):
+        t = self.raise_ticket()
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(reverse("api_search") + "?q=Printer").json()["tickets"], [])
+        self.client.force_login(self.req)
+        self.assertEqual(self.client.get(reverse("api_search") + "?q=" + t.number).json()["tickets"][0]["number"], t.number)
+        names = [p["username"] for p in self.client.get(reverse("api_people") + "?q=sri").json()["people"]]
+        self.assertEqual(names, ["srinivas"])
+
+    def test_new_screens_open(self):
+        from .models import Vendor
+        v = Vendor.objects.create(name="MediServe")
+        t = self.raise_ticket(self.mri_cat, equipment=self.mri, equipment_down=True)
+        services.log_vendor_call(t, self.naveen, v)
+        self.client.force_login(self.am)
+        for url in [reverse("centres"), reverse("centres") + "?days=7", reverse("equipment_list") + "?tab=faults",
+                    reverse("equipment_list") + "?tab=vendors", reverse("equipment_list") + "?tab=amc",
+                    reverse("equipment_labels"), reverse("equipment_qr", args=[self.mri.pk]), reverse("profile"),
+                    reverse("ticket_detail", args=[t.number]) + "?preview=1",
+                    reverse("ticket_new") + f"?equipment={self.mri.pk}"]:
+            self.assertEqual(self.client.get(url).status_code, 200, url)
+        resp = self.client.get(reverse("ticket_new") + f"?equipment={self.mri.pk}")
+        self.assertContains(resp, "Scanned from the machine")
+        self.assertContains(self.client.get(reverse("equipment_qr", args=[self.mri.pk])), "<svg")
+        self.client.force_login(self.req)
+        self.assertEqual(self.client.get(reverse("centres")).status_code, 403)
+
+    def test_centre_matrix_numbers(self):
+        from . import reports
+        t = self.raise_ticket()
+        services.start_work(t, t.assignee)
+        services.resolve(t, t.assignee, "Done")
+        self.raise_ticket(patient_impact=True)
+        m = reports.centre_matrix(services.visible_tickets(self.director), [self.kkp, self.sec])
+        kkp = m["rows"][0]
+        self.assertEqual((kkp["open"], kkp["p1"], kkp["resolved"], kkp["sla_pct"]), (1, 1, 1, 100))
+        self.assertEqual(m["totals"]["open"], 1)
+        self.assertEqual(sum(c["n"] for row in m["grid"] for c in row["cells"]), 1)
+
+    def test_ticket_page_actions_through_screens(self):
+        from .models import Vendor
+        v = Vendor.objects.create(name="MediServe")
+        t = services.create_ticket(self.other, self.sec, self.mri_cat, "MRI", "down")  # nobody covers SEC
+        self.client.force_login(self.bio_head)
+        act = lambda a, d=None: self.client.post(reverse("ticket_action", args=[t.number, a]), d or {})
+        act("assign_me")
+        t.refresh_from_db()
+        self.assertEqual(t.assignee, self.bio_head)
+        t.equipment = self.mri
+        t.save()
+        act("vendor_call", {"vendor": v.pk, "reference": "R1"})
+        call = t.vendor_calls.get()
+        act("vendor_attended", {"call": call.pk, "engineer": "Ramesh"})
+        call.refresh_from_db()
+        self.assertEqual(call.engineer, "Ramesh")
+        act("comment", {"body": "Checked **coil**"})
+        c = t.comments.get()
+        act("edit_comment", {"comment": c.pk, "body": "Checked the **coil**"})
+        c.refresh_from_db()
+        self.assertEqual(c.body, "Checked the **coil**")
+        page = self.client.get(reverse("ticket_detail", args=[t.number]))
+        self.assertContains(page, "<strong>coil</strong>")
+        self.assertContains(page, "Edited")
+
+    def test_uploaded_files_cannot_run_scripts(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_login(self.req)
+        resp = self.client.post(reverse("profile"), {"first_name": "Meena", "photo": SimpleUploadedFile(
+            "x.svg", b"<svg onload=alert(1)>", content_type="image/png")})
+        self.assertContains(resp, "Choose a JPG, PNG or WEBP")
+        t = services.create_ticket(self.req, self.kkp, self.printer, "x", "y", files=[SimpleUploadedFile(
+            "a.png", b"\x89PNG fake", content_type="image/png")])
+        resp = self.client.get(reverse("attachment", args=[t.attachments.get().pk]))
+        self.assertIn("default-src 'none'", resp["Content-Security-Policy"])

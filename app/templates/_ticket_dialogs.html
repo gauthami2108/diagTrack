@@ -1,0 +1,71 @@
+{% load dt %}
+{% if 'resolve' in can %}<dialog class="dialog" id="dlg-resolve"><form method="post" action="{% url 'ticket_action' t.number 'resolve' %}">{% csrf_token %}
+  <h2>Resolve {{ t.number }}</h2><p>The requester is asked to confirm. The ticket closes by itself after {{ cfg.auto_close_days }} days.</p>
+  <label class="field"><span>What was done?</span><textarea name="note" rows="4" required></textarea></label>
+  {% if downtime and not downtime.end %}<label class="field"><span>When did {{ t.equipment.name }} start working again?</span><input type="datetime-local" name="downtime_end" value="{{ now_local }}" max="{{ now_local }}" required></label>{% endif %}
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Resolve ticket</button></div>
+</form></dialog>{% endif %}
+
+{% if 'hold' in can %}<dialog class="dialog" id="dlg-hold"><form method="post" action="{% url 'ticket_action' t.number 'hold' %}">{% csrf_token %}
+  <h2>Put {{ t.number }} on hold</h2><p>The SLA clock pauses until work resumes.</p>
+  <label class="field"><span>Why?</span><select name="reason" required>{% for k, l in hold_reasons %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+  <label class="field"><span>Note for the requester</span><textarea name="note" rows="2"></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Put on hold</button></div>
+</form></dialog>{% endif %}
+
+{% if 'assign' in can %}<dialog class="dialog" id="dlg-assign"><form method="post" action="{% url 'ticket_action' t.number 'assign' %}">{% csrf_token %}
+  <h2>Assign {{ t.number }}</h2>
+  {% if agents %}<label class="field"><span>Who should work on it?</span><select name="assignee" required>{% for a in agents %}<option value="{{ a.pk }}" {% if a.pk == t.assignee_id %}selected{% endif %}>{{ a.display_name }}</option>{% endfor %}</select></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Assign</button></div>
+  {% else %}<p>No agent in {{ t.department.name }} covers {{ t.centre.name }} yet. Add one under Masters and rules, Users.</p><div class="form-foot"><button class="btn" type="button" data-close>Close</button></div>{% endif %}
+</form></dialog>{% endif %}
+
+{% if 'transfer' in can %}<dialog class="dialog" id="dlg-transfer"><form method="post" action="{% url 'ticket_action' t.number 'transfer' %}">{% csrf_token %}
+  <h2>Transfer {{ t.number }}</h2><p>The new department gets a fresh SLA clock. The history stays on the ticket.</p>
+  <label class="field"><span>Send to</span><select name="department" required>{% for d in departments %}<option value="{{ d.pk }}">{{ d.name }}</option>{% endfor %}</select></label>
+  <label class="field"><span>Reason</span><textarea name="note" rows="2" required></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Transfer</button></div>
+</form></dialog>{% endif %}
+
+{% if 'set_priority' in can or 'raise_priority' in can %}<dialog class="dialog" id="dlg-priority"><form method="post" action="{% url 'ticket_action' t.number 'priority' %}">{% csrf_token %}
+  <h2>{% if 'set_priority' in can %}Change{% else %}Raise{% endif %} the priority</h2>
+  {% if 'set_priority' not in can %}<p>You can raise the priority once. The team is alerted.</p>{% endif %}
+  <label class="field"><span>New priority</span><select name="priority" required>{% for k, l in priorities %}{% if k != t.priority %}{% if 'set_priority' in can or k < t.priority %}<option value="{{ k }}">{{ l }}</option>{% endif %}{% endif %}{% endfor %}</select></label>
+  <label class="field"><span>Reason</span><textarea name="note" rows="2" required></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Change priority</button></div>
+</form></dialog>{% endif %}
+
+{% if 'close' in can %}<dialog class="dialog" id="dlg-close"><form method="post" action="{% url 'ticket_action' t.number 'close' %}">{% csrf_token %}
+  <h2>Confirm it is fixed</h2><p>How well was it handled? The rating is optional.</p>
+  <div class="rate" role="radiogroup" aria-label="Rating">{% for i in "54321" %}<input type="radio" name="rating" id="r{{ i }}" value="{{ i }}"><label for="r{{ i }}" aria-label="{{ i }} of 5">{% icon 'star' %}</label>{% endfor %}</div>
+  <div class="form-foot"><button class="btn" type="button" data-close>Not yet</button><button class="btn btn-primary" type="submit">Close ticket</button></div>
+</form></dialog>{% endif %}
+
+{% if 'reopen' in can %}<dialog class="dialog" id="dlg-reopen"><form method="post" action="{% url 'ticket_action' t.number 'reopen' %}">{% csrf_token %}
+  <h2>Reopen {{ t.number }}</h2><p>It goes back to {{ t.assignee.display_name|default:"the team" }}.</p>
+  <label class="field"><span>What is still wrong?</span><textarea name="note" rows="3" required></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Reopen ticket</button></div>
+</form></dialog>{% endif %}
+
+{% if 'cancel' in can %}<dialog class="dialog" id="dlg-cancel"><form method="post" action="{% url 'ticket_action' t.number 'cancel' %}">{% csrf_token %}
+  <h2>Cancel {{ t.number }}</h2><p>A cancelled ticket cannot be reopened.</p>
+  <label class="field"><span>Reason</span><textarea name="note" rows="2" required></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Keep ticket</button><button class="btn btn-bad" type="submit">Cancel ticket</button></div>
+</form></dialog>{% endif %}
+
+{% if can_vendor %}<dialog class="dialog" id="dlg-vendor"><form method="post" action="{% url 'ticket_action' t.number 'vendor_call' %}">{% csrf_token %}
+  <h2>Log a vendor call</h2><p>Record when you called the service vendor, so their response time is measured.</p>
+  <label class="field"><span>Vendor</span><select name="vendor" required>{% for v in vendors %}<option value="{{ v.pk }}" {% if v.pk == t.equipment.vendor_id %}selected{% endif %}>{{ v.name }}</option>{% empty %}<option value="">Add vendors under Masters and rules first</option>{% endfor %}</select></label>
+  <div class="field-row"><label class="field"><span>Called at</span><input type="datetime-local" name="called_at" value="{{ now_local }}" max="{{ now_local }}" required></label>
+  <label class="field"><span>Vendor's complaint number</span><input type="text" name="reference" maxlength="60"></label></div>
+  <label class="field"><span>Note</span><textarea name="note" rows="2"></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Log call</button></div>
+</form></dialog>
+<dialog class="dialog" id="dlg-attended"><form method="post" action="{% url 'ticket_action' t.number 'vendor_attended' %}">{% csrf_token %}
+  <input type="hidden" name="call" data-call-input>
+  <h2>Engineer arrived</h2><p data-vendor-name></p>
+  <div class="field-row"><label class="field"><span>Arrived at</span><input type="datetime-local" name="attended_at" value="{{ now_local }}" max="{{ now_local }}" required></label>
+  <label class="field"><span>Engineer's name</span><input type="text" name="engineer" maxlength="80"></label></div>
+  <label class="field"><span>Note</span><textarea name="note" rows="2"></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+</form></dialog>{% endif %}

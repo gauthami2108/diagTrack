@@ -1,0 +1,1 @@
+{% if pct is None %}<span class="muted">-</span>{% else %}<span class="meter lv-{{ band }}" title="{% if band == 'good' %}On target{% elif band == 'fair' %}Watch{% else %}Below target{% endif %}"><span class="meter-v">{{ pct }}%</span><span class="meter-t"><span style="width:{{ pct }}%"></span></span></span>{% endif %}

@@ -19,7 +19,7 @@ from django.views.decorators.http import require_POST
 from . import notify, reports, services
 from .models import (HOLD_REASONS, OPEN_STATUSES, Category, Centre, Department, DowntimeLog, Equipment,
                      Heartbeat, Notification, OutboundMessage, Priority, SiteSettings, Status, Ticket,
-                     TicketAttachment, User)
+                     TicketAttachment, TicketComment, User, Vendor, VendorCall)
 
 
 def role_required(test):
@@ -61,6 +61,9 @@ def home(request):
         .filter(Q(resolution_due__lt=now + timedelta(hours=4))).order_by("resolution_due")[:6]
         if user.role != User.REQUESTER else [],
         "recent": visible.order_by("-updated_at")[:6],
+        "greeting": "Good morning" if timezone.localtime().hour < 12 else
+                    "Good afternoon" if timezone.localtime().hour < 17 else "Good evening",
+        "mine_open_count": mine_open.count(),
     }
     return render(request, "home.html", ctx)
 
@@ -68,8 +71,10 @@ def home(request):
 # --------------------------------------------------------------------------
 # Raise a ticket
 # --------------------------------------------------------------------------
-def _raise_context(user):
+def _raise_context(user, equipment=None):
     centres = list(user.centres.filter(active=True)) or list(Centre.objects.filter(active=True))
+    if equipment is not None and equipment.centre not in centres:
+        centres.append(equipment.centre)  # scanned a machine at another centre
     cats = Category.objects.filter(active=True, department__active=True).select_related("department").prefetch_related("fields")
     meta = {str(c.pk): {
         "department": c.department.name, "priority": c.get_default_priority_display(),
@@ -92,7 +97,17 @@ def ticket_new(request):
     user = request.user
     if user.role == User.MANAGEMENT and not user.is_superuser:
         raise PermissionDenied
-    ctx = _raise_context(user)
+    scanned = None
+    if (request.GET.get("equipment") or "").isdigit():
+        scanned = Equipment.objects.filter(pk=int(request.GET["equipment"]), active=True).select_related("centre").first()
+    ctx = _raise_context(user, scanned)
+    if scanned and request.method != "POST":
+        word = scanned.name.split()[0].lower()
+        cats = Category.objects.filter(active=True, asks_equipment=True)
+        guess = next((c for c in cats if c.name.lower().startswith(word)), None) or cats.first()
+        ctx["posted"] = {"centre": str(scanned.centre_id), "equipment": str(scanned.pk),
+                         "category": str(guess.pk) if guess else ""}
+        ctx["scanned"] = scanned
     if request.method == "POST":
         p = request.POST
         errors = []
@@ -280,6 +295,16 @@ def board(request):
 # --------------------------------------------------------------------------
 # One ticket
 # --------------------------------------------------------------------------
+def _when(value):
+    """A date and time typed into a form, or None for 'now'."""
+    if not value:
+        return None
+    try:
+        return timezone.make_aware(datetime.strptime(value, "%Y-%m-%dT%H:%M"))
+    except ValueError:
+        raise services.NotAllowed("Enter a valid date and time.")
+
+
 def _get_ticket(user, number):
     return get_object_or_404(services.visible_tickets(user), number=number.upper())
 
@@ -297,6 +322,11 @@ def ticket_detail(request, number):
         timeline.append({"kind": "comment", "at": c.created_at, "o": c})
     timeline.sort(key=lambda x: x["at"])
     Notification.objects.filter(user=user, ticket=t, read=False).update(read=True)
+    now = timezone.now()
+    for item in timeline:
+        if item["kind"] == "comment":
+            c = item["o"]
+            c.can_edit = c.author_id == user.pk and now - c.created_at <= services.EDIT_WINDOW
     downtime = getattr(t, "downtime", None)
     agents = services.candidate_agents(t.department, t.centre) if "assign" in can else []
     if "assign" in can and t.department.head and t.department.head not in agents:
@@ -309,7 +339,15 @@ def ticket_detail(request, number):
         "now_local": timezone.localtime().strftime("%Y-%m-%dT%H:%M"),
         "response_state": ("met" if t.first_response_at and not t.response_breached else
                            "missed" if t.response_breached else "running"),
+        "comment_count": sum(1 for i in timeline if i["kind"] == "comment"),
+        "history_count": sum(1 for i in timeline if i["kind"] == "event"),
+        "transitions": [a for a in ("start", "resume", "hold", "resolve", "close", "reopen", "cancel") if a in can],
+        "vendor_calls": t.vendor_calls.select_related("vendor", "logged_by") if t.equipment_id else [],
+        "can_vendor": services.can_log_vendor(user, t) and t.is_open,
+        "vendors": Vendor.objects.all() if t.equipment_id else [],
     }
+    if request.GET.get("preview"):
+        return render(request, "_ticket_preview.html", ctx)
     return render(request, "ticket_detail.html", ctx)
 
 
@@ -323,6 +361,24 @@ def ticket_action(request, number, action):
         if action == "start":
             services.start_work(t, user)
             ok = "Work started."
+        elif action == "assign_me":
+            if "assign_me" not in services.allowed_actions(user, t):
+                raise services.NotAllowed("You cannot take this ticket.")
+            services.assign(t, user, user, check=False)
+            ok = "The ticket is now assigned to you."
+        elif action == "vendor_call":
+            vendor = get_object_or_404(Vendor, pk=p.get("vendor") or 0)
+            services.log_vendor_call(t, user, vendor, p.get("reference", ""), _when(p.get("called_at")),
+                                     p.get("note", ""))
+            ok = f"Call to {vendor.name} logged."
+        elif action == "vendor_attended":
+            call = get_object_or_404(VendorCall, pk=p.get("call") or 0, ticket=t)
+            services.vendor_attended(call, user, p.get("engineer", ""), _when(p.get("attended_at")), p.get("note", ""))
+            ok = "Engineer visit recorded."
+        elif action == "edit_comment":
+            c = get_object_or_404(TicketComment, pk=p.get("comment") or 0, ticket=t)
+            services.edit_comment(c, user, p.get("body", ""))
+            ok = "Comment updated."
         elif action == "assign":
             agent = get_object_or_404(User, pk=p.get("assignee") or 0, is_active=True)
             services.assign(t, user, agent)
@@ -386,8 +442,8 @@ def attachment(request, pk):
             and not request.user.sees_everything:
         raise Http404
     try:
-        return FileResponse(a.file.open("rb"), filename=a.name, as_attachment=not a.is_image
-                            and not a.name.lower().endswith(".pdf"))
+        return _safe(FileResponse(a.file.open("rb"), filename=a.name, as_attachment=not a.is_image
+                                  and not a.name.lower().endswith(".pdf")))
     except FileNotFoundError:
         raise Http404
 
@@ -410,9 +466,16 @@ def equipment_list(request):
     for e in items:
         e.stats = reports.equipment_uptime(e)
         e.open_tickets = e.tickets.filter(status__in=OPEN_STATUSES).count()
+    scope = None if user.sees_everything or not user.centres.exists() else user.centres.all()
+    tab = request.GET.get("tab") if request.GET.get("tab") in ("faults", "vendors", "amc") else "machines"
+    visible = services.visible_tickets(user)
+    faults = reports.repeat_faults(visible)
     return render(request, "equipment_list.html", {
-        "items": items, "centres": Centre.objects.filter(active=True), "q": q,
-        "down_count": sum(1 for e in items if e.stats["is_down"])})
+        "items": items, "centres": Centre.objects.filter(active=True), "q": q, "tab": tab,
+        "down_count": sum(1 for e in items if e.stats["is_down"]),
+        "faults": faults, "fault_ids": {f["equipment"].pk for f in faults},
+        "vendors": reports.vendor_performance(centres=scope),
+        "amc": reports.amc_due(scope, max(SiteSettings.load().amc_alert_days, 30))})
 
 
 @not_requester
@@ -421,6 +484,8 @@ def equipment_detail(request, pk):
     tickets = services.visible_tickets(request.user).filter(equipment=e).order_by("-created_at")[:50]
     return render(request, "equipment_detail.html", {
         "e": e, "stats": reports.equipment_uptime(e), "stats90": reports.equipment_uptime(e, 90),
+        "calls": VendorCall.objects.filter(ticket__equipment=e).select_related("vendor", "ticket")[:20],
+        "amc_left": (e.amc_expiry - timezone.localdate()).days if e.amc_expiry else None,
         "tickets": tickets, "downtime": DowntimeLog.objects.filter(equipment=e).select_related("ticket")[:30]})
 
 
@@ -471,6 +536,7 @@ class SettingsForm(forms.ModelForm):
         model = SiteSettings
         fields = "__all__"
         widgets = {
+            "brand_color": forms.TextInput(attrs={"type": "color"}),
             "smtp_password": forms.PasswordInput(render_value=True),
             "sms_headers": forms.Textarea(attrs={"rows": 2}), "sms_body": forms.Textarea(attrs={"rows": 2}),
             "whatsapp_headers": forms.Textarea(attrs={"rows": 2}),
@@ -512,7 +578,7 @@ def _health():
 @admin_only
 def settings_view(request):
     s = SiteSettings.load()
-    form = SettingsForm(request.POST or None, instance=s)
+    form = SettingsForm(request.POST or None, request.FILES or None, instance=s)
     if request.method == "POST":
         if "test" in request.POST:
             channel = request.POST["test"]
@@ -557,3 +623,147 @@ def error_403(request, exception=None):
 def error_404(request, exception=None):
     return render(request, "error.html", {"code": 404, "title": "That page or ticket was not found",
                                           "text": "It may belong to a centre or department you do not cover."}, status=404)
+
+
+# --------------------------------------------------------------------------
+# Centre matrix
+# --------------------------------------------------------------------------
+@not_requester
+def centres(request):
+    user = request.user
+    qs = services.visible_tickets(user)
+    if user.sees_everything or user.role == User.DEPT_HEAD or not user.centres.exists():
+        cs = Centre.objects.filter(active=True)
+    else:
+        cs = user.centres.filter(active=True)
+    if request.GET.get("department", "").isdigit():
+        qs = qs.filter(department_id=int(request.GET["department"]))
+    days = int(request.GET["days"]) if request.GET.get("days") in ("7", "30", "90") else 30
+    return render(request, "centres.html", {"m": reports.centre_matrix(qs, list(cs), days),
+                                            "departments": Department.objects.filter(active=True)})
+
+
+# --------------------------------------------------------------------------
+# QR labels for equipment
+# --------------------------------------------------------------------------
+def _qr_target(request, e):
+    base = SiteSettings.load().site_url.rstrip("/") or request.build_absolute_uri("/").rstrip("/")
+    return f"{base}/tickets/new/?equipment={e.pk}"
+
+
+@not_requester
+def equipment_qr(request, pk):
+    import segno
+    e = get_object_or_404(Equipment, pk=pk)
+    out = segno.make(_qr_target(request, e), error="m").svg_inline(scale=6, border=2, dark="#0d1b2e")
+    return HttpResponse(out, content_type="image/svg+xml")
+
+
+@not_requester
+def equipment_labels(request):
+    items = Equipment.objects.filter(active=True).select_related("centre")
+    if request.GET.get("centre", "").isdigit():
+        items = items.filter(centre_id=int(request.GET["centre"]))
+    if request.GET.get("id", "").isdigit():
+        items = items.filter(pk=int(request.GET["id"]))
+    return render(request, "equipment_labels.html", {"items": items})
+
+
+# --------------------------------------------------------------------------
+# Small data feeds for the live screen, search and @mentions
+# --------------------------------------------------------------------------
+@login_required
+def api_live(request):
+    """New alerts since the last one the screen has seen. Polled every 15 seconds."""
+    after = int(request.GET.get("after") or 0)
+    items = []
+    for n in Notification.objects.filter(user=request.user, pk__gt=after).select_related("ticket").order_by("pk")[:10]:
+        items.append({"id": n.pk, "kind": n.kind, "title": n.title, "body": n.body, "urgent": n.urgent,
+                      "url": f"/alerts/{n.pk}/", "number": n.ticket.number if n.ticket else "",
+                      "priority": n.ticket.priority if n.ticket else ""})
+    last = Notification.objects.filter(user=request.user).order_by("-pk").values_list("pk", flat=True).first() or 0
+    return JsonResponse({"unread": Notification.objects.filter(user=request.user, read=False).count(),
+                         "items": items, "last": last})
+
+
+@login_required
+def api_search(request):
+    q = request.GET.get("q", "").strip()
+    out = []
+    if len(q) >= 2:
+        qs = services.visible_tickets(request.user).filter(
+            Q(number__icontains=q) | Q(subject__icontains=q) | Q(equipment__name__icontains=q)).order_by("-created_at")[:8]
+        out = [{"number": t.number, "subject": t.subject, "status": t.get_status_display(), "priority": t.priority,
+                "meta": f"{t.centre.name}, {t.department.name}"} for t in qs]
+    return JsonResponse({"tickets": out})
+
+
+@login_required
+def api_people(request):
+    q = request.GET.get("q", "").strip()
+    qs = User.objects.filter(is_active=True)
+    if q:
+        qs = qs.filter(Q(username__istartswith=q) | Q(first_name__istartswith=q) | Q(last_name__istartswith=q))
+    return JsonResponse({"people": [{"username": u.username, "name": u.display_name, "initials": u.initials,
+                                     "hue": u.hue, "role": u.role_label} for u in qs.order_by("first_name")[:8]]})
+
+
+# --------------------------------------------------------------------------
+# Branding and profile photos
+# --------------------------------------------------------------------------
+SAFE_FILE_HEADERS = {"Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
+                     "X-Content-Type-Options": "nosniff"}
+
+
+def _safe(resp):
+    """Files people upload are shown as files only: no scripts can run from them."""
+    for k, v in SAFE_FILE_HEADERS.items():
+        resp[k] = v
+    return resp
+
+
+def brand_logo(request):
+    s = SiteSettings.load()
+    if not s.logo:
+        raise Http404
+    try:
+        return _safe(FileResponse(s.logo.open("rb")))
+    except FileNotFoundError:
+        raise Http404
+
+
+@login_required
+def person_photo(request, pk):
+    u = get_object_or_404(User, pk=pk)
+    if not u.photo:
+        raise Http404
+    try:
+        return _safe(FileResponse(u.photo.open("rb")))
+    except FileNotFoundError:
+        raise Http404
+
+
+class ProfileForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ["first_name", "last_name", "email", "mobile", "photo"]
+
+
+@login_required
+def profile(request):
+    form = ProfileForm(request.POST or None, request.FILES or None, instance=request.user)
+    if request.method == "POST":
+        if request.POST.get("remove_photo"):
+            request.user.photo = ""
+            request.user.save(update_fields=["photo"])
+            messages.success(request, "Photo removed.")
+            return redirect("profile")
+        if form.is_valid():
+            f = request.FILES.get("photo")
+            if f and (f.size > 3 * 1024 * 1024 or f.name.lower().rsplit(".", 1)[-1] not in ("jpg", "jpeg", "png", "webp")):
+                form.add_error("photo", "Choose a JPG, PNG or WEBP image smaller than 3 MB.")
+            else:
+                form.save()
+                messages.success(request, "Profile saved.")
+                return redirect("profile")
+    return render(request, "profile.html", {"form": form})

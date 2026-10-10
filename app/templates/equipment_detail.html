@@ -3,7 +3,8 @@
 {% block content %}
 <nav class="crumbs"><a href="{% url 'equipment_list' %}">Equipment</a>{% icon 'chevron-right' %}<span>{{ e.name }}</span></nav>
 <div class="page-head"><div><h1>{{ e.name }}</h1><p class="sub">{{ e.centre.name }}{% if e.make %}, {{ e.make }} {{ e.model }}{% endif %}{% if e.serial_no %}, serial {{ e.serial_no }}{% endif %}</p></div>
-  {% if stats.is_down %}<span class="status status-down status-l">Down right now</span>{% else %}<span class="status status-up status-l">Working</span>{% endif %}</div>
+  <div class="head-actions">{% if stats.is_down %}<span class="status status-down status-l">Down right now</span>{% else %}<span class="status status-up status-l">Working</span>{% endif %}
+  <a class="btn" href="{% url 'equipment_labels' %}?id={{ e.pk }}" target="_blank">{% icon 'scan-line' %}Print QR label</a></div></div>
 <section class="band">
   <div class="band-cell {% if stats.uptime_pct < 95 %}is-warn{% endif %}"><span class="band-n">{{ stats.uptime_pct }}%</span><span class="band-l">Uptime, 30 days</span></div>
   <div class="band-cell"><span class="band-n">{{ stats.down_seconds|span }}</span><span class="band-l">Downtime, 30 days</span></div>
@@ -20,8 +21,13 @@
       {% for x in downtime %}<tr><td>{{ x.start|date:"d M, H:i" }}</td><td>{% if x.end %}{{ x.end|date:"d M, H:i" }}{% else %}<span class="bad-text">Still down</span>{% endif %}</td><td class="num-col">{{ x.seconds|span }}</td><td><a class="num" href="{% url 'ticket_detail' x.ticket.number %}">{{ x.ticket.number }}</a></td></tr>{% endfor %}
       </tbody></table>{% else %}<p class="empty">No downtime recorded.</p>{% endif %}
     </section>
+    <section class="panel"><header><h2>Vendor calls</h2></header>
+      {% if calls %}<table class="table table-s"><thead><tr><th>Called</th><th>Vendor</th><th class="num-col">Arrived after</th><th>Ticket</th></tr></thead><tbody>
+      {% for c in calls %}<tr><td>{{ c.called_at|date:"d M, H:i" }}</td><td>{{ c.vendor.name }}</td><td class="num-col">{% if c.attended_at %}{{ c.response_seconds|span }}{% else %}<span class="bad-text">Waiting</span>{% endif %}</td><td><a class="num" href="{% url 'ticket_detail' c.ticket.number %}">{{ c.ticket.number }}</a></td></tr>{% endfor %}
+      </tbody></table>{% else %}<p class="empty">No vendor calls logged.</p>{% endif %}
+    </section>
     <section class="panel"><header><h2>Service vendor</h2></header>
-      {% if e.vendor %}<dl class="kv"><div><dt>Vendor</dt><dd>{{ e.vendor.name }}</dd></div>{% if e.vendor.phone %}<div><dt>Phone</dt><dd>{{ e.vendor.phone }}</dd></div>{% endif %}{% if e.amc_expiry %}<div><dt>AMC until</dt><dd>{{ e.amc_expiry|date:"d M Y" }}</dd></div>{% endif %}</dl>
+      {% if e.vendor %}<dl class="kv"><div><dt>Vendor</dt><dd>{{ e.vendor.name }}</dd></div>{% if e.vendor.phone %}<div><dt>Phone</dt><dd>{{ e.vendor.phone }}</dd></div>{% endif %}{% if e.amc_expiry %}<div><dt>AMC until</dt><dd>{{ e.amc_expiry|date:"d M Y" }}{% if amc_left is not None and amc_left < 0 %} <span class="bad-text">Ended</span>{% elif amc_left is not None and amc_left <= 60 %} <span class="warn-text">{{ amc_left }} days left</span>{% endif %}</dd></div>{% endif %}</dl>
       {% else %}<p class="empty">No vendor recorded.</p>{% endif %}
     </section>
   </div>

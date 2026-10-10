@@ -21,7 +21,7 @@
           <span class="card-title">{{ t.subject }}</span>
           <span class="row-meta">{{ t.centre.name }}, {{ t.department.name }}</span>
         </a>
-        <footer>{% if t.assignee %}<span class="person"><span class="avatar avatar-s">{{ t.assignee.initials }}</span>{{ t.assignee.first_name }}</span>{% else %}<span class="muted">Unassigned</span>{% endif %}{% if col.key != 'resolved' %}{% sla t True %}{% endif %}</footer>
+        <footer>{% if t.assignee %}<span class="person">{% avatar t.assignee 's' %}{{ t.assignee.first_name }}</span>{% else %}<span class="muted">Unassigned</span>{% endif %}{% if col.key != 'resolved' %}{% sla t True %}{% endif %}</footer>
       </article>
       {% empty %}<p class="empty-s">Nothing here.</p>{% endfor %}
     </div>

@@ -2,28 +2,79 @@
 {% block title %}Equipment{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Equipment</h1><p class="sub">{{ items|length }} item{{ items|length|pluralize }}{% if down_count %}, <span class="bad-text">{{ down_count }} down right now</span>{% else %}, all working{% endif %}. Uptime is for the last 30 days.</p></div>
-  <form class="filters filters-inline" method="get" data-autosubmit>
-    <input type="search" name="q" value="{{ q }}" placeholder="Name, make or serial" aria-label="Search equipment">
-    <select name="centre" aria-label="Centre"><option value="">All centres</option>{% for c in centres %}<option value="{{ c.pk }}" {% if request.GET.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
-  </form>
+  <div><h1>Equipment</h1><p class="sub">{{ items|length }} machine{{ items|length|pluralize }}{% if down_count %}, <span class="bad-text">{{ down_count }} down right now</span>{% else %}, all working{% endif %}. Uptime is for the last 30 days.</p></div>
+  <div class="head-actions"><a class="btn" href="{% url 'equipment_labels' %}{% if request.GET.centre %}?centre={{ request.GET.centre }}{% endif %}" target="_blank">{% icon 'scan-line' %}Print QR labels</a></div>
 </div>
+
+<div class="tabs" role="tablist">
+  <a role="tab" href="?tab=machines" {% if tab == 'machines' %}aria-selected="true"{% endif %}>Machines</a>
+  <a role="tab" href="?tab=faults" {% if tab == 'faults' %}aria-selected="true"{% endif %}>Repeat faults{% if faults %} <span class="count">{{ faults|length }}</span>{% endif %}</a>
+  <a role="tab" href="?tab=vendors" {% if tab == 'vendors' %}aria-selected="true"{% endif %}>Vendor response</a>
+  <a role="tab" href="?tab=amc" {% if tab == 'amc' %}aria-selected="true"{% endif %}>AMC renewals{% if amc %} <span class="count count-warn">{{ amc|length }}</span>{% endif %}</a>
+</div>
+
+{% if tab == 'machines' %}
+<form class="filters" method="get" data-autosubmit>
+  <input type="hidden" name="tab" value="machines">
+  <input type="search" name="q" value="{{ q }}" placeholder="Name, make or serial" aria-label="Search equipment">
+  <select name="centre" aria-label="Centre"><option value="">All centres</option>{% for c in centres %}<option value="{{ c.pk }}" {% if request.GET.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+</form>
 {% if items %}
 <div class="table-wrap"><table class="table">
-  <thead><tr><th>Equipment</th><th>Centre</th><th>Make and model</th><th>Serial</th><th>State</th><th class="num-col">Uptime</th><th class="num-col">Downtime</th><th class="num-col">Open tickets</th></tr></thead>
+  <thead><tr><th>Equipment</th><th>Centre</th><th>Make and model</th><th>State</th><th>Uptime, 30 days</th><th class="num-col">Downtime</th><th class="num-col">Open tickets</th><th>AMC until</th></tr></thead>
   <tbody>{% for e in items %}
   <tr data-href="{% url 'equipment_detail' e.pk %}">
-    <td class="cell-title"><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a></td>
+    <td class="cell-title"><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a>{% if e.pk in fault_ids %}<small class="warn-text">{% icon 'triangle-alert' %} Repeat faults</small>{% else %}<small>{{ e.serial_no }}</small>{% endif %}</td>
     <td data-l="Centre">{{ e.centre.name }}</td>
     <td data-l="Make and model">{{ e.make }} {{ e.model }}</td>
-    <td data-l="Serial" class="muted">{{ e.serial_no|default:"" }}</td>
     <td data-l="State">{% if e.stats.is_down %}<span class="status status-down">Down</span>{% else %}<span class="status status-up">Working</span>{% endif %}</td>
-    <td data-l="Uptime" class="num-col">{{ e.stats.uptime_pct }}%</td>
+    <td data-l="Uptime">{% if e.stats.uptime_pct >= 98 %}{% include "_meter.html" with pct=e.stats.uptime_pct band="good" %}{% elif e.stats.uptime_pct >= 95 %}{% include "_meter.html" with pct=e.stats.uptime_pct band="fair" %}{% else %}{% include "_meter.html" with pct=e.stats.uptime_pct band="bad" %}{% endif %}</td>
     <td data-l="Downtime" class="num-col">{% if e.stats.down_seconds %}{{ e.stats.down_seconds|span }}{% else %}<span class="muted">None</span>{% endif %}</td>
     <td data-l="Open tickets" class="num-col">{{ e.open_tickets }}</td>
+    <td data-l="AMC until">{% if e.amc_expiry %}{{ e.amc_expiry|date:"d M Y" }}{% else %}<span class="muted">Not recorded</span>{% endif %}</td>
   </tr>{% endfor %}</tbody>
 </table></div>
 {% else %}
 <div class="empty-big">{% icon 'scan-line' %}<h2>No equipment found</h2><p>{% if request.user.is_admin %}Add equipment under Masters and rules.{% else %}Ask the administrator to add equipment for your centre.{% endif %}</p></div>
+{% endif %}
+
+{% elif tab == 'faults' %}
+<p class="sub tab-intro">Machines with 3 or more tickets in the last 90 days. Worth a root-cause review with the vendor.</p>
+{% if faults %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>Equipment</th><th>Centre</th><th class="num-col">Tickets in 90 days</th><th></th></tr></thead>
+  <tbody>{% for f in faults %}<tr data-href="{% url 'equipment_detail' f.equipment.pk %}">
+    <td class="cell-title"><a href="{% url 'equipment_detail' f.equipment.pk %}">{{ f.equipment.name }}</a><small>{{ f.equipment.make }} {{ f.equipment.model }}</small></td>
+    <td data-l="Centre">{{ f.equipment.centre.name }}</td>
+    <td data-l="Tickets" class="num-col"><b>{{ f.n }}</b></td>
+    <td><a href="{% url 'ticket_list' %}?view=all&state=any&equipment={{ f.equipment.pk }}">See the tickets</a></td>
+  </tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="empty-big">{% icon 'circle-check' %}<h2>No repeat faults</h2><p>No machine has had 3 or more tickets in the last 90 days.</p></div>{% endif %}
+
+{% elif tab == 'vendors' %}
+<p class="sub tab-intro">Vendor calls logged on tickets in the last 90 days, slowest average response first.</p>
+{% if vendors %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>Vendor</th><th class="num-col">Calls</th><th class="num-col">Attended</th><th class="num-col">Still waiting</th><th class="num-col">Average time to arrive</th><th>Contact</th></tr></thead>
+  <tbody>{% for v in vendors %}<tr>
+    <td class="cell-title">{{ v.vendor.name }}</td>
+    <td data-l="Calls" class="num-col">{{ v.calls }}</td>
+    <td data-l="Attended" class="num-col">{{ v.attended }}</td>
+    <td data-l="Still waiting" class="num-col {% if v.waiting %}bad-text{% endif %}">{{ v.waiting }}</td>
+    <td data-l="Average" class="num-col">{% if v.avg_hours is None %}<span class="muted">-</span>{% else %}{{ v.avg_hours }} h{% endif %}</td>
+    <td data-l="Contact">{{ v.vendor.phone|default:"" }}</td>
+  </tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="empty-big">{% icon 'wrench' %}<h2>No vendor calls yet</h2><p>On an equipment ticket, use Log vendor call when you call the service company. Their response times appear here.</p></div>{% endif %}
+
+{% else %}
+<p class="sub tab-intro">Service contracts ending within {{ cfg.amc_alert_days }} days, or already ended. The equipment department head and administrators are alerted {{ cfg.amc_alert_days }}, 30 and 7 days before.</p>
+{% if amc %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>Equipment</th><th>Centre</th><th>Vendor</th><th>AMC until</th><th class="num-col">Days left</th></tr></thead>
+  <tbody>{% for e in amc %}<tr data-href="{% url 'equipment_detail' e.pk %}">
+    <td class="cell-title"><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a></td>
+    <td data-l="Centre">{{ e.centre.name }}</td>
+    <td data-l="Vendor">{{ e.vendor.name|default:"Not recorded" }}</td>
+    <td data-l="AMC until">{{ e.amc_expiry|date:"d M Y" }}</td>
+    <td data-l="Days left" class="num-col">{% if e.days_left < 0 %}<span class="bad-text">Ended</span>{% elif e.days_left <= 30 %}<span class="warn-text">{{ e.days_left }}</span>{% else %}{{ e.days_left }}{% endif %}</td>
+  </tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="empty-big">{% icon 'circle-check' %}<h2>No renewals due</h2><p>No service contract ends in the next {{ cfg.amc_alert_days }} days.</p></div>{% endif %}
 {% endif %}
 {% endblock %}

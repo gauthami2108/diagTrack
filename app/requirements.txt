@@ -2,3 +2,4 @@ Django==6.1.1
 psycopg[binary]==3.3.6
 gunicorn==26.2.0
 whitenoise==6.12.0
+segno==1.6.6

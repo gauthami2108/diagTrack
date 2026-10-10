@@ -4,6 +4,7 @@
 <div class="page-head"><div><h1>Raise a ticket</h1><p class="sub">Pick what the issue is about. It goes to the right team by itself.</p></div></div>
 <form class="form-card" method="post" enctype="multipart/form-data" novalidate data-raise>
   {% csrf_token %}
+  {% if scanned %}<div class="callout callout-info">{% icon 'scan-line' %}<div><strong>{{ scanned.name }} at {{ scanned.centre.name }}</strong><br>Scanned from the machine's label. Check the category and describe the fault.</div></div>{% endif %}
   {% if errors %}<div class="callout callout-bad" role="alert">{% icon 'circle-alert' %}<div><strong>The ticket was not raised.</strong><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div></div>{% endif %}
   <div class="field-row">
     <label class="field"><span>Centre</span>

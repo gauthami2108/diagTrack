@@ -23,8 +23,9 @@ def ticket_url(ticket, settings=None):
     return f"{settings.site_url.rstrip('/')}/tickets/{ticket.number}/"
 
 
-def notify(users, ticket, title, body="", urgent=False, exclude=None):
-    """Alert each user once. SMS and WhatsApp are used only for urgent alerts."""
+def notify(users, ticket, title, body="", urgent=False, exclude=None, kind="other", link=""):
+    """Alert each user once. SMS and WhatsApp are used only for urgent alerts.
+    kind tells the screen how to show the pop-up (raised, closed, escalation and so on)."""
     s = SiteSettings.load()
     seen = set()
     for user in users:
@@ -34,14 +35,14 @@ def notify(users, ticket, title, body="", urgent=False, exclude=None):
             continue
         seen.add(user.pk)
         if s.inapp_enabled:
-            Notification.objects.create(user=user, ticket=ticket, title=title[:200],
-                                        body=body[:400], urgent=urgent)
+            Notification.objects.create(user=user, ticket=ticket, title=title[:200], body=body[:400],
+                                        urgent=urgent, kind=kind, link=link[:200])
         text = f"{title}\n{body}".strip()
         if s.email_enabled and user.email:
-            link = f"\n\nOpen the ticket: {ticket_url(ticket, s)}" if ticket and s.site_url else ""
+            more = f"\n\nOpen the ticket: {ticket_url(ticket, s)}" if ticket and s.site_url else ""
             OutboundMessage.objects.create(
                 channel=OutboundMessage.EMAIL, to=user.email,
-                subject=f"[{s.org_name}] {title}"[:200], body=text + link)
+                subject=f"[{s.org_name}] {title}"[:200], body=text + more)
         if urgent and user.mobile:
             if s.sms_enabled:
                 OutboundMessage.objects.create(channel=OutboundMessage.SMS, to=user.mobile, body=text[:300])

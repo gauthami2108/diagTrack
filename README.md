@@ -3,9 +3,14 @@
 Internal ticketing and SLA tracking for diagnostic centres. Runs on your own server
 in Docker, with all data on local disk and a nightly backup to your NAS.
 
-**Phase 1 (this package):** raise, route, assign, transfer, hold, resolve and close tickets;
-SLA timers and escalation; in-app, email, SMS and WhatsApp alerts with on/off switches;
-equipment register with downtime; board, dashboard and Excel export; administration screens.
+**What it does**
+
+- Raise, route, assign, transfer, hold, resolve and close tickets, with SLA timers and escalation.
+- A Jira-style ticket page: status menu, activity with comments and history, formatting, @mentions, edits.
+- Live pop-ups when tickets are raised, closed or escalated; in-app, email, SMS and WhatsApp alerts with on/off switches.
+- Centres matrix: load, SLA performance and equipment uptime for every centre side by side.
+- Equipment register with downtime, vendor call log and response times, AMC renewal alerts, repeat-fault list and QR labels.
+- Board, dashboard, command palette (Ctrl K), ticket preview, light and dark themes, your own logo and brand colour.
 
 ## Start here
 

@@ -1,0 +1,84 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Centres{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Centres</h1><p class="sub">Every centre side by side: load right now, and service levels over the last {{ m.days }} days. Select a centre or a cell to open its tickets.</p></div>
+  <form class="filters filters-inline" method="get" data-autosubmit>
+    <div class="seg" role="group" aria-label="Period">
+      <label><input type="radio" name="days" value="7" {% if m.days == 7 %}checked{% endif %}><span>7 days</span></label>
+      <label><input type="radio" name="days" value="30" {% if m.days == 30 %}checked{% endif %}><span>30 days</span></label>
+      <label><input type="radio" name="days" value="90" {% if m.days == 90 %}checked{% endif %}><span>90 days</span></label>
+    </div>
+    <select name="department" aria-label="Department"><option value="">All departments</option>{% for d in departments %}<option value="{{ d.pk }}" {% if request.GET.department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
+  </form>
+</div>
+
+<section class="band" aria-label="All centres together">
+  <div class="band-cell"><span class="band-n" data-count>{{ m.rows|length }}</span><span class="band-l">Centres</span></div>
+  <div class="band-cell"><span class="band-n" data-count>{{ m.totals.open }}</span><span class="band-l">Open now</span></div>
+  <div class="band-cell {% if m.totals.late %}is-bad{% endif %}"><span class="band-n" data-count>{{ m.totals.late }}</span><span class="band-l">Past the deadline</span></div>
+  <div class="band-cell {% if m.totals.p1 %}is-bad{% endif %}"><span class="band-n" data-count>{{ m.totals.p1 }}</span><span class="band-l">P1 open</span></div>
+  <div class="band-cell"><span class="band-n">{% if m.totals.sla_pct is None %}-{% else %}<span data-count>{{ m.totals.sla_pct }}</span>%{% endif %}</span><span class="band-l">Resolved in time, all centres</span></div>
+  <div class="band-cell {% if m.totals.down %}is-bad{% endif %}"><span class="band-n" data-count>{{ m.totals.down }}</span><span class="band-l">Machines down</span></div>
+</section>
+
+<section class="panel panel-flush">
+  <header class="panel-pad"><h2>Service matrix</h2><span class="legend"><span><i class="lv lv-good"></i>On target</span><span><i class="lv lv-fair"></i>Watch</span><span><i class="lv lv-bad"></i>Below target</span></span></header>
+  <div class="matrix-wrap">
+  <table class="matrix">
+    <thead>
+      <tr class="grp"><th></th><th colspan="4">Right now</th><th colspan="6">Last {{ m.days }} days</th><th colspan="1">Equipment</th></tr>
+      <tr><th class="sticky">Centre</th><th class="n">Open</th><th class="n">P1</th><th class="n">Late</th><th class="n">Down</th>
+        <th class="n">Raised</th><th class="n">Resolved</th><th>Resolved in time</th><th>Responded in time</th><th class="n">Average to resolve</th><th class="n">Rating</th><th>Uptime</th></tr>
+    </thead>
+    <tbody>
+    {% for r in m.rows %}
+      <tr>
+        <th class="sticky" scope="row"><a href="{% url 'ticket_list' %}?view=all&centre={{ r.centre.pk }}">{{ r.centre.name }}</a><small>{{ r.centre.code }}</small></th>
+        <td class="n"><a href="{% url 'ticket_list' %}?view=all&centre={{ r.centre.pk }}">{{ r.open }}</a></td>
+        <td class="n {% if r.p1 %}hot{% endif %}">{{ r.p1 }}</td>
+        <td class="n {% if r.late %}hot{% endif %}"><a href="{% url 'ticket_list' %}?view=all&centre={{ r.centre.pk }}&sla=breached">{{ r.late }}</a></td>
+        <td class="n {% if r.down %}hot{% endif %}">{{ r.down }}</td>
+        <td class="n">{{ r.raised }}</td>
+        <td class="n">{{ r.resolved }}</td>
+        <td>{% include "_meter.html" with pct=r.sla_pct band=r.sla_band %}</td>
+        <td>{% include "_meter.html" with pct=r.resp_pct band=r.resp_band %}</td>
+        <td class="n">{% if r.avg_hours is None %}<span class="muted">-</span>{% else %}{{ r.avg_hours }} h{% endif %}</td>
+        <td class="n">{% if r.rating %}{{ r.rating }}<span class="muted"> / 5</span>{% else %}<span class="muted">-</span>{% endif %}</td>
+        <td>{% if r.machines %}{% include "_meter.html" with pct=r.uptime band=r.uptime_band %}{% else %}<span class="muted">No machines</span>{% endif %}</td>
+      </tr>
+    {% empty %}<tr><td colspan="12" class="empty-s">No centres yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="panel-note-s">Targets: resolved and responded in time 90% or more, uptime 98% or more. Watch means 75 to 90% (95 to 98% for uptime).</p>
+</section>
+
+<div class="grid-2 grid-even">
+  <section class="panel">
+    <header><h2>Resolved in time, by centre</h2><span class="legend"><span><i class="target-key"></i>Target 90%</span></span></header>
+    {% if m.sla_bars %}
+    <ul class="hbars">
+      {% for r in m.sla_bars %}
+      <li><a href="{% url 'ticket_list' %}?view=all&centre={{ r.centre.pk }}&state=done" title="{{ r.centre.name }}: {{ r.sla_pct }}% of {{ r.resolved }} resolved in time">
+        <span class="bar-label">{{ r.centre.name }}</span>
+        <span class="hbar-track"><span class="hbar-fill lvf-{{ r.sla_band }}" style="width:{{ r.sla_pct }}%"></span><span class="hbar-target" style="left:90%"></span></span>
+        <span class="bar-value">{{ r.sla_pct }}%</span></a></li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="empty">No tickets were resolved in this period.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <header><h2>Open tickets, centre by department</h2></header>
+    {% if m.grid %}
+    <div class="heat-wrap"><table class="heat">
+      <thead><tr><th></th>{% for d in m.depts %}<th><span>{{ d.name }}</span></th>{% endfor %}</tr></thead>
+      <tbody>{% for g in m.grid %}<tr><th scope="row">{{ g.centre.name }}</th>
+        {% for c in g.cells %}<td class="hl-{{ c.level }}">{% if c.n %}<a href="{% url 'ticket_list' %}?view=all&centre={{ g.centre.pk }}&department={{ c.dept.pk }}" title="{{ g.centre.name }}, {{ c.dept.name }}: {{ c.n }} open">{{ c.n }}</a>{% else %}<span aria-label="none"></span>{% endif %}</td>{% endfor %}
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

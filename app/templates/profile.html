@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}My profile{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>My profile</h1><p class="sub">Your photo and contact details. Alerts use your email and mobile number.</p></div></div>
+<form class="form-card narrow" method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+  <div class="profile-photo">
+    {% avatar request.user 'xl' %}
+    <div><label class="btn" data-drop>{% icon 'upload' %}Choose a photo<input type="file" name="photo" accept="image/*"></label>
+      {% if request.user.photo %}<button class="btn btn-ghost" type="submit" name="remove_photo" value="1" formnovalidate>Remove photo</button>{% endif %}
+      <small class="muted">A square photo under 3 MB.</small>{% for e in form.photo.errors %}<small class="bad-text">{{ e }}</small>{% endfor %}</div>
+  </div>
+  <div class="field-row">{% include "_field.html" with f=form.first_name %}{% include "_field.html" with f=form.last_name %}</div>
+  <div class="field-row">{% include "_field.html" with f=form.email %}{% include "_field.html" with f=form.mobile %}</div>
+  <dl class="fields fields-quiet"><div><dt>User name</dt><dd>{{ request.user.username }}</dd></div><div><dt>Role</dt><dd>{{ request.user.role_label }}</dd></div>
+    <div><dt>Centres</dt><dd>{{ request.user.centres.all|join:", "|default:"All" }}</dd></div>{% if request.user.departments.exists %}<div><dt>Departments</dt><dd>{{ request.user.departments.all|join:", " }}</dd></div>{% endif %}</dl>
+  <div class="form-foot"><a class="btn" href="{% url 'password_change' %}">Change password</a><button class="btn btn-primary" type="submit">Save profile</button></div>
+</form>
+{% endblock %}

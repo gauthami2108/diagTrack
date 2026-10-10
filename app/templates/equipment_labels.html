@@ -1,0 +1,14 @@
+{% load static %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>QR labels | DiagTrack</title>
+<link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head><body class="labels-page">
+<div class="labels-bar"><p><b>{{ items|length }} label{{ items|length|pluralize }}.</b> Print on A4, cut along the lines and stick one on each machine. Scanning a label with a phone opens Raise a ticket with the machine already chosen.</p><button class="btn btn-primary" onclick="window.print()">Print</button></div>
+<div class="labels">
+  {% for e in items %}
+  <div class="label">
+    <img src="{% url 'equipment_qr' e.pk %}" alt="QR code for {{ e.name }}">
+    <div><b>{{ e.name }}</b><span>{{ e.centre.name }}</span>{% if e.serial_no %}<small>Serial {{ e.serial_no }}</small>{% endif %}<em>Scan to report a fault</em></div>
+  </div>
+  {% empty %}<p>No equipment to print.</p>{% endfor %}
+</div>
+</body></html>

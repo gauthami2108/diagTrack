@@ -1,0 +1,25 @@
+{% load dt %}
+<header class="drawer-head">
+  <p class="ticket-num"><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>{{ t.number }}</p>
+  <div class="drawer-tools"><a class="btn btn-primary btn-s" href="{% url 'ticket_detail' t.number %}">Open ticket{% icon 'arrow-up-right' %}</a><button class="icon-btn" type="button" data-drawer-close aria-label="Close preview">{% icon 'x' %}</button></div>
+</header>
+<h2 class="drawer-title">{{ t.subject }}</h2>
+<p class="badges"><span class="loz st-{{ t.status }}">{{ t.get_status_display }}</span>{% if t.patient_impact %}<span class="flag">{% icon 'heart-pulse' %}Patients affected</span>{% endif %}</p>
+<section class="side-card sla-card sla-{{ t.sla_state }}">{% sla t %}<small class="muted">Due {{ t.resolution_due|date:"d M, H:i" }}</small></section>
+<dl class="fields">
+  <div><dt>Owner</dt><dd>{% if t.assignee %}<span class="person">{% avatar t.assignee 's' %}{{ t.assignee.display_name }}</span>{% else %}<span class="muted">Unassigned</span>{% endif %}</dd></div>
+  <div><dt>Raised by</dt><dd><span class="person">{% avatar t.requester 's' %}{{ t.requester.display_name }}</span></dd></div>
+  <div><dt>Centre</dt><dd>{{ t.centre.name }}</dd></div>
+  <div><dt>Department</dt><dd>{{ t.department.name }}, {{ t.category.name }}</dd></div>
+  {% if t.equipment %}<div><dt>Equipment</dt><dd>{{ t.equipment.name }}</dd></div>{% endif %}
+  <div><dt>Raised</dt><dd>{{ t.created_at|date:"d M Y, H:i" }}</dd></div>
+</dl>
+<div class="rich drawer-desc">{{ t.description|rich }}</div>
+{% if files %}<div class="thumbs">{% for f in files %}{% include "_file.html" %}{% endfor %}</div>{% endif %}
+<h3 class="drawer-sub">Latest activity</h3>
+<ol class="feed feed-compact">
+  {% for item in timeline|dictsortreversed:"at"|slice:":5" %}
+  {% if item.kind == 'comment' %}<li class="feed-item">{% avatar item.o.author 's' %}<div class="feed-body"><p class="feed-head"><b>{{ item.o.author.display_name }}</b>{% if item.o.internal %}<span class="loz loz-internal">{% icon 'lock' %}Internal</span>{% endif %}<time>{{ item.at|timesince }} ago</time></p><div class="rich">{{ item.o.body|rich|truncatewords_html:40 }}</div></div></li>
+  {% else %}<li class="feed-item is-event">{% if item.o.actor %}{% avatar item.o.actor 's' %}{% else %}<span class="av av-s av-sys">{% icon 'zap' %}</span>{% endif %}<div class="feed-body"><p class="feed-head">{% if item.o.actor %}<b>{{ item.o.actor.display_name }}</b> {{ item.o.text|slice:":1"|lower }}{{ item.o.text|slice:"1:" }}{% else %}{{ item.o.text }}{% endif %}<time>{{ item.at|timesince }} ago</time></p></div></li>{% endif %}
+  {% endfor %}
+</ol>

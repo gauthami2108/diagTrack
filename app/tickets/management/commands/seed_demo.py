@@ -187,6 +187,37 @@ class Command(BaseCommand):
                 with at(confirm):
                     services.close(t, who, rating=rnd.choice([3, 4, 4, 5, 5]))
                 backdate(t, mark, confirm)
+        # equipment pack: vendor calls, a machine with repeat faults, AMC renewals coming up
+        today = timezone.localdate()
+        for i, e in enumerate(Equipment.objects.filter(name__in=["MRI 1.5T", "CT 128 slice"]).order_by("pk")):
+            e.amc_expiry = today + timedelta(days=[-5, 12, 41, 160, 300, 25][i % 6])
+            e.save()
+        ct = Equipment.objects.get(centre=centres[0], name="CT 128 slice")
+        for k, (days_ago, text) in enumerate([(70, "CT gantry error on start"), (38, "CT tube warm-up failing"),
+                                               (9, "CT table not moving")]):
+            when = real_now - timedelta(days=days_ago, hours=k)
+            mark = timezone.now()
+            with at(when):
+                t = services.create_ticket(requesters[0], centres[0], cats["CT fault"], text, text + ".",
+                                           equipment=ct, equipment_down=True, now=when)
+                agent = t.assignee or t.department.head
+                services.start_work(t, agent)
+                call = services.log_vendor_call(t, agent, vendor, f"MS-{4100 + k}")
+            with at(when + timedelta(hours=3 + 2 * k)):
+                services.vendor_attended(call, agent, ["Ramesh", "Kiran", "Ramesh"][k])
+            with at(when + timedelta(hours=5 + 2 * k)):
+                services.resolve(t, agent, "Vendor replaced the faulty board. Test scan done.")
+                services.close(t, requesters[0], rating=4)
+            backdate(t, mark, when)
+            made += 1
+        # a lively conversation on one open ticket, with formatting and a mention
+        live = Ticket.objects.filter(status=Status.IN_PROGRESS).order_by("created_at").first()
+        if live:
+            agent = live.assignee
+            services.add_comment(live, live.requester, "It started again after lunch. The screen shows **E-204** twice.")
+            services.add_comment(live, agent, "Thanks. I checked:\n- power and cables are fine\n- error log points to the controller\n"
+                                 f"@{live.department.head.username} can we get a spare from stores?", internal=True)
+            services.add_comment(live, live.department.head, "Approved. Spare goes out on the evening van.", internal=True)
         services.run_sla_checks()
         Notification.objects.filter(created_at__lt=real_now - timedelta(days=2)).update(read=True)
         self.stdout.write(f"Loaded {len(centres)} centres, {User.objects.count()} users, "

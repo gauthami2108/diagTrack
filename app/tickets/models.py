@@ -125,6 +125,8 @@ class User(AbstractUser):
         Department, blank=True, related_name="members",
         help_text="Only for agents and department heads: the teams they work in.",
     )
+    photo = models.FileField(upload_to="people/", blank=True,
+                             help_text="Optional. A square photo looks best. People can also set this themselves.")
 
     class Meta:
         ordering = ["first_name", "username"]
@@ -137,6 +139,11 @@ class User(AbstractUser):
     def initials(self):
         parts = self.display_name.split()
         return (parts[0][:1] + (parts[-1][:1] if len(parts) > 1 else "")).upper()
+
+    @property
+    def hue(self):
+        """A stable colour for this person's initials, so people are easy to tell apart."""
+        return (self.pk or 0) * 47 % 360
 
     @property
     def role_label(self):
@@ -181,6 +188,8 @@ class Equipment(models.Model):
     vendor = models.ForeignKey(Vendor, null=True, blank=True, on_delete=models.SET_NULL)
     amc_expiry = models.DateField("AMC expiry date", null=True, blank=True)
     active = models.BooleanField(default=True)
+    amc_alert_for = models.DateField(null=True, blank=True, editable=False)
+    amc_alert_stage = models.PositiveSmallIntegerField(default=0, editable=False)
 
     class Meta:
         ordering = ["centre__name", "name"]
@@ -345,6 +354,7 @@ class TicketComment(models.Model):
     body = models.TextField()
     internal = models.BooleanField(default=False)
     created_at = models.DateTimeField(default=timezone.now)
+    edited_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["created_at"]
@@ -398,6 +408,25 @@ class DowntimeLog(models.Model):
         return max(0, (end - start).total_seconds())
 
 
+class VendorCall(models.Model):
+    """A service call to an outside vendor for a ticket, to measure how fast vendors respond."""
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="vendor_calls")
+    vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name="calls")
+    called_at = models.DateTimeField()
+    reference = models.CharField("vendor's complaint number", max_length=60, blank=True)
+    engineer = models.CharField(max_length=80, blank=True)
+    attended_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    logged_by = models.ForeignKey(User, on_delete=models.PROTECT)
+
+    class Meta:
+        ordering = ["-called_at"]
+
+    def response_seconds(self, now=None):
+        end = self.attended_at or now or timezone.now()
+        return max(0, (end - self.called_at).total_seconds())
+
+
 class EscalationLog(models.Model):
     ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="escalations")
     rule = models.ForeignKey(EscalationRule, on_delete=models.CASCADE)
@@ -411,8 +440,12 @@ class EscalationLog(models.Model):
 # Alerts
 # --------------------------------------------------------------------------
 class Notification(models.Model):
+    KINDS = ["raised", "assigned", "started", "hold", "resolved", "closed", "reopened", "cancelled",
+             "transferred", "priority", "reply", "note", "mention", "escalation", "vendor", "amc", "other"]
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
     ticket = models.ForeignKey(Ticket, null=True, blank=True, on_delete=models.CASCADE)
+    kind = models.CharField(max_length=12, default="other")
+    link = models.CharField(max_length=200, blank=True)
     title = models.CharField(max_length=200)
     body = models.CharField(max_length=400, blank=True)
     urgent = models.BooleanField(default=False)
@@ -448,13 +481,22 @@ class SiteSettings(models.Model):
     org_name = models.CharField("organisation name", max_length=120, default="DiagTrack")
     site_url = models.CharField(
         "address of this system", max_length=200, blank=True,
-        help_text="Used for links in emails, for example http://diagtrack.local")
+        help_text="Used for links in emails and on equipment QR labels, for example http://diagtrack.local")
+    logo = models.FileField(upload_to="brand/", blank=True,
+                            help_text="Your logo, shown in the menu and on the sign-in page. PNG or SVG, ideally square.")
+    brand_color = models.CharField(
+        "brand colour", max_length=7, default="#2a5bd7",
+        validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Use a colour code like #2a5bd7.")],
+        help_text="Used for buttons and highlights. Choose a medium-dark colour so white text on it stays readable.")
 
     inapp_enabled = models.BooleanField("In-app alerts (bell)", default=True)
     email_enabled = models.BooleanField("Email alerts", default=False)
     sms_enabled = models.BooleanField("SMS alerts", default=False)
     whatsapp_enabled = models.BooleanField("WhatsApp alerts", default=False)
     area_manager_all = models.BooleanField("Alert the area manager on every new ticket", default=True)
+    managers_on_close = models.BooleanField("Alert centre and area managers when a ticket is closed", default=True)
+    popups_enabled = models.BooleanField("Pop-up messages on screen", default=True)
+    amc_alert_days = models.PositiveSmallIntegerField("warn about AMC expiry (days before)", default=60)
 
     auto_close_days = models.PositiveSmallIntegerField("close resolved tickets after (days)", default=3)
     reopen_days = models.PositiveSmallIntegerField("allow reopening for (days)", default=7)

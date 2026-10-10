@@ -4,6 +4,7 @@ The ticket engine: routing, assignment, status changes, SLA clock, escalation.
 Screens call these functions; nothing else changes a ticket. Every change is
 written to TicketHistory (the audit trail) and raises the right alerts.
 """
+import re
 from datetime import timedelta
 
 from django.db import transaction
@@ -12,7 +13,7 @@ from django.utils import timezone
 
 from . import notify as nt
 from .models import (
-    OPEN_STATUSES, RUNNING_STATUSES, Centre, Department, DowntimeLog, EscalationLog,
+    OPEN_STATUSES, RUNNING_STATUSES, Centre, Department, DowntimeLog, Equipment, EscalationLog, VendorCall,
     EscalationRule, Heartbeat, Priority, SiteSettings, SlaPolicy, Status, Ticket,
     TicketAttachment, TicketComment, TicketHistory, User,
 )
@@ -82,6 +83,8 @@ def allowed_actions(user, t):
             a.add("resume")
         if head:
             a.update({"assign", "set_priority", "cancel"})
+        if t.assignee_id != user.pk and (head or (member and t.assignee_id is None)):
+            a.add("assign_me")
         if worker or member or head or (user.role == User.AREA_MANAGER and _covers_centre(user, t)):
             a.add("transfer")
         if requester and t.status in (Status.NEW, Status.ASSIGNED):
@@ -233,9 +236,9 @@ def _alert_new(t):
     what = f"{t.number} {t.priority}: {t.subject}"
     where = f"{t.centre.name}, {t.category.name}. Raised by {t.requester.display_name}."
     if t.assignee:
-        nt.notify([t.assignee], t, f"New ticket assigned to you: {what}", where, urgent)
+        nt.notify([t.assignee], t, f"New ticket assigned to you: {what}", where, urgent, kind="raised")
     else:
-        nt.notify([t.department.head], t, f"New ticket needs assigning: {what}", where, urgent)
+        nt.notify([t.department.head], t, f"New ticket needs assigning: {what}", where, urgent, kind="raised")
     watchers = []
     if s.area_manager_all or urgent:
         watchers += nt.users_with_role(User.AREA_MANAGER, t.centre)
@@ -244,7 +247,7 @@ def _alert_new(t):
     skip = {t.assignee_id or t.department.head_id}
     nt.notify([u for u in watchers if u and u.pk not in skip], t,
               f"{'Critical ticket' if urgent else 'New ticket'} at {t.centre.name}: {what}", where, urgent,
-              exclude=t.requester)
+              exclude=t.requester, kind="raised")
 
 
 # --------------------------------------------------------------------------
@@ -261,7 +264,7 @@ def assign(t, actor, assignee, check=True):
     t.save()
     log(t, actor, f"Assigned to {assignee.display_name}", "assignee", old, assignee.display_name)
     nt.notify([assignee], t, f"Ticket assigned to you: {t.number} {t.priority}: {t.subject}",
-              f"{t.centre.name}, {t.category.name}.", t.priority == Priority.P1, exclude=actor)
+              f"{t.centre.name}, {t.category.name}.", t.priority == Priority.P1, exclude=actor, kind="assigned")
 
 
 @transaction.atomic
@@ -277,7 +280,7 @@ def start_work(t, actor):
     t.save()
     log(t, actor, "Started work", "status", old, t.get_status_display())
     nt.notify([t.requester], t, f"Work started on {t.number}",
-              f"{(t.assignee or actor).display_name} is working on: {t.subject}", exclude=actor)
+              f"{(t.assignee or actor).display_name} is working on: {t.subject}", exclude=actor, kind="started")
 
 
 @transaction.atomic
@@ -289,7 +292,7 @@ def hold(t, actor, reason, note=""):
     t.status, t.hold_reason, t.hold_started_at = Status.ON_HOLD, reason, timezone.now()
     t.save()
     log(t, actor, f"Put on hold: {labels[reason]}", "status", "In progress", "On hold", note)
-    nt.notify([t.requester], t, f"{t.number} is on hold: {labels[reason]}", note, exclude=actor)
+    nt.notify([t.requester], t, f"{t.number} is on hold: {labels[reason]}", note, exclude=actor, kind="hold")
 
 
 @transaction.atomic
@@ -329,7 +332,8 @@ def resolve(t, actor, note, downtime_end=None):
     log(t, actor, "Resolved the ticket", "status", "In progress", "Resolved", note.strip())
     s = SiteSettings.load()
     nt.notify([t.requester], t, f"{t.number} is resolved. Please confirm.",
-              f"{note.strip()[:200]} It closes by itself in {s.auto_close_days} days.", exclude=actor)
+              f"{note.strip()[:200]} It closes by itself in {s.auto_close_days} days.", exclude=actor,
+              kind="resolved")
 
 
 @transaction.atomic
@@ -342,9 +346,15 @@ def close(t, actor, rating=None, auto=False):
     t.save()
     log(t, actor, "Closed automatically, no reply from requester" if auto else "Confirmed the fix and closed the ticket",
         "status", "Resolved", "Closed")
-    if not auto:
-        nt.notify([t.assignee], t, f"{t.number} was confirmed and closed",
-                  f"Rating: {t.rating} of 5" if t.rating else "", exclude=actor)
+    s = SiteSettings.load()
+    people = [t.assignee, t.department.head]
+    if s.managers_on_close:
+        people += nt.users_with_role(User.CENTRE_MANAGER, t.centre) + nt.users_with_role(User.AREA_MANAGER, t.centre)
+    if auto:
+        people.append(t.requester)
+    how = "closed automatically" if auto else "confirmed and closed"
+    detail = f"{t.centre.name}, {t.department.name}. " + (f"Rated {t.rating} of 5." if t.rating else "")
+    nt.notify(people, t, f"{t.number} {how}: {t.subject}", detail.strip(), exclude=actor, kind="closed")
 
 
 @transaction.atomic
@@ -363,7 +373,7 @@ def reopen(t, actor, reason):
     t.save()
     log(t, actor, "Reopened the ticket", "status", old, t.get_status_display(), reason.strip())
     nt.notify([t.assignee, t.department.head], t, f"{t.number} was reopened", reason.strip()[:300],
-              t.priority == Priority.P1, exclude=actor)
+              t.priority == Priority.P1, exclude=actor, kind="reopened")
 
 
 @transaction.atomic
@@ -376,7 +386,8 @@ def cancel(t, actor, reason):
     t.save()
     DowntimeLog.objects.filter(ticket=t, end__isnull=True).update(end=timezone.now())
     log(t, actor, "Cancelled the ticket", "status", old, "Cancelled", reason.strip())
-    nt.notify([t.assignee, t.requester], t, f"{t.number} was cancelled", reason.strip()[:300], exclude=actor)
+    nt.notify([t.assignee, t.requester], t, f"{t.number} was cancelled", reason.strip()[:300], exclude=actor,
+              kind="cancelled")
 
 
 @transaction.atomic
@@ -398,8 +409,9 @@ def transfer(t, actor, department, reason):
     log(t, actor, f"Transferred from {old} to {department.name}", "department", old, department.name, reason.strip())
     target = [assignee] if assignee else [department.head]
     nt.notify(target, t, f"Ticket transferred to {department.name}: {t.number} {t.priority}: {t.subject}",
-              reason.strip()[:300], t.priority == Priority.P1, exclude=actor)
-    nt.notify([t.requester], t, f"{t.number} was moved to {department.name}", reason.strip()[:300], exclude=actor)
+              reason.strip()[:300], t.priority == Priority.P1, exclude=actor, kind="transferred")
+    nt.notify([t.requester], t, f"{t.number} was moved to {department.name}", reason.strip()[:300], exclude=actor,
+              kind="transferred")
 
 
 @transaction.atomic
@@ -423,7 +435,7 @@ def change_priority(t, actor, priority, reason):
     EscalationLog.objects.filter(ticket=t).delete()
     log(t, actor, f"Changed priority from {old} to {priority}", "priority", old, priority, reason.strip())
     nt.notify([t.assignee, t.department.head], t, f"{t.number} priority is now {priority}", reason.strip()[:300],
-              priority == Priority.P1, exclude=actor)
+              priority == Priority.P1, exclude=actor, kind="priority")
 
 
 @transaction.atomic
@@ -441,9 +453,122 @@ def add_comment(t, actor, body, internal=False, files=()):
     who = [t.assignee, t.department.head if not t.assignee else None]
     if not internal:
         who.append(t.requester)
-    kind = "Internal note" if internal else "New reply"
-    nt.notify(who, t, f"{kind} on {t.number} from {actor.display_name}", body.strip()[:300], exclude=actor)
+    label = "Internal note" if internal else "New reply"
+    mentioned = mentioned_users(body, t, internal)
+    nt.notify([u for u in who if u and u not in mentioned], t, f"{label} on {t.number} from {actor.display_name}",
+              plain(body)[:300], exclude=actor, kind="note" if internal else "reply")
+    nt.notify(mentioned, t, f"{actor.display_name} mentioned you on {t.number}", plain(body)[:300],
+              exclude=actor, kind="mention")
     return c, skipped
+
+
+MENTION = re.compile(r"(?<![\w@])@([A-Za-z0-9_.+-]{2,150})")
+
+
+def mentioned_users(body, t, internal=False):
+    """People named with @username who are allowed to see this ticket (and its internal notes)."""
+    names = {m.rstrip(".,;:!?") for m in MENTION.findall(body or "")}
+    if not names:
+        return []
+    people = []
+    for u in User.objects.filter(username__in=names, is_active=True):
+        if not visible_tickets(u).filter(pk=t.pk).exists():
+            continue
+        if internal and "internal_note" not in allowed_actions(u, t) and not u.sees_everything:
+            continue
+        people.append(u)
+    return people
+
+
+def plain(body):
+    """Comment text without formatting marks, for alert messages."""
+    text = re.sub(r"[*_`#>]", "", body or "")
+    return re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text).strip()
+
+
+EDIT_WINDOW = timedelta(hours=24)
+
+
+@transaction.atomic
+def edit_comment(c, actor, body):
+    """Authors may correct their own comment for 24 hours. The change is marked as edited."""
+    if c.author_id != actor.pk:
+        raise NotAllowed("Only the person who wrote a comment can edit it.")
+    if timezone.now() - c.created_at > EDIT_WINDOW:
+        raise NotAllowed("Comments can be edited for 24 hours after they are posted.")
+    if not body.strip():
+        raise NotAllowed("A comment cannot be empty.")
+    if body.strip() != c.body:
+        c.body, c.edited_at = body.strip(), timezone.now()
+        c.save()
+
+
+# --------------------------------------------------------------------------
+# Vendor calls and AMC
+# --------------------------------------------------------------------------
+def can_log_vendor(user, t):
+    return t.equipment_id is not None and (user.is_admin or _is_head(user, t) or _in_department(user, t))
+
+
+@transaction.atomic
+def log_vendor_call(t, actor, vendor, reference="", called_at=None, notes=""):
+    if not can_log_vendor(actor, t):
+        raise NotAllowed("Only the team handling this equipment ticket can log vendor calls.")
+    now = timezone.now()
+    called_at = called_at or now
+    if called_at > now + timedelta(minutes=1):
+        raise NotAllowed("The call time cannot be in the future.")
+    call = VendorCall.objects.create(ticket=t, vendor=vendor, called_at=called_at, reference=reference.strip()[:60],
+                                     notes=notes.strip(), logged_by=actor)
+    log(t, actor, f"Called {vendor.name}" + (f", complaint number {call.reference}" if call.reference else ""),
+        "vendor", "", vendor.name, notes.strip())
+    t.save()
+    return call
+
+
+@transaction.atomic
+def vendor_attended(call, actor, engineer="", attended_at=None, notes=""):
+    t = call.ticket
+    if not can_log_vendor(actor, t):
+        raise NotAllowed("Only the team handling this equipment ticket can update vendor calls.")
+    now = timezone.now()
+    attended_at = attended_at or now
+    if attended_at < call.called_at or attended_at > now + timedelta(minutes=1):
+        raise NotAllowed("The arrival time must be after the call and not in the future.")
+    call.attended_at, call.engineer = attended_at, engineer.strip()[:80] or call.engineer
+    if notes.strip():
+        call.notes = (call.notes + "\n" + notes.strip()).strip()
+    call.save()
+    from .templatetags.dt import _span
+    log(t, actor, f"{call.vendor.name} engineer attended after {_span(call.response_seconds())}",
+        "vendor", "", call.engineer, notes.strip())
+    t.save()
+
+
+def amc_checks(today=None):
+    """Once a day: warn the equipment department head and administrators about AMCs ending soon."""
+    today = today or timezone.localdate()
+    s = SiteSettings.load()
+    first = s.amc_alert_days or 60
+    stages = sorted({first, 30, 7, 0}, reverse=True)  # e.g. 60, 30, 7, then on expiry
+    dept = Department.objects.filter(handles_equipment=True).first()
+    admins = list(User.objects.filter(role=User.ADMIN, is_active=True))
+    sent = 0
+    for e in Equipment.objects.filter(active=True, amc_expiry__isnull=False).select_related("centre", "vendor"):
+        if e.amc_alert_for != e.amc_expiry:  # new or renewed contract: start again
+            e.amc_alert_for, e.amc_alert_stage = e.amc_expiry, 0
+        left = (e.amc_expiry - today).days
+        due = [st for st in stages if left <= st]
+        stage = (min(due) + 1) if due else 0  # stored +1 so 0 still means "nothing sent"
+        if due and (e.amc_alert_stage == 0 or stage < e.amc_alert_stage):
+            e.amc_alert_stage = stage
+            when = "has expired" if left < 0 else "ends today" if left == 0 else f"ends in {left} days"
+            nt.notify([dept.head if dept else None] + admins, None, f"AMC for {e.name} at {e.centre.name} {when}",
+                      f"Contract end {e.amc_expiry:%d %b %Y}. Vendor: {e.vendor.name if e.vendor else 'not recorded'}.",
+                      urgent=left <= 7, kind="amc", link=f"/equipment/{e.pk}/")
+            sent += 1
+        e.save(update_fields=["amc_alert_for", "amc_alert_stage"])
+    return sent
 
 
 # --------------------------------------------------------------------------
@@ -497,7 +622,8 @@ def run_sla_checks(now=None):
             due = t.response_due if rule.basis == EscalationRule.RESPONSE else t.resolution_due
             nt.notify(_escalation_targets(rule, t), t, f"{rule.name}: {t.number} {t.priority}: {t.subject}",
                       f"{t.centre.name}, {t.department.name}. Due {timezone.localtime(due):%d %b %H:%M}. "
-                      f"Owner: {t.assignee.display_name if t.assignee else 'unassigned'}.", urgent=True)
+                      f"Owner: {t.assignee.display_name if t.assignee else 'unassigned'}.", urgent=True,
+                      kind="escalation")
             log(t, None, f"Escalated: {rule.name}")
             fired += 1
     return fired

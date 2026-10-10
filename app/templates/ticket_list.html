@@ -39,13 +39,13 @@
   <thead><tr><th>Ticket</th><th>Title</th><th>Centre</th><th>Department</th><th>Owner</th><th>Status</th><th>Deadline</th><th class="num-col">Raised</th></tr></thead>
   <tbody>
   {% for t in page %}
-  <tr data-href="{% url 'ticket_detail' t.number %}">
+  <tr data-href="{% url 'ticket_detail' t.number %}" data-preview="{% url 'ticket_detail' t.number %}?preview=1">
     <td data-l="Ticket"><a class="num" href="{% url 'ticket_detail' t.number %}">{{ t.number }}</a></td>
     <td class="cell-title"><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span> <span>{{ t.subject }}</span><small>{{ t.category.name }}{% if t.equipment %}, {{ t.equipment.name }}{% endif %}</small></td>
     <td data-l="Centre">{{ t.centre.name }}</td>
     <td data-l="Department">{{ t.department.name }}</td>
-    <td data-l="Owner">{% if t.assignee %}<span class="person"><span class="avatar avatar-s">{{ t.assignee.initials }}</span>{{ t.assignee.display_name }}</span>{% else %}<span class="muted">Unassigned</span>{% endif %}</td>
-    <td data-l="Status"><span class="status status-{{ t.status }}">{{ t.get_status_display }}</span></td>
+    <td data-l="Owner">{% if t.assignee %}<span class="person">{% avatar t.assignee 's' %}{{ t.assignee.display_name }}</span>{% else %}<span class="muted">Unassigned</span>{% endif %}</td>
+    <td data-l="Status"><span class="loz st-{{ t.status }}">{{ t.get_status_display }}</span></td>
     <td data-l="Deadline">{% sla t True %}</td>
     <td data-l="Raised" class="num-col muted">{{ t.created_at|date:"d M, H:i" }}</td>
   </tr>

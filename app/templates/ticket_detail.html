@@ -1,169 +1,208 @@
 {% extends "base.html" %}{% load dt %}
-{% block title %}{{ t.number }}{% endblock %}
+{% block title %}{{ t.number }} {{ t.subject }}{% endblock %}
 {% block content %}
-<nav class="crumbs"><a href="{% url 'ticket_list' %}">Tickets</a>{% icon 'chevron-right' %}<span>{{ t.number }}</span></nav>
-<div class="ticket-head">
-  <div>
-    <p class="ticket-num">{{ t.number }}</p>
-    <h1>{{ t.subject }}</h1>
-    <p class="badges">{% include "_badges.html" %}{% if t.reopen_count %}<span class="flag flag-quiet">Reopened {{ t.reopen_count }} time{{ t.reopen_count|pluralize }}</span>{% endif %}</p>
-  </div>
-  <div class="actions">
-    {% if 'start' in can %}<form method="post" action="{% url 'ticket_action' t.number 'start' %}">{% csrf_token %}<button class="btn btn-primary">{% icon 'play' %}Start work</button></form>{% endif %}
-    {% if 'resolve' in can %}<button class="btn btn-primary" data-open="dlg-resolve">{% icon 'check' %}Resolve</button>{% endif %}
-    {% if 'resume' in can %}<form method="post" action="{% url 'ticket_action' t.number 'resume' %}">{% csrf_token %}<button class="btn btn-primary">{% icon 'play' %}Resume work</button></form>{% endif %}
-    {% if 'close' in can %}<button class="btn btn-primary" data-open="dlg-close">{% icon 'check-check' %}Confirm it is fixed</button>{% endif %}
-    {% if 'reopen' in can %}<button class="btn" data-open="dlg-reopen">{% icon 'rotate-ccw' %}Reopen</button>{% endif %}
-    {% if 'hold' in can %}<button class="btn" data-open="dlg-hold">{% icon 'pause' %}Hold</button>{% endif %}
-    {% if 'assign' in can %}<button class="btn" data-open="dlg-assign">{% icon 'user-plus' %}{% if t.assignee %}Reassign{% else %}Assign{% endif %}</button>{% endif %}
-    {% if 'transfer' in can %}<button class="btn" data-open="dlg-transfer">{% icon 'arrow-right-left' %}Transfer</button>{% endif %}
-    {% if 'set_priority' in can or 'raise_priority' in can %}<button class="btn" data-open="dlg-priority">{% icon 'flag' %}{% if 'set_priority' in can %}Change priority{% else %}Raise priority{% endif %}</button>{% endif %}
-    {% if 'cancel' in can %}<button class="btn btn-quiet-bad" data-open="dlg-cancel">{% icon 'x' %}Cancel ticket</button>{% endif %}
-  </div>
-</div>
+<nav class="crumbs"><a href="{% url 'ticket_list' %}">Tickets</a>{% icon 'chevron-right' %}<span>{{ t.centre.name }}</span>{% icon 'chevron-right' %}<span>{{ t.department.name }}</span>{% icon 'chevron-right' %}<span class="num">{{ t.number }}</span></nav>
 
-<div class="ticket-grid">
-  <div class="stack">
-    <section class="panel">
-      <p class="desc">{{ t.description|linebreaksbr }}</p>
-      {% if t.extra %}<dl class="kv kv-inline">{% for k, v in t.extra.items %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
-      {% if files %}<div class="thumbs">{% for f in files %}{% include "_file.html" %}{% endfor %}</div>{% endif %}
+<div class="issue">
+  <div class="issue-main">
+    <header class="issue-head">
+      <p class="ticket-num"><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>{{ t.number }}{% if t.patient_impact %}<span class="flag">{% icon 'heart-pulse' %}Patients affected</span>{% endif %}{% if t.reopen_count %}<span class="flag flag-quiet">Reopened {{ t.reopen_count }}x</span>{% endif %}</p>
+      <h1>{{ t.subject }}</h1>
+      <div class="quick">
+        {% if 'comment' in can %}<button class="btn btn-soft btn-s" type="button" data-compose-open data-attach>{% icon 'paperclip' %}Attach</button>{% endif %}
+        {% if 'assign_me' in can %}<form method="post" action="{% url 'ticket_action' t.number 'assign_me' %}">{% csrf_token %}<button class="btn btn-soft btn-s">{% icon 'user' %}Assign to me</button></form>{% endif %}
+        {% if can_vendor %}<button class="btn btn-soft btn-s" type="button" data-open="dlg-vendor">{% icon 'wrench' %}Log vendor call</button>{% endif %}
+      </div>
+    </header>
+
+    <section class="block">
+      <h2>Description</h2>
+      <div class="rich">{{ t.description|rich }}</div>
+      {% if t.extra %}<dl class="facts">{% for k, v in t.extra.items %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
+      {% if files %}<h3>Attachments <span class="count">{{ files|length }}</span></h3><div class="thumbs">{% for f in files %}{% include "_file.html" %}{% endfor %}</div>{% endif %}
     </section>
 
     {% if t.status == 'resolved' or t.status == 'closed' %}
-    <section class="panel panel-good">
-      <header><h2>{% icon 'circle-check' %} Resolution</h2><small>{{ t.resolved_at|date:"d M Y, H:i" }}</small></header>
-      <p class="desc">{{ t.resolution_note|linebreaksbr }}</p>
+    <section class="block block-good">
+      <h2>{% icon 'circle-check' %} Resolution <small>{{ t.resolved_at|date:"d M Y, H:i" }}</small></h2>
+      <div class="rich">{{ t.resolution_note|rich }}</div>
       {% if t.rating %}<p class="stars" aria-label="Rated {{ t.rating }} of 5">{% for i in "12345" %}<span class="{% if forloop.counter <= t.rating %}on{% endif %}">{% icon 'star' %}</span>{% endfor %}</p>{% endif %}
     </section>
     {% endif %}
 
-    <section class="panel">
-      <header><h2>Timeline</h2></header>
-      <ol class="timeline">
+    {% if t.equipment and vendor_calls or can_vendor %}
+    <section class="block">
+      <h2>Vendor calls {% if vendor_calls %}<span class="count">{{ vendor_calls|length }}</span>{% endif %}</h2>
+      {% if vendor_calls %}<ul class="calls">
+        {% for c in vendor_calls %}<li>
+          <span class="call-ic {% if c.attended_at %}done{% endif %}">{% icon 'wrench' %}</span>
+          <div><b>{{ c.vendor.name }}</b>{% if c.reference %} <span class="muted">complaint {{ c.reference }}</span>{% endif %}
+            <small>Called {{ c.called_at|date:"d M, H:i" }} by {{ c.logged_by.display_name }}{% if c.attended_at %}. {{ c.engineer|default:"Engineer" }} arrived {{ c.attended_at|date:"d M, H:i" }}{% endif %}</small>
+            {% if c.notes %}<p class="call-note">{{ c.notes|linebreaksbr }}</p>{% endif %}</div>
+          <span class="call-time {% if not c.attended_at %}waiting{% endif %}">{% if c.attended_at %}{{ c.response_seconds|span }}{% else %}Waiting {{ c.response_seconds|span }}{% endif %}</span>
+          {% if not c.attended_at and can_vendor %}<button class="btn btn-s" type="button" data-open="dlg-attended" data-call="{{ c.pk }}" data-vendor="{{ c.vendor.name }}">Engineer arrived</button>{% endif %}
+        </li>{% endfor %}
+      </ul>{% else %}<p class="empty-s">No vendor has been called for this ticket.</p>{% endif %}
+    </section>
+    {% endif %}
+
+    <section class="block activity" data-activity>
+      <header class="activity-head">
+        <h2>Activity</h2>
+        <div class="seg seg-s" role="tablist" aria-label="Show">
+          <button type="button" role="tab" aria-selected="true" data-act-filter="all">All</button>
+          <button type="button" role="tab" aria-selected="false" data-act-filter="comment">Comments <span class="count">{{ comment_count }}</span></button>
+          <button type="button" role="tab" aria-selected="false" data-act-filter="event">History <span class="count">{{ history_count }}</span></button>
+        </div>
+        <button class="link-btn" type="button" data-act-order>{% icon 'arrow-up-right' %}<span>Newest first</span></button>
+      </header>
+
+      {% if 'comment' in can %}
+      <div class="composer" data-composer>
+        {% avatar request.user %}
+        <button class="composer-fake" type="button" data-compose-open>Add a comment<span class="tip-key">Press <kbd>M</kbd> to comment</span></button>
+        <form class="composer-form" method="post" action="{% url 'ticket_action' t.number 'comment' %}" enctype="multipart/form-data" hidden>
+          {% csrf_token %}
+          <div class="editor">
+            <div class="toolbar" role="toolbar" aria-label="Formatting">
+              <button type="button" data-fmt="bold" title="Bold (Ctrl B)" aria-label="Bold"><b>B</b></button>
+              <button type="button" data-fmt="italic" title="Italic (Ctrl I)" aria-label="Italic"><i>I</i></button>
+              <button type="button" data-fmt="code" title="Code" aria-label="Code">{% icon 'file-text' %}</button>
+              <span class="tb-sep"></span>
+              <button type="button" data-fmt="ul" title="Bulleted list" aria-label="Bulleted list">{% icon 'list' %}</button>
+              <button type="button" data-fmt="ol" title="Numbered list" aria-label="Numbered list"><span class="ol-ic">1.</span></button>
+              <button type="button" data-fmt="link" title="Link" aria-label="Link">{% icon 'arrow-up-right' %}</button>
+              <button type="button" data-fmt="mention" title="Mention someone" aria-label="Mention someone">@</button>
+              <label class="tb-attach" title="Attach files" data-drop>{% icon 'paperclip' %}<input type="file" name="files" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" aria-label="Attach files"></label>
+            </div>
+            <textarea name="body" rows="4" placeholder="Write a reply. Type @ to mention someone." aria-label="Comment" data-editor></textarea>
+            <div class="mention-pop" data-mention-pop hidden role="listbox"></div>
+          </div>
+          <ul class="file-list" data-file-list></ul>
+          <div class="composer-foot">
+            {% if 'internal_note' in can and request.user.pk != t.requester_id %}<label class="chip-check"><input type="checkbox" name="internal" data-internal><span>{% icon 'lock' %}Internal note, hidden from the requester</span></label>{% endif %}
+            <span class="spacer"></span>
+            <button class="btn btn-ghost" type="button" data-compose-cancel>Cancel</button>
+            <button class="btn btn-primary" type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+
+      <ol class="feed" data-feed>
         {% for item in timeline %}
         {% if item.kind == 'comment' %}{% with c=item.o %}
-        <li class="tl-comment {% if c.internal %}tl-internal{% endif %}">
-          <span class="avatar">{{ c.author.initials }}</span>
-          <div class="bubble">
-            <p class="bubble-head"><b>{{ c.author.display_name }}</b>{% if c.internal %}<span class="flag flag-quiet">{% icon 'lock' %}Internal note</span>{% endif %}<time title="{{ c.created_at|date:'d M Y, H:i' }}">{{ c.created_at|timesince }} ago</time></p>
-            {% if c.body %}<p>{{ c.body|linebreaksbr }}</p>{% endif %}
+        <li class="feed-item is-comment {% if c.internal %}is-internal{% endif %}" data-kind="comment" id="c{{ c.pk }}">
+          {% avatar c.author %}
+          <div class="feed-body">
+            <p class="feed-head"><b>{{ c.author.display_name }}</b>{% if c.internal %}<span class="loz loz-internal">{% icon 'lock' %}Internal</span>{% endif %}<time datetime="{{ c.created_at|date:'c' }}" title="{{ c.created_at|date:'d M Y, H:i' }}">{{ c.created_at|timesince }} ago</time>{% if c.edited_at %}<span class="edited" title="Edited {{ c.edited_at|date:'d M, H:i' }}">Edited</span>{% endif %}</p>
+            <div class="rich" data-comment-view>{{ c.body|rich }}</div>
             {% if c.attachments.all %}<div class="thumbs">{% for f in c.attachments.all %}{% include "_file.html" %}{% endfor %}</div>{% endif %}
+            {% if c.can_edit %}
+            <p class="feed-actions"><button class="link-btn" type="button" data-edit-comment>Edit</button></p>
+            <form class="edit-form" method="post" action="{% url 'ticket_action' t.number 'edit_comment' %}" hidden>{% csrf_token %}
+              <input type="hidden" name="comment" value="{{ c.pk }}">
+              <textarea name="body" rows="3" aria-label="Edit comment">{{ c.body }}</textarea>
+              <div class="composer-foot"><span class="spacer"></span><button class="btn btn-ghost" type="button" data-edit-cancel>Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+            </form>
+            {% endif %}
           </div>
         </li>
         {% endwith %}{% else %}{% with h=item.o %}
-        <li class="tl-event">
-          <span class="tl-dot" aria-hidden="true"></span>
-          <p>{% if h.actor %}<b>{{ h.actor.display_name }}</b> {{ h.text|slice:":1"|lower }}{{ h.text|slice:"1:" }}{% else %}{{ h.text }}{% endif %}<time title="{{ h.created_at|date:'d M Y, H:i' }}">{{ h.created_at|date:"d M, H:i" }}</time></p>
-          {% if h.note %}<p class="tl-note">{{ h.note|linebreaksbr }}</p>{% endif %}
+        <li class="feed-item is-event" data-kind="event">
+          {% if h.actor %}{% avatar h.actor 's' %}{% else %}<span class="av av-s av-sys" title="DiagTrack">{% icon 'zap' %}</span>{% endif %}
+          <div class="feed-body">
+            <p class="feed-head">
+              {% if h.actor %}<b>{{ h.actor.display_name }}</b>{% else %}<b>DiagTrack</b>{% endif %}
+              {% if h.field == 'status' %} changed the <b>status</b>
+              {% elif h.field == 'assignee' %} changed the <b>owner</b>
+              {% elif h.field == 'priority' %} changed the <b>priority</b>
+              {% elif h.field == 'department' %} moved it to another <b>department</b>
+              {% else %} {{ h.text|slice:":1"|lower }}{{ h.text|slice:"1:" }}{% endif %}
+              <time title="{{ h.created_at|date:'d M Y, H:i' }}">{{ h.created_at|timesince }} ago</time>
+            </p>
+            {% if h.field == 'status' or h.field == 'priority' or h.field == 'assignee' or h.field == 'department' %}
+            <p class="change">
+              {% if h.field == 'status' %}<span class="loz st-{{ h.old|lozenge }}">{{ h.old }}</span>{% icon 'chevron-right' %}<span class="loz st-{{ h.new|lozenge }}">{{ h.new }}</span>
+              {% elif h.field == 'priority' %}<span class="prio prio-{{ h.old }}">{{ h.old }}</span>{% icon 'chevron-right' %}<span class="prio prio-{{ h.new }}">{{ h.new }}</span>
+              {% else %}<span class="loz">{{ h.old|default:"None" }}</span>{% icon 'chevron-right' %}<span class="loz loz-strong">{{ h.new }}</span>{% endif %}
+            </p>{% endif %}
+            {% if h.note %}<div class="rich tl-note">{{ h.note|rich }}</div>{% endif %}
+          </div>
         </li>
         {% endwith %}{% endif %}
         {% endfor %}
       </ol>
-      {% if 'comment' in can %}
-      <form class="composer" method="post" action="{% url 'ticket_action' t.number 'comment' %}" enctype="multipart/form-data">
-        {% csrf_token %}
-        <textarea name="body" rows="3" placeholder="Write a reply" aria-label="Reply"></textarea>
-        <ul class="file-list" data-file-list></ul>
-        <div class="composer-foot">
-          <label class="btn btn-ghost attach" data-drop>{% icon 'paperclip' %}Attach<input type="file" name="files" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"></label>
-          {% if 'internal_note' in can and request.user.pk != t.requester_id %}<label class="chip-check"><input type="checkbox" name="internal"><span>{% icon 'lock' %}Internal note, hidden from the requester</span></label>{% endif %}
-          <button class="btn btn-primary" type="submit">Send</button>
-        </div>
-      </form>
-      {% endif %}
     </section>
   </div>
 
-  <aside class="stack">
-    <section class="panel sla-panel sla-{{ t.sla_state }}">
-      <header><h2>Time to resolve</h2></header>
-      {% sla t %}
-      <dl class="kv">
-        <div><dt>Resolve by</dt><dd>{{ t.resolution_due|date:"d M, H:i" }}</dd></div>
-        <div><dt>First response</dt><dd>{% if response_state == 'met' %}<span class="ok-text">In time, {{ t.first_response_at|date:"d M, H:i" }}</span>{% elif response_state == 'missed' %}<span class="bad-text">Missed{% if t.first_response_at %}, {{ t.first_response_at|date:"d M, H:i" }}{% endif %}</span>{% else %}By {{ t.response_due|date:"d M, H:i" }}{% endif %}</dd></div>
-        {% if t.status == 'on_hold' %}<div><dt>On hold</dt><dd>{{ t.get_hold_reason_display }}, since {{ t.hold_started_at|date:"d M, H:i" }}</dd></div>{% endif %}
-        {% if t.hold_seconds %}<div><dt>Time paused</dt><dd>{{ t.hold_seconds|span }}</dd></div>{% endif %}
-      </dl>
+  <aside class="issue-side">
+    <div class="status-bar">
+      {% if transitions %}
+      <div class="menu">
+        <button class="status-btn st-{{ t.status }}" type="button" data-menu aria-expanded="false">{{ t.get_status_display }}{% icon 'chevron-down' %}</button>
+        <div class="pop pop-left" hidden>
+          {% for a in transitions %}
+          {% if a == 'start' or a == 'resume' %}<form method="post" action="{% url 'ticket_action' t.number a %}">{% csrf_token %}<button class="pop-item">{% icon 'play' %}{% if a == 'start' %}Start work{% else %}Resume work{% endif %}<span class="pop-to"><span class="loz st-in_progress">In progress</span></span></button></form>
+          {% elif a == 'hold' %}<button class="pop-item" type="button" data-open="dlg-hold">{% icon 'pause' %}Put on hold<span class="pop-to"><span class="loz st-on_hold">On hold</span></span></button>
+          {% elif a == 'resolve' %}<button class="pop-item" type="button" data-open="dlg-resolve">{% icon 'check' %}Resolve<span class="pop-to"><span class="loz st-resolved">Resolved</span></span></button>
+          {% elif a == 'close' %}<button class="pop-item" type="button" data-open="dlg-close">{% icon 'check-check' %}Confirm it is fixed<span class="pop-to"><span class="loz st-closed">Closed</span></span></button>
+          {% elif a == 'reopen' %}<button class="pop-item" type="button" data-open="dlg-reopen">{% icon 'rotate-ccw' %}Reopen<span class="pop-to"><span class="loz st-in_progress">In progress</span></span></button>
+          {% elif a == 'cancel' %}<button class="pop-item pop-bad" type="button" data-open="dlg-cancel">{% icon 'x' %}Cancel ticket<span class="pop-to"><span class="loz st-cancelled">Cancelled</span></span></button>{% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}<span class="status-btn st-{{ t.status }} is-static">{{ t.get_status_display }}</span>{% endif %}
+      {% if 'transfer' in can or 'assign' in can or 'set_priority' in can or 'raise_priority' in can %}
+      <div class="menu">
+        <button class="icon-btn icon-btn-box" type="button" data-menu aria-expanded="false" aria-label="More actions">{% icon 'sliders-horizontal' %}</button>
+        <div class="pop" hidden>
+          {% if 'assign' in can %}<button class="pop-item" type="button" data-open="dlg-assign">{% icon 'user-plus' %}{% if t.assignee %}Reassign{% else %}Assign{% endif %}</button>{% endif %}
+          {% if 'transfer' in can %}<button class="pop-item" type="button" data-open="dlg-transfer">{% icon 'arrow-right-left' %}Transfer to another department</button>{% endif %}
+          {% if 'set_priority' in can or 'raise_priority' in can %}<button class="pop-item" type="button" data-open="dlg-priority">{% icon 'flag' %}{% if 'set_priority' in can %}Change priority{% else %}Raise priority{% endif %}</button>{% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <section class="side-card sla-card sla-{{ t.sla_state }}">
+      <h2>{% icon 'clock' %} Service level</h2>
+      <div class="sla-line">
+        <span class="sla-name">Time to resolution</span>
+        {% sla t %}
+        <small>Due {{ t.resolution_due|date:"d M, H:i" }}{% if t.hold_seconds %}. Paused {{ t.hold_seconds|span }}{% endif %}{% if t.status == 'on_hold' %}. On hold: {{ t.get_hold_reason_display|lower }}{% endif %}</small>
+      </div>
+      <div class="sla-line sla-line-s">
+        <span class="sla-name">Time to first response</span>
+        <span class="sla-result {% if response_state == 'met' %}ok{% elif response_state == 'missed' %}bad{% endif %}">{% if response_state == 'met' %}{% icon 'circle-check' %}Met, {{ t.first_response_at|date:"d M, H:i" }}{% elif response_state == 'missed' %}{% icon 'circle-alert' %}Missed{% else %}{% icon 'hourglass' %}Due {{ t.response_due|date:"d M, H:i" }}{% endif %}</span>
+      </div>
     </section>
 
-    <section class="panel">
-      <header><h2>Details</h2></header>
-      <dl class="kv">
+    <section class="side-card">
+      <h2>Details</h2>
+      <dl class="fields">
+        <div><dt>Owner</dt><dd>{% if t.assignee %}<span class="person">{% avatar t.assignee 's' %}{{ t.assignee.display_name }}</span>{% else %}<span class="person muted"><span class="av av-s av-none"></span>Unassigned</span>{% endif %}
+          {% if 'assign_me' in can %}<form method="post" action="{% url 'ticket_action' t.number 'assign_me' %}">{% csrf_token %}<button class="link-btn">Assign to me</button></form>{% endif %}</dd></div>
+        <div><dt>Raised by</dt><dd><span class="person">{% avatar t.requester 's' %}{{ t.requester.display_name }}</span>{% if t.requester.mobile and request.user.role != 'requester' %}<small class="muted">{{ t.requester.mobile }}</small>{% endif %}</dd></div>
+        <div><dt>Priority</dt><dd><span class="prio-line"><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>{{ t.get_priority_display|slice:"3:" }}</span></dd></div>
         <div><dt>Centre</dt><dd>{{ t.centre.name }}</dd></div>
         <div><dt>Department</dt><dd>{{ t.department.name }}</dd></div>
         <div><dt>Category</dt><dd>{{ t.category.name }}</dd></div>
-        <div><dt>Owner</dt><dd>{% if t.assignee %}<span class="person"><span class="avatar avatar-s">{{ t.assignee.initials }}</span>{{ t.assignee.display_name }}</span>{% else %}<span class="muted">Unassigned</span>{% endif %}</dd></div>
-        <div><dt>Raised by</dt><dd><span class="person"><span class="avatar avatar-s">{{ t.requester.initials }}</span>{{ t.requester.display_name }}</span>{% if t.requester.mobile %}<small class="muted">{{ t.requester.mobile }}</small>{% endif %}</dd></div>
-        <div><dt>Raised</dt><dd>{{ t.created_at|date:"d M Y, H:i" }}</dd></div>
+        {% if t.equipment %}<div><dt>Equipment</dt><dd>{% if request.user.role != 'requester' %}<a href="{% url 'equipment_detail' t.equipment.pk %}">{{ t.equipment.name }}</a>{% else %}{{ t.equipment.name }}{% endif %}<small class="muted">{{ t.equipment.make }} {{ t.equipment.model }}</small></dd></div>
+        {% if downtime %}<div><dt>Downtime</dt><dd>{% if downtime.end %}{{ downtime.seconds|span }}{% else %}<span class="bad-text">Down for {{ downtime.seconds|span }}</span>{% endif %}<small class="muted">from {{ downtime.start|date:"d M, H:i" }}</small></dd></div>{% endif %}{% endif %}
       </dl>
     </section>
 
-    {% if t.equipment %}
-    <section class="panel">
-      <header><h2>Equipment</h2>{% if request.user.role != 'requester' %}<a href="{% url 'equipment_detail' t.equipment.pk %}">History</a>{% endif %}</header>
-      <dl class="kv">
-        <div><dt>Item</dt><dd>{{ t.equipment.name }}</dd></div>
-        {% if t.equipment.make %}<div><dt>Make and model</dt><dd>{{ t.equipment.make }} {{ t.equipment.model }}</dd></div>{% endif %}
-        {% if t.equipment.serial_no %}<div><dt>Serial</dt><dd>{{ t.equipment.serial_no }}</dd></div>{% endif %}
-        {% if downtime %}<div><dt>Downtime</dt><dd>{% if downtime.end %}{{ downtime.seconds|span }} ({{ downtime.start|date:"d M, H:i" }} to {{ downtime.end|date:"d M, H:i" }}){% else %}<span class="bad-text">Down since {{ downtime.start|date:"d M, H:i" }}</span>{% endif %}</dd></div>{% endif %}
+    <section class="side-card side-dates">
+      <dl class="fields fields-quiet">
+        <div><dt>Created</dt><dd>{{ t.created_at|date:"d M Y, H:i" }}</dd></div>
+        <div><dt>Updated</dt><dd>{{ t.updated_at|timesince }} ago</dd></div>
+        {% if t.resolved_at %}<div><dt>Resolved</dt><dd>{{ t.resolved_at|date:"d M Y, H:i" }}</dd></div>{% endif %}
+        {% if t.closed_at %}<div><dt>Closed</dt><dd>{{ t.closed_at|date:"d M Y, H:i" }}</dd></div>{% endif %}
       </dl>
     </section>
-    {% endif %}
   </aside>
 </div>
 
-{% if 'resolve' in can %}<dialog class="dialog" id="dlg-resolve"><form method="post" action="{% url 'ticket_action' t.number 'resolve' %}">{% csrf_token %}
-  <h2>Resolve {{ t.number }}</h2><p>The requester is asked to confirm. The ticket closes by itself after {{ cfg.auto_close_days }} days.</p>
-  <label class="field"><span>What was done?</span><textarea name="note" rows="4" required></textarea></label>
-  {% if downtime and not downtime.end %}<label class="field"><span>When did {{ t.equipment.name }} start working again?</span><input type="datetime-local" name="downtime_end" value="{{ now_local }}" max="{{ now_local }}" required></label>{% endif %}
-  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Resolve ticket</button></div>
-</form></dialog>{% endif %}
-
-{% if 'hold' in can %}<dialog class="dialog" id="dlg-hold"><form method="post" action="{% url 'ticket_action' t.number 'hold' %}">{% csrf_token %}
-  <h2>Put {{ t.number }} on hold</h2><p>The SLA clock pauses until work resumes.</p>
-  <label class="field"><span>Why?</span><select name="reason" required>{% for k, l in hold_reasons %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
-  <label class="field"><span>Note for the requester</span><textarea name="note" rows="2"></textarea></label>
-  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Put on hold</button></div>
-</form></dialog>{% endif %}
-
-{% if 'assign' in can %}<dialog class="dialog" id="dlg-assign"><form method="post" action="{% url 'ticket_action' t.number 'assign' %}">{% csrf_token %}
-  <h2>Assign {{ t.number }}</h2>
-  {% if agents %}<label class="field"><span>Who should work on it?</span><select name="assignee" required>{% for a in agents %}<option value="{{ a.pk }}" {% if a.pk == t.assignee_id %}selected{% endif %}>{{ a.display_name }}</option>{% endfor %}</select></label>
-  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Assign</button></div>
-  {% else %}<p>No agent in {{ t.department.name }} covers {{ t.centre.name }} yet. Add one under Masters and rules, Users.</p><div class="form-foot"><button class="btn" type="button" data-close>Close</button></div>{% endif %}
-</form></dialog>{% endif %}
-
-{% if 'transfer' in can %}<dialog class="dialog" id="dlg-transfer"><form method="post" action="{% url 'ticket_action' t.number 'transfer' %}">{% csrf_token %}
-  <h2>Transfer {{ t.number }}</h2><p>The new department gets a fresh SLA clock. The history stays on the ticket.</p>
-  <label class="field"><span>Send to</span><select name="department" required>{% for d in departments %}<option value="{{ d.pk }}">{{ d.name }}</option>{% endfor %}</select></label>
-  <label class="field"><span>Reason</span><textarea name="note" rows="2" required></textarea></label>
-  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Transfer</button></div>
-</form></dialog>{% endif %}
-
-{% if 'set_priority' in can or 'raise_priority' in can %}<dialog class="dialog" id="dlg-priority"><form method="post" action="{% url 'ticket_action' t.number 'priority' %}">{% csrf_token %}
-  <h2>{% if 'set_priority' in can %}Change{% else %}Raise{% endif %} the priority</h2>
-  {% if 'set_priority' not in can %}<p>You can raise the priority once. The team is alerted.</p>{% endif %}
-  <label class="field"><span>New priority</span><select name="priority" required>{% for k, l in priorities %}{% if k != t.priority %}{% if 'set_priority' in can or k < t.priority %}<option value="{{ k }}">{{ l }}</option>{% endif %}{% endif %}{% endfor %}</select></label>
-  <label class="field"><span>Reason</span><textarea name="note" rows="2" required></textarea></label>
-  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Change priority</button></div>
-</form></dialog>{% endif %}
-
-{% if 'close' in can %}<dialog class="dialog" id="dlg-close"><form method="post" action="{% url 'ticket_action' t.number 'close' %}">{% csrf_token %}
-  <h2>Confirm it is fixed</h2><p>How well was it handled? The rating is optional.</p>
-  <div class="rate" role="radiogroup" aria-label="Rating">{% for i in "54321" %}<input type="radio" name="rating" id="r{{ i }}" value="{{ i }}"><label for="r{{ i }}" aria-label="{{ i }} of 5">{% icon 'star' %}</label>{% endfor %}</div>
-  <div class="form-foot"><button class="btn" type="button" data-close>Not yet</button><button class="btn btn-primary" type="submit">Close ticket</button></div>
-</form></dialog>{% endif %}
-
-{% if 'reopen' in can %}<dialog class="dialog" id="dlg-reopen"><form method="post" action="{% url 'ticket_action' t.number 'reopen' %}">{% csrf_token %}
-  <h2>Reopen {{ t.number }}</h2><p>It goes back to {{ t.assignee.display_name|default:"the team" }}.</p>
-  <label class="field"><span>What is still wrong?</span><textarea name="note" rows="3" required></textarea></label>
-  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Reopen ticket</button></div>
-</form></dialog>{% endif %}
-
-{% if 'cancel' in can %}<dialog class="dialog" id="dlg-cancel"><form method="post" action="{% url 'ticket_action' t.number 'cancel' %}">{% csrf_token %}
-  <h2>Cancel {{ t.number }}</h2><p>A cancelled ticket cannot be reopened.</p>
-  <label class="field"><span>Reason</span><textarea name="note" rows="2" required></textarea></label>
-  <div class="form-foot"><button class="btn" type="button" data-close>Keep ticket</button><button class="btn btn-bad" type="submit">Cancel ticket</button></div>
-</form></dialog>{% endif %}
+{% include "_ticket_dialogs.html" %}
 {% endblock %}

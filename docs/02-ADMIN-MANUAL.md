@@ -96,6 +96,10 @@ Staff pick from this list when they raise an equipment ticket. Downtime and upti
 
 ## 6. Settings and health
 
+**Brand.** Upload your logo (PNG or SVG, ideally square) and pick the brand colour. Both appear in the menu, buttons and the sign-in page straight away. Choose a medium-dark colour so white text on buttons stays readable.
+
+**Pop-ups.** "Pop-up messages on screen" shows new tickets, closures and escalations sliding in at the bottom right of everyone's screen. "Alert centre and area managers when a ticket is closed" adds closures for managers.
+
 *Settings and health* in the side menu.
 
 **Health strip (top).** Four boxes; all should be green.
@@ -129,7 +133,14 @@ Save, then press **Send me a test SMS** (your own user record must have a mobile
 
 Notes for India: SMS providers require a registered sender ID and approved message templates (DLT). WhatsApp requires an approved WhatsApp Business account and templates. Your provider guides you through both.
 
-## 8. The audit trail
+## 8. Vendors, AMC renewals and QR labels
+
+- **Vendor calls.** On an equipment ticket, the team uses **Log vendor call** when they call the service company, and **Engineer arrived** when the engineer comes. *Equipment, Vendor response* then shows each vendor's average time to arrive over 90 days.
+- **AMC renewals.** Enter the AMC expiry date on each machine (Masters and rules, Equipment). The equipment department head and administrators are alerted 60, 30 and 7 days before, and on the day it ends. Change the first warning under Settings, "warn about AMC expiry". *Equipment, AMC renewals* lists what is coming up.
+- **Repeat faults.** *Equipment, Repeat faults* lists machines with 3 or more tickets in 90 days.
+- **QR labels.** *Equipment, Print QR labels* prints a sheet with one label per machine (filter by centre first). Staff scan a label with their phone camera and Raise a ticket opens with the centre and machine already chosen. Set "address of this system" in Settings first, so the labels point to the right address.
+
+## 9. The audit trail
 
 Every change to a ticket is recorded with who, what and when, and shown on the ticket's timeline.
 The full list is under *Masters and rules, Ticket history*. It cannot be edited or deleted.

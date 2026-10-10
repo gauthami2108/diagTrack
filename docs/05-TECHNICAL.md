@@ -10,7 +10,9 @@ For a developer who needs to change or extend DiagTrack.
 | Database | PostgreSQL 17 |
 | Web server | Gunicorn behind Caddy 2 |
 | Front end | Hand-written CSS and plain JavaScript. No build step, no CDN: fonts (IBM Plex) and icons (Lucide) are bundled, so it works without internet |
-| Background jobs | One Django management command in a loop (`runworker`), once a minute |
+| Background jobs | One Django management command in a loop (`runworker`), once a minute; AMC checks once a day |
+| Live updates | The browser asks `/api/live/` every 15 seconds for new alerts (no extra server needed) |
+| QR codes | `segno`, generated on the server as SVG |
 
 ## Containers (docker-compose.yml)
 
@@ -56,6 +58,17 @@ All state is in bind mounts under `data/` plus the backup folder.
 | Notification, OutboundMessage | In-app alerts; queued email, SMS, WhatsApp with status and error |
 | SiteSettings | Single row: channel switches, mail server, gateways, auto-close and reopen days |
 | Heartbeat | Worker's last run, shown on the health screen |
+| VendorCall | Vendor called for a ticket: called and attended times, reference, engineer |
+
+Notification has a `kind` (raised, closed, escalation, mention and so on) that decides how the pop-up looks. Equipment keeps `amc_alert_for` and `amc_alert_stage` so each AMC warning is sent once.
+
+## Small data feeds (JSON, signed-in users only)
+
+| URL | Returns |
+| --- | --- |
+| `/api/live/?after=<id>` | New alerts for the signed-in person since that id, plus the unread count |
+| `/api/search/?q=` | Up to 8 tickets the person can see |
+| `/api/people/?q=` | Up to 8 people, for @mentions |
 
 ## SLA rules as implemented
 
@@ -95,6 +108,6 @@ After changing `models.py`, run `python manage.py makemigrations` and commit the
 | `TIME_ZONE` | all | Default Asia/Kolkata |
 | `WEB_WORKERS` | web | Gunicorn processes, default 3 |
 
-## Not in phase 1
+## Not built yet
 
-Planned for later phases: vendor call log and AMC expiry alerts, uptime and repeat-fault reports, scheduled email reports, saved replies, child tickets, duplicate warning, calendar view, saved filters, @mentions, QR-code raising, preventive maintenance schedules, knowledge articles, archiving of tickets older than one year.
+Planned for later phases: scheduled email reports, saved replies, bulk actions, child tickets, duplicate warning, calendar view, saved filters, preventive maintenance schedules, knowledge articles, login lock-out and two-step login, bulk import from Excel, archiving of tickets older than one year.

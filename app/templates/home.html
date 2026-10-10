@@ -1,22 +1,30 @@
 {% extends "base.html" %}{% load dt %}
 {% block title %}Home{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div><h1>Hello, {{ request.user.first_name|default:request.user.username }}</h1>
-  <p class="sub">{% now "l, j F" %}{% if request.user.role != 'requester' %}. {{ head.open }} open ticket{{ head.open|pluralize }} across what you look after.{% endif %}</p></div>
-  {% if request.user.role != 'management' or request.user.is_superuser %}<a class="btn btn-primary" href="{% url 'ticket_new' %}">{% icon 'circle-plus' %}Raise a ticket</a>{% endif %}
-</div>
-
-{% if request.user.role != 'requester' %}
-<section class="band" aria-label="Open tickets at a glance">
-  <a class="band-cell" href="{% url 'ticket_list' %}?view=all"><span class="band-n">{{ head.open }}</span><span class="band-l">Open</span></a>
-  <a class="band-cell {% if head.breached %}is-bad{% endif %}" href="{% url 'ticket_list' %}?view=all&sla=breached"><span class="band-n">{{ head.breached }}</span><span class="band-l">Past the deadline</span></a>
-  <a class="band-cell {% if head.due_soon %}is-warn{% endif %}" href="{% url 'ticket_list' %}?view=all&sla=soon"><span class="band-n">{{ head.due_soon }}</span><span class="band-l">Due within 4 hours</span></a>
-  <a class="band-cell" href="{% url 'ticket_list' %}?view=all&unassigned=1"><span class="band-n">{{ head.unassigned }}</span><span class="band-l">Unassigned</span></a>
-  <a class="band-cell" href="{% url 'ticket_list' %}?view=all&status=on_hold"><span class="band-n">{{ head.on_hold }}</span><span class="band-l">On hold</span></a>
-  <a class="band-cell" href="{% url 'ticket_list' %}?view=all&status=resolved"><span class="band-n">{{ head.to_confirm }}</span><span class="band-l">Waiting for confirmation</span></a>
+<section class="hero">
+  <div class="hero-frames" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  <div class="hero-text">
+    <p class="hero-date">{% now "l, j F" %}</p>
+    <h1>{{ greeting }}, {{ request.user.first_name|default:request.user.username }}</h1>
+    <p>{% if request.user.role == 'requester' %}{% if mine_open_count %}You have {{ mine_open_count }} open ticket{{ mine_open_count|pluralize }}.{% else %}Nothing open. If something is not working, raise a ticket.{% endif %}{% else %}{{ head.open }} open ticket{{ head.open|pluralize }} across what you look after{% if head.breached %}, {{ head.breached }} past the deadline{% endif %}.{% endif %}</p>
+    {% if request.user.role != 'management' or request.user.is_superuser %}<a class="btn btn-hero" href="{% url 'ticket_new' %}">{% icon 'circle-plus' %}Raise a ticket</a>{% endif %}
+  </div>
+  {% if request.user.role != 'requester' %}
+  <div class="hero-stats">
+    <a href="{% url 'ticket_list' %}?view=all"><span class="hs-n" data-count>{{ head.open }}</span><span>Open</span></a>
+    <a href="{% url 'ticket_list' %}?view=all&sla=breached" class="{% if head.breached %}is-bad{% endif %}"><span class="hs-n" data-count>{{ head.breached }}</span><span>Past the deadline</span></a>
+    <a href="{% url 'ticket_list' %}?view=all&sla=soon" class="{% if head.due_soon %}is-warn{% endif %}"><span class="hs-n" data-count>{{ head.due_soon }}</span><span>Due within 4 hours</span></a>
+    <a href="{% url 'ticket_list' %}?view=all&unassigned=1"><span class="hs-n" data-count>{{ head.unassigned }}</span><span>Unassigned</span></a>
+    <a href="{% url 'ticket_list' %}?view=all&status=on_hold"><span class="hs-n" data-count>{{ head.on_hold }}</span><span>On hold</span></a>
+    <a href="{% url 'ticket_list' %}?view=all&status=resolved"><span class="hs-n" data-count>{{ head.to_confirm }}</span><span>Awaiting confirmation</span></a>
+  </div>
+  {% else %}
+  <div class="hero-stats hero-stats-s">
+    <a href="{% url 'ticket_list' %}?view=mine"><span class="hs-n" data-count>{{ mine_open_count }}</span><span>Open</span></a>
+    <a href="{% url 'ticket_list' %}?view=mine&status=resolved" class="{% if to_confirm %}is-warn{% endif %}"><span class="hs-n" data-count>{{ to_confirm|length }}</span><span>To confirm</span></a>
+  </div>
+  {% endif %}
 </section>
-{% endif %}
 
 <div class="grid-2">
   <div class="stack">
@@ -32,7 +40,7 @@
     <section class="panel">
       <header><h2>Assigned to you</h2>{% if work_count %}<a href="{% url 'ticket_list' %}?view=work">All {{ work_count }}</a>{% endif %}</header>
       {% if work %}{% include "_rows.html" with tickets=work %}
-      {% else %}<p class="empty">Nothing is assigned to you right now.</p>{% endif %}
+      {% else %}<div class="empty-mini">{% icon 'circle-check' %}<p>Nothing is assigned to you right now.</p></div>{% endif %}
     </section>
     {% endif %}
 
@@ -47,7 +55,7 @@
     <section class="panel">
       <header><h2>Your open tickets</h2><a href="{% url 'ticket_list' %}?view=mine">All yours</a></header>
       {% if mine_open %}{% include "_rows.html" with tickets=mine_open show_owner=True %}
-      {% else %}<p class="empty">You have no open tickets. If something is not working, <a href="{% url 'ticket_new' %}">raise a ticket</a>.</p>{% endif %}
+      {% else %}<div class="empty-mini">{% icon 'ticket' %}<p>You have no open tickets. If something is not working, <a href="{% url 'ticket_new' %}">raise a ticket</a>.</p></div>{% endif %}
     </section>
     {% endif %}
   </div>
@@ -62,7 +70,7 @@
     <section class="panel">
       <header><h2>Latest activity</h2></header>
       {% if recent %}{% include "_rows.html" with tickets=recent show_owner=True %}
-      {% else %}<p class="empty">No tickets yet.</p>{% endif %}
+      {% else %}<div class="empty-mini">{% icon 'inbox' %}<p>No tickets yet.</p></div>{% endif %}
     </section>
   </div>
 </div>

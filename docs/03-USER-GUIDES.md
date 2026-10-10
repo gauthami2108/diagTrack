@@ -20,6 +20,23 @@ Print the part that applies to each person.
 - When the ticket is **Resolved**, open it and press **Confirm it is fixed** (you can give a star rating), or **Reopen** and say what is still wrong. If you do nothing it closes after 3 days. You can reopen for 7 days after it was resolved.
 - **Cancel ticket** is available until someone starts work.
 
+## Finding your way faster
+
+- **Search and jump:** press `Ctrl K` (or click the search box) and type a ticket number, a word from the title, or a screen name.
+- **Preview:** in any ticket list, click a row to see the ticket in a side panel without leaving the list. Click **Open ticket** for the full page.
+- **Pop-ups:** new tickets, closures and escalations for you slide in at the bottom right as they happen, with a short sound for new tickets. Turn the sound off from the bell menu. Click **Open** on a pop-up to go to the ticket.
+- **Your photo:** top right, your name, **My profile**.
+
+## The ticket page
+
+The layout follows Jira:
+
+- **Status button** (top right): click it to move the ticket on, for example to *On hold* or *Resolved*.
+- **Service level:** how long is left to resolve, and whether the first response was in time.
+- **Activity:** everything that happened, newest at the bottom (switch with "Newest first"). Use the tabs to show only **Comments** or only **History**.
+- **Add a comment:** click the box or press `M`. Use the toolbar for **bold**, _italics_, lists, code and links. Type `@` and a name to mention someone; they get an alert. `Ctrl Enter` saves.
+- **Edit:** you can correct your own comment for 24 hours. It is marked "Edited".
+
 ## For agents
 
 1. **Assigned to me** is your work list, most urgent deadline first. **Team queue** shows the whole department.
@@ -28,6 +45,8 @@ Print the part that applies to each person.
 4. **Hold** when you are waiting for the requester, a vendor or parts. The clock pauses. Press **Resume work** when you continue.
 5. **Transfer** if it belongs to another department. Give a reason.
 6. **Resolve** with a short note of what was done. For equipment that was down, enter when it started working again.
+
+On equipment tickets, use **Log vendor call** when you call the service company and **Engineer arrived** when they come, so vendor response times are measured.
 
 The **Board** shows the same tickets as cards. Drag a card to *In progress*, *On hold* or *Resolved* to do the same actions.
 
@@ -43,6 +62,7 @@ If you do not start an assigned ticket within its response time, it moves to you
 ## For centre and area managers, and management
 
 - **All tickets** shows every ticket of your centres. Filter by status, priority, department or deadline. **Export to Excel** saves the current list.
+- **Centres** shows every centre side by side: open tickets, late tickets, machines down, resolved and responded in time, average time to resolve, rating and uptime. Green is on target (90% or more), amber is watch, red is below target. Select any number to open those tickets.
 - **Dashboard** and **Equipment** show performance and machine uptime.
 - Area managers are alerted on every new ticket in their centres (this can be switched off in Settings).
 - Management logins can view everything but not change tickets.

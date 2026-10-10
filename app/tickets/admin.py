@@ -7,7 +7,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group
 
 from .models import (Category, CategoryField, Centre, Department, Equipment, EscalationRule,
-                     OutboundMessage, SlaPolicy, TicketHistory, User, Vendor)
+                     OutboundMessage, SlaPolicy, TicketHistory, User, Vendor, VendorCall)
 
 admin.site.site_header = "DiagTrack administration"
 admin.site.site_title = "DiagTrack administration"
@@ -55,7 +55,7 @@ class UserAdmin(BaseUserAdmin):
     filter_horizontal = ("centres", "departments")
     fieldsets = (
         (None, {"fields": ("username", "password")}),
-        ("Person", {"fields": ("first_name", "last_name", "email", "mobile")}),
+        ("Person", {"fields": ("first_name", "last_name", "email", "mobile", "photo")}),
         ("What they do", {"fields": ("role", "centres", "departments")}),
         ("Login", {"fields": ("is_active",),
                    "description": "Untick Active when someone leaves. Never delete a person who has tickets."}),
@@ -124,4 +124,16 @@ class TicketHistoryAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(VendorCall)
+class VendorCallAdmin(admin.ModelAdmin):
+    """Read-only list of vendor calls. Calls are logged from the ticket page."""
+    list_display = ("called_at", "vendor", "ticket", "reference", "engineer", "attended_at")
+    list_filter = ("vendor",)
+    search_fields = ("ticket__number", "reference", "engineer")
+    readonly_fields = [f.name for f in VendorCall._meta.fields]
+
+    def has_add_permission(self, request):
         return False
