@@ -579,3 +579,96 @@ class ReportTests(Base):
         self.assertContains(resp, "brand-logo.png")
         self.assertEqual(self.get(self.req, "reports").status_code, 403)
         self.assertEqual(self.get(self.req, "report_excel").status_code, 403)
+
+
+class TemplateAndActionTests(Base):
+    def setUp(self):
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN,
+                                              email="boss@example.com", mobile="919888888888")
+        s = SiteSettings.load()
+        s.email_enabled = s.sms_enabled = s.whatsapp_enabled = True
+        s.site_url = "http://diagtrack.local"
+        s.save()
+
+    def test_equipment_qr_is_a_real_svg_image_and_png(self):
+        self.client.force_login(self.bio_head)
+        svg = self.client.get(reverse("equipment_qr", args=[self.mri.pk]))
+        self.assertEqual(svg["Content-Type"], "image/svg+xml")
+        self.assertIn(b'xmlns="http://www.w3.org/2000/svg"', svg.content)
+        png = self.client.get(reverse("equipment_qr", args=[self.mri.pk]) + "?format=png")
+        self.assertTrue(png.content.startswith(b"\x89PNG"))
+        page = self.client.get(reverse("equipment_detail", args=[self.mri.pk]))
+        self.assertContains(page, f"http://diagtrack.local/tickets/new/?equipment={self.mri.pk}")
+
+    def test_builtin_wording_fills_placeholders_and_drops_empty_lines(self):
+        t = self.raise_ticket()
+        mail = OutboundMessage.objects.filter(channel="email", to="ravi@example.com").first()
+        self.assertIn(t.number, mail.body)
+        self.assertIn("Hello Ravi,", mail.body)
+        self.assertIn(f"http://diagtrack.local/tickets/{t.number}/", mail.body)
+        self.assertNotIn("Machine:", mail.body)  # no machine on this ticket
+        self.assertNotIn("{", mail.body)
+        # P3 ticket: SMS and WhatsApp are for urgent alerts only by default
+        self.assertFalse(OutboundMessage.objects.filter(channel__in=["sms", "whatsapp"]).exists())
+
+    def test_saved_template_changes_wording_and_send_rule(self):
+        self.client.force_login(self.admin)
+        url = reverse("message_templates")
+        r = self.client.post(url, {"event": "raised", "do": "save",
+                                   "email-send": "always", "email-subject": "New: {ticket}", "email-body": "Hi {recipient}. {subject} at {centre}.",
+                                   "sms-send": "always", "sms-body": "{ticket} {centre}", "sms-provider": "1107160000",
+                                   "whatsapp-send": "never", "whatsapp-body": "x"})
+        self.assertRedirects(r, url + "?event=raised")
+        t = self.raise_ticket()
+        mail = OutboundMessage.objects.get(channel="email", to="ravi@example.com")
+        self.assertEqual(mail.subject, f"New: {t.number}")
+        self.assertEqual(mail.body, "Hi Ravi. Printer not printing at Kukatpally.")
+        sms = OutboundMessage.objects.filter(channel="sms").first()
+        self.assertEqual((sms.body, sms.provider_template), (f"{t.number} Kukatpally", "1107160000"))
+        self.assertFalse(OutboundMessage.objects.filter(channel="whatsapp").exists())
+        # back to built-in
+        self.client.post(url, {"event": "raised", "do": "reset"})
+        from .models import MessageTemplate
+        self.assertFalse(MessageTemplate.objects.filter(event="raised").exists())
+
+    def test_template_screen_is_for_admins_and_warns_on_unknown_placeholder(self):
+        self.client.force_login(self.it_head)
+        self.assertEqual(self.client.get(reverse("message_templates")).status_code, 403)
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("message_templates") + "?event=escalation")
+        self.assertContains(page, "Escalation")
+        self.assertContains(page, "{<span>ticket</span>}")
+        r = self.client.post(reverse("message_templates"), {
+            "event": "closed", "do": "test", "email-send": "always", "email-subject": "s", "email-body": "{ticket} {tikcet}",
+            "sms-send": "urgent", "sms-body": "{ticket}", "whatsapp-send": "urgent", "whatsapp-body": "{ticket}"}, follow=True)
+        self.assertContains(r, "{tikcet} is not a placeholder")
+        self.assertEqual(OutboundMessage.objects.filter(to__in=["boss@example.com", "919888888888"]).count(), 3)
+
+    def test_gateway_template_placeholder(self):
+        s = SiteSettings.load()
+        s.sms_url, s.sms_body = "http://gw.example/send", '{"to": "{to}", "tpl": "{template}", "msg": "{message}"}'
+        s.save()
+        msg = OutboundMessage(channel="sms", to="91999", body='Say "hi"', provider_template="T1")
+        with mock.patch("urllib.request.urlopen") as op:
+            op.return_value.__enter__.return_value.status = 200
+            notify.send_one(msg, s)
+        sent = op.call_args[0][0].data.decode()
+        self.assertEqual(sent, '{"to": "91999", "tpl": "T1", "msg": "Say \\"hi\\""}')
+
+    def test_ticket_actions_are_one_line_buttons(self):
+        t = self.raise_ticket()
+        self.client.force_login(self.ravi)
+
+        def bar():
+            page = self.client.get(reverse("ticket_detail", args=[t.number])).content.decode()
+            self.assertNotIn("data-menu", page[page.index('class="issue-side"'):page.index('class="side-card sla-card')])
+            return page[page.index('class="actionbar"'):page.index("</div>", page.index('class="actionbar"'))]
+        first = bar()
+        for label in ("Start work", "Transfer", "Comment"):
+            self.assertIn(label, first)
+        self.assertIn("btn-primary", first.split("Start work")[0][-200:])
+        self.client.post(reverse("ticket_action", args=[t.number, "start"]))
+        second = bar()
+        for label in ("Put on hold", "Resolve", "Transfer"):
+            self.assertIn(label, second)
+        self.assertIn("btn-primary", second.split("Resolve")[0][-200:])

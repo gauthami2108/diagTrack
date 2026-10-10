@@ -26,6 +26,17 @@
       {% for c in calls %}<tr><td>{{ c.called_at|date:"d M, H:i" }}</td><td>{{ c.vendor.name }}</td><td class="num-col">{% if c.attended_at %}{{ c.response_seconds|span }}{% else %}<span class="bad-text">Waiting</span>{% endif %}</td><td><a class="num" href="{% url 'ticket_detail' c.ticket.number %}">{{ c.ticket.number }}</a></td></tr>{% endfor %}
       </tbody></table>{% else %}<p class="empty">No vendor calls logged.</p>{% endif %}
     </section>
+    <section class="panel qr-panel"><header><h2>QR label</h2></header>
+      <div class="qr-row">
+        <img class="qr-img" src="{% url 'equipment_qr' e.pk %}" alt="QR code for {{ e.name }}" width="132" height="132">
+        <div class="stack-s">
+          <p class="muted qr-text">Scanning opens Raise a ticket with {{ e.name }} at {{ e.centre.name }} already chosen.</p>
+          <code class="qr-url">{{ qr_target }}</code>
+          {% if not cfg.site_url %}<p class="warn-text qr-text">"Address of this system" is empty in Settings, so this label uses the address you opened DiagTrack with. Set it before printing labels.</p>{% endif %}
+          <div class="qr-btns"><a class="btn btn-s" href="{% url 'equipment_labels' %}?id={{ e.pk }}" target="_blank">{% icon 'scan-line' %}Print label</a><a class="btn btn-s btn-soft" href="{% url 'equipment_qr' e.pk %}?format=png">{% icon 'download' %}Download PNG</a></div>
+        </div>
+      </div>
+    </section>
     <section class="panel"><header><h2>Service vendor</h2></header>
       {% if e.vendor %}<dl class="kv"><div><dt>Vendor</dt><dd>{{ e.vendor.name }}</dd></div>{% if e.vendor.phone %}<div><dt>Phone</dt><dd>{{ e.vendor.phone }}</dd></div>{% endif %}{% if e.amc_expiry %}<div><dt>AMC until</dt><dd>{{ e.amc_expiry|date:"d M Y" }}{% if amc_left is not None and amc_left < 0 %} <span class="bad-text">Ended</span>{% elif amc_left is not None and amc_left <= 60 %} <span class="warn-text">{{ amc_left }} days left</span>{% endif %}</dd></div>{% endif %}</dl>
       {% else %}<p class="empty">No vendor recorded.</p>{% endif %}

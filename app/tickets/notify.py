@@ -12,6 +12,7 @@ import urllib.request
 from django.core.mail import EmailMessage
 from django.utils import timezone
 
+from . import wording
 from .models import Notification, OutboundMessage, SiteSettings, User
 
 log = logging.getLogger("diagtrack.notify")
@@ -24,10 +25,17 @@ def ticket_url(ticket, settings=None):
 
 
 def notify(users, ticket, title, body="", urgent=False, exclude=None, kind="other", link=""):
-    """Alert each user once. SMS and WhatsApp are used only for urgent alerts.
-    kind tells the screen how to show the pop-up (raised, closed, escalation and so on)."""
+    """Alert each user once: the bell, then email, SMS and WhatsApp as the Message templates say.
+    kind is the event (raised, closed, escalation and so on). It picks the wording and decides how the
+    pop-up looks. By default SMS and WhatsApp go out only for urgent alerts."""
     s = SiteSettings.load()
     seen = set()
+    tpl = {}
+    for ch, on in ((wording.EMAIL, s.email_enabled), (wording.SMS, s.sms_enabled), (wording.WHATSAPP, s.whatsapp_enabled)):
+        if on:
+            t = wording.get(kind, ch)
+            if wording.should_send(t["send"], urgent):
+                tpl[ch] = t
     for user in users:
         if user is None or user.pk in seen or not user.is_active:
             continue
@@ -37,17 +45,26 @@ def notify(users, ticket, title, body="", urgent=False, exclude=None, kind="othe
         if s.inapp_enabled:
             Notification.objects.create(user=user, ticket=ticket, title=title[:200], body=body[:400],
                                         urgent=urgent, kind=kind, link=link[:200])
-        text = f"{title}\n{body}".strip()
-        if s.email_enabled and user.email:
-            more = f"\n\nOpen the ticket: {ticket_url(ticket, s)}" if ticket and s.site_url else ""
-            OutboundMessage.objects.create(
-                channel=OutboundMessage.EMAIL, to=user.email,
-                subject=f"[{s.org_name}] {title}"[:200], body=text + more)
-        if urgent and user.mobile:
-            if s.sms_enabled:
-                OutboundMessage.objects.create(channel=OutboundMessage.SMS, to=user.mobile, body=text[:300])
-            if s.whatsapp_enabled:
-                OutboundMessage.objects.create(channel=OutboundMessage.WHATSAPP, to=user.mobile, body=text[:600])
+        if not tpl:
+            continue
+        ctx = wording.context(ticket, title, body, s, user, link)
+        queue(tpl, ctx, email=user.email, mobile=user.mobile)
+
+
+def queue(tpl, ctx, email="", mobile=""):
+    """Queue one message per channel in tpl (channel -> template dict) for one person."""
+    made = []
+    for ch, t in tpl.items():
+        to = email if ch == wording.EMAIL else mobile
+        if not to:
+            continue
+        text = wording.render(t["body"], ctx)
+        if ch in wording.LIMITS:
+            text = text[:wording.LIMITS[ch]]
+        made.append(OutboundMessage.objects.create(
+            channel=ch, to=to, body=text, provider_template=t.get("provider_template", ""),
+            subject=wording.render(t["subject"], ctx).replace("\n", " ")[:200] if ch == wording.EMAIL else ""))
+    return made
 
 
 def users_with_role(role, centre):
@@ -63,13 +80,13 @@ def _parse_headers(text):
     return headers
 
 
-def _http_send(url, headers_text, body_template, to, message):
+def _http_send(url, headers_text, body_template, to, message, template=""):
     """Generic HTTP gateway call; works with most Indian SMS / WhatsApp providers."""
     if not url:
         raise ValueError("Gateway address is empty. Fill it in on the Settings screen.")
     safe = json.dumps(message)[1:-1]  # escape quotes and new lines for JSON bodies
     body = (body_template or '{"to": "{to}", "message": "{message}"}')
-    body = body.replace("{to}", to).replace("{message}", safe)
+    body = body.replace("{to}", to).replace("{template}", json.dumps(template)[1:-1]).replace("{message}", safe)
     headers = {"Content-Type": "application/json"}
     headers.update(_parse_headers(headers_text))
     req = urllib.request.Request(url.replace("{to}", to), data=body.encode("utf-8"),
@@ -86,9 +103,9 @@ def send_one(msg, settings=None):
             raise ValueError("Mail server is empty. Fill it in on the Settings screen.")
         EmailMessage(msg.subject, msg.body, s.from_email or s.smtp_user, [msg.to]).send()
     elif msg.channel == OutboundMessage.SMS:
-        _http_send(s.sms_url, s.sms_headers, s.sms_body, msg.to, msg.body)
+        _http_send(s.sms_url, s.sms_headers, s.sms_body, msg.to, msg.body, msg.provider_template)
     else:
-        _http_send(s.whatsapp_url, s.whatsapp_headers, s.whatsapp_body, msg.to, msg.body)
+        _http_send(s.whatsapp_url, s.whatsapp_headers, s.whatsapp_body, msg.to, msg.body, msg.provider_template)
 
 
 def send_pending(limit=100):

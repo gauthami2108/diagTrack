@@ -47,6 +47,7 @@ d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini
       {% if request.user.is_admin %}
       <p class="nav-group">Administer</p>
       <a href="{% url 'admin:index' %}">{% icon 'sliders-horizontal' %}<span>Masters and rules</span></a>
+      <a href="{% url 'message_templates' %}" {% if p == 'message_templates' %}aria-current="page"{% endif %}>{% icon 'mail' %}<span>Message templates</span></a>
       <a href="{% url 'settings' %}" {% if p == 'settings' %}aria-current="page"{% endif %}>{% icon 'settings' %}<span>Settings and health</span></a>
       {% endif %}
     </nav>
@@ -142,6 +143,7 @@ d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini
   {"t":"Reports","u":"{% url 'reports' %}","i":"file-text"},
   {"t":"Equipment","u":"{% url 'equipment_list' %}","i":"scan-line"},{% endif %}
   {% if request.user.is_admin %}{"t":"Masters and rules","u":"{% url 'admin:index' %}","i":"sliders-horizontal"},
+  {"t":"Message templates","u":"{% url 'message_templates' %}","i":"mail"},
   {"t":"Settings and health","u":"{% url 'settings' %}","i":"settings"},{% endif %}
   {"t":"Alerts","u":"{% url 'notifications' %}","i":"bell"},
   {"t":"My profile","u":"{% url 'profile' %}","i":"user"}

@@ -67,19 +67,21 @@ The bar under each ticket shows the time left: green, amber once 75% of the time
 | You want to | Do this |
 | --- | --- |
 | Add information | Write a comment on the ticket page |
-| Say it is urgent | The settings button next to the status, **Raise priority**. Once, with a reason |
-| Confirm it is fixed | Open it, click the status button, **Confirm it is fixed**, and give a star rating if you like |
-| Say it is not fixed | Status button, **Reopen**, and say what is still wrong. Possible for 7 days after it was resolved |
-| Withdraw it | Status button, **Cancel ticket**, until someone starts work |
+| Say it is urgent | **Raise priority** in the row of buttons under the title. Once, with a reason |
+| Confirm it is fixed | Open it, press **Confirm it is fixed**, and give a star rating if you like |
+| Say it is not fixed | Press **Reopen** and say what is still wrong. Possible for 7 days after it was resolved |
+| Withdraw it | Press **Cancel ticket**, until someone starts work |
 
 ## 5. The ticket page
 
 The ticket page is laid out like Jira.
 
-- **Title area:** number, priority, title, and quick buttons such as **Attach** and **Assign to me**.
-- **Status button** (top right): shows the current status. Click it to move the ticket on, for example to
-  **On hold** or **Resolved**. Only the steps you are allowed to take are listed.
-- **Settings button** next to it: **Assign**, **Transfer to another department**, **Change priority**.
+- **Title area:** number, priority and title.
+- **Action buttons** in one row under the title: every step you may take right now, for example **Assign**,
+  **Start work**, **Put on hold**, **Resolve**, **Transfer**, **Priority**, **Log vendor call**, **Comment**,
+  **Attach** and **Cancel ticket**. The usual next step is the dark blue button. Only the steps your role allows are
+  shown, so the row changes as the ticket moves on.
+- **Status** (top right): the current status and the owner.
 - **Service level:** the time left to resolve, the due time, and whether the first response was in time.
 - **Details:** owner, who raised it, priority, centre, department, category, machine and downtime.
 - **Activity:** everything that happened. **All** shows comments and history together; **Comments** and **History**
@@ -109,7 +111,7 @@ it shows with an amber edge.
 ## 6. For agents
 
 1. **Assigned to me** is your work list, the nearest deadline first. **Team queue** shows the whole department.
-2. Open a ticket and choose **Start work** from the status button. This counts as the first response, so do it
+2. Open a ticket and press **Start work**. This counts as the first response, so do it
    promptly. If you do not start within the response time, the ticket moves to your department head.
 3. Reply to the requester with comments. Use internal notes for the team.
 4. **Put on hold** when you are waiting for the requester, a vendor or parts, and say why. The clock pauses. Choose

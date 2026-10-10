@@ -8,11 +8,7 @@
     <header class="issue-head">
       <p class="ticket-num"><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>{{ t.number }}{% if t.patient_impact %}<span class="flag">{% icon 'heart-pulse' %}Patients affected</span>{% endif %}{% if t.reopen_count %}<span class="flag flag-quiet">Reopened {{ t.reopen_count }}x</span>{% endif %}</p>
       <h1>{{ t.subject }}</h1>
-      <div class="quick">
-        {% if 'comment' in can %}<button class="btn btn-soft btn-s" type="button" data-compose-open data-attach>{% icon 'paperclip' %}Attach</button>{% endif %}
-        {% if 'assign_me' in can %}<form method="post" action="{% url 'ticket_action' t.number 'assign_me' %}">{% csrf_token %}<button class="btn btn-soft btn-s">{% icon 'user' %}Assign to me</button></form>{% endif %}
-        {% if can_vendor %}<button class="btn btn-soft btn-s" type="button" data-open="dlg-vendor">{% icon 'wrench' %}Log vendor call</button>{% endif %}
-      </div>
+      {% include "_ticket_actions.html" %}
     </header>
 
     <section class="block">
@@ -137,33 +133,7 @@
   </div>
 
   <aside class="issue-side">
-    <div class="status-bar">
-      {% if transitions %}
-      <div class="menu">
-        <button class="status-btn st-{{ t.status }}" type="button" data-menu aria-expanded="false">{{ t.get_status_display }}{% icon 'chevron-down' %}</button>
-        <div class="pop pop-left" hidden>
-          {% for a in transitions %}
-          {% if a == 'start' or a == 'resume' %}<form method="post" action="{% url 'ticket_action' t.number a %}">{% csrf_token %}<button class="pop-item">{% icon 'play' %}{% if a == 'start' %}Start work{% else %}Resume work{% endif %}<span class="pop-to"><span class="loz st-in_progress">In progress</span></span></button></form>
-          {% elif a == 'hold' %}<button class="pop-item" type="button" data-open="dlg-hold">{% icon 'pause' %}Put on hold<span class="pop-to"><span class="loz st-on_hold">On hold</span></span></button>
-          {% elif a == 'resolve' %}<button class="pop-item" type="button" data-open="dlg-resolve">{% icon 'check' %}Resolve<span class="pop-to"><span class="loz st-resolved">Resolved</span></span></button>
-          {% elif a == 'close' %}<button class="pop-item" type="button" data-open="dlg-close">{% icon 'check-check' %}Confirm it is fixed<span class="pop-to"><span class="loz st-closed">Closed</span></span></button>
-          {% elif a == 'reopen' %}<button class="pop-item" type="button" data-open="dlg-reopen">{% icon 'rotate-ccw' %}Reopen<span class="pop-to"><span class="loz st-in_progress">In progress</span></span></button>
-          {% elif a == 'cancel' %}<button class="pop-item pop-bad" type="button" data-open="dlg-cancel">{% icon 'x' %}Cancel ticket<span class="pop-to"><span class="loz st-cancelled">Cancelled</span></span></button>{% endif %}
-          {% endfor %}
-        </div>
-      </div>
-      {% else %}<span class="status-btn st-{{ t.status }} is-static">{{ t.get_status_display }}</span>{% endif %}
-      {% if 'transfer' in can or 'assign' in can or 'set_priority' in can or 'raise_priority' in can %}
-      <div class="menu">
-        <button class="icon-btn icon-btn-box" type="button" data-menu aria-expanded="false" aria-label="More actions">{% icon 'sliders-horizontal' %}</button>
-        <div class="pop" hidden>
-          {% if 'assign' in can %}<button class="pop-item" type="button" data-open="dlg-assign">{% icon 'user-plus' %}{% if t.assignee %}Reassign{% else %}Assign{% endif %}</button>{% endif %}
-          {% if 'transfer' in can %}<button class="pop-item" type="button" data-open="dlg-transfer">{% icon 'arrow-right-left' %}Transfer to another department</button>{% endif %}
-          {% if 'set_priority' in can or 'raise_priority' in can %}<button class="pop-item" type="button" data-open="dlg-priority">{% icon 'flag' %}{% if 'set_priority' in can %}Change priority{% else %}Raise priority{% endif %}</button>{% endif %}
-        </div>
-      </div>
-      {% endif %}
-    </div>
+    <div class="status-bar"><span class="status-pill st-{{ t.status }}">{{ t.get_status_display }}</span>{% if t.assignee %}<span class="status-owner">{% avatar t.assignee 's' %}{{ t.assignee.display_name }}</span>{% endif %}</div>
 
     <section class="side-card sla-card sla-{{ t.sla_state }}">
       <h2>{% icon 'clock' %} Service level</h2>

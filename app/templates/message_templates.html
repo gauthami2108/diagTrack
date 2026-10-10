@@ -1,0 +1,64 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Message templates{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Message templates</h1><p class="sub">The wording of email, SMS and WhatsApp alerts, and which alerts go out on each channel. The bell and pop-ups are not affected.</p></div></div>
+
+<div class="tpl" data-tpl data-sample='{{ sample_json }}'>
+  <nav class="tpl-list" aria-label="Events">
+    {% for group, rows in groups %}
+    <p class="tpl-group">{{ group }}</p>
+    {% for r in rows %}
+    <a class="tpl-ev" href="?event={{ r.key }}" {% if r.key == event %}aria-current="page"{% endif %}>
+      <span class="tpl-ev-name">{{ r.label }}{% if r.custom %}<i class="tpl-custom" title="Wording changed"></i>{% endif %}</span>
+      <span class="tpl-dots" aria-label="{% for c, s in r.sends %}{{ c }} {{ s }}{% if not forloop.last %}, {% endif %}{% endfor %}">{% for c, s in r.sends %}<span class="tpl-dot d-{{ s }}" title="{% if c == 'email' %}Email{% elif c == 'sms' %}SMS{% else %}WhatsApp{% endif %}: {% if s == 'always' %}always{% elif s == 'urgent' %}only urgent{% else %}never{% endif %}">{% if c == 'email' %}{% icon 'mail' %}{% elif c == 'sms' %}{% icon 'smartphone' %}{% else %}{% icon 'message-circle' %}{% endif %}</span>{% endfor %}</span>
+    </a>
+    {% endfor %}{% endfor %}
+    <p class="tpl-legend"><span class="tpl-dot d-always">{% icon 'mail' %}</span>Always <span class="tpl-dot d-urgent">{% icon 'mail' %}</span>Only urgent <span class="tpl-dot d-never">{% icon 'mail' %}</span>Never</p>
+  </nav>
+
+  <form class="panel tpl-edit" method="post">
+    {% csrf_token %}<input type="hidden" name="event" value="{{ event }}">
+    <header class="tpl-head">
+      <div><h2>{{ event_label }}{% if custom %} <span class="loz loz-strong">Changed</span>{% else %} <span class="loz">Built-in wording</span>{% endif %}</h2><p class="panel-sub">{{ event_about }}. Urgent means P1 tickets, escalations and AMC contracts ending within 7 days.</p></div>
+      <div class="seg" role="tablist" aria-label="Channel">
+        {% for c in current %}<button type="button" role="tab" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}" data-tpl-tab="{{ c.ch }}">{% if c.ch == 'email' %}{% icon 'mail' %}{% elif c.ch == 'sms' %}{% icon 'smartphone' %}{% else %}{% icon 'message-circle' %}{% endif %}{{ c.label }}</button>{% endfor %}
+      </div>
+    </header>
+
+    {% for c in current %}
+    <section class="tpl-pane" data-tpl-pane="{{ c.ch }}" data-limit="{{ c.limit }}" {% if not forloop.first %}hidden{% endif %}>
+      {% if not c.on %}<p class="tpl-off">{% icon 'circle-alert' %}{{ c.label }} alerts are switched off in Settings and health, so nothing goes out on this channel until they are switched on.</p>{% endif %}
+      <div class="tpl-grid">
+        <div class="stack-s">
+          <div class="field"><span>Send {{ c.label }}</span>
+            <div class="seg">{% for k, l in send_choices %}<label><input type="radio" name="{{ c.ch }}-send" value="{{ k }}" {% if c.send == k %}checked{% endif %}><span>{{ l }}</span></label>{% endfor %}</div>
+          </div>
+          {% if c.ch == 'email' %}<label class="field"><span>Subject</span><input type="text" name="email-subject" value="{{ c.subject }}" maxlength="200" data-tpl-field="subject"></label>{% endif %}
+          <label class="field"><span>Message</span><textarea name="{{ c.ch }}-body" rows="{% if c.ch == 'email' %}20{% elif c.ch == 'sms' %}4{% else %}9{% endif %}" class="mono" data-tpl-field="body" spellcheck="false">{{ c.body }}</textarea>
+            <small data-tpl-count></small></label>
+          {% if c.ch != 'email' %}<label class="field"><span>Provider template (optional)</span><input type="text" name="{{ c.ch }}-provider" value="{{ c.provider_template }}" maxlength="120" placeholder="{% if c.ch == 'sms' %}DLT template ID{% else %}Approved template name{% endif %}"><small>Only if your provider asks for one. It goes where the gateway's message format in Settings says <code>{template}</code>.</small></label>{% endif %}
+        </div>
+        <div class="tpl-preview">
+          <p class="tpl-preview-label">Preview with a sample ticket</p>
+          {% if c.ch == 'email' %}<div class="pv-mail"><p class="pv-mail-head"><b>{{ cfg.org_name }}</b><span>to Ravi Kumar</span></p><p class="pv-mail-subj" data-pv-subject></p><pre class="pv-mail-body" data-pv-body></pre></div>
+          {% elif c.ch == 'sms' %}<div class="pv-phone"><div class="pv-bubble pv-sms" data-pv-body></div></div>
+          {% else %}<div class="pv-phone pv-wa"><div class="pv-bubble pv-wa-b" data-pv-body data-wa></div></div>{% endif %}
+        </div>
+      </div>
+    </section>
+    {% endfor %}
+
+    <div class="tpl-places">
+      <p><b>Placeholders.</b> Click one to put it where the cursor is. A line whose placeholders are all empty is left out, so "Machine: {equipment}" disappears on tickets without a machine.</p>
+      <div class="tpl-chips">{% for k, d in placeholders %}<button type="button" class="tpl-chip" data-insert="{{ k }}" title="{{ d }}">{<span>{{ k }}</span>}</button>{% endfor %}</div>
+    </div>
+
+    <div class="form-foot">
+      {% if custom %}<button class="btn btn-ghost btn-quiet-bad" name="do" value="reset" formnovalidate data-confirm="Go back to the built-in wording for {{ event_label }} on all three channels?">{% icon 'rotate-ccw' %}Back to built-in wording</button>{% endif %}
+      <span class="spacer"></span>
+      <button class="btn" name="do" value="test">{% icon 'arrow-up-right' %}Save and send me a test</button>
+      <button class="btn btn-primary" name="do" value="save">Save</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

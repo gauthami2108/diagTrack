@@ -14,7 +14,7 @@
   {% csrf_token %}
   <section class="panel">
     <header><h2>Alert channels</h2></header>
-    <p class="panel-sub">Switch each channel on or off. SMS and WhatsApp are used only for P1 tickets and escalations.</p>
+    <p class="panel-sub">Switch each channel on or off. Which alerts go out on each channel, and their wording, are set under <a href="{% url 'message_templates' %}">Message templates</a>. Out of the box, SMS and WhatsApp are used only for urgent alerts: P1 tickets and escalations.</p>
     <div class="switches">
       {% include "_switch.html" with f=form.inapp_enabled note="The bell at the top of every screen." %}
       {% include "_switch.html" with f=form.email_enabled note="Needs the mail server below." %}

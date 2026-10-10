@@ -22,6 +22,7 @@ urlpatterns = [
     path("alerts/", views.notifications, name="notifications"),
     path("alerts/<int:pk>/", views.notification_open, name="notification_open"),
     path("settings/", views.settings_view, name="settings"),
+    path("settings/templates/", views.message_templates, name="message_templates"),
     path("centres/", views.centres, name="centres"),
     path("reports/", views.reports_view, name="reports"),
     path("reports/excel/", views.report_excel, name="report_excel"),

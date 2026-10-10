@@ -16,10 +16,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from . import notify, reports, services
+from . import notify, reports, services, wording
 from .models import (HOLD_REASONS, OPEN_STATUSES, Category, Centre, Department, DowntimeLog, Equipment,
                      Heartbeat, Notification, OutboundMessage, Priority, SiteSettings, Status, Ticket,
-                     TicketAttachment, TicketComment, User, Vendor, VendorCall)
+                     MessageTemplate, TicketAttachment, TicketComment, User, Vendor, VendorCall)
 
 
 def role_required(test):
@@ -341,7 +341,7 @@ def ticket_detail(request, number):
                            "missed" if t.response_breached else "running"),
         "comment_count": sum(1 for i in timeline if i["kind"] == "comment"),
         "history_count": sum(1 for i in timeline if i["kind"] == "event"),
-        "transitions": [a for a in ("start", "resume", "hold", "resolve", "close", "reopen", "cancel") if a in can],
+        "primary": next((a for a in ("start", "resume", "resolve", "close", "reopen") if a in can), ""),
         "vendor_calls": t.vendor_calls.select_related("vendor", "logged_by") if t.equipment_id else [],
         "can_vendor": services.can_log_vendor(user, t) and t.is_open,
         "vendors": Vendor.objects.all() if t.equipment_id else [],
@@ -486,7 +486,8 @@ def equipment_detail(request, pk):
         "e": e, "stats": reports.equipment_uptime(e), "stats90": reports.equipment_uptime(e, 90),
         "calls": VendorCall.objects.filter(ticket__equipment=e).select_related("vendor", "ticket")[:20],
         "amc_left": (e.amc_expiry - timezone.localdate()).days if e.amc_expiry else None,
-        "tickets": tickets, "downtime": DowntimeLog.objects.filter(equipment=e).select_related("ticket")[:30]})
+        "tickets": tickets, "downtime": DowntimeLog.objects.filter(equipment=e).select_related("ticket")[:30],
+        "qr_target": _qr_target(request, e)})
 
 
 # --------------------------------------------------------------------------
@@ -603,6 +604,80 @@ def settings_view(request):
     return render(request, "settings.html", {"form": form, "health": _health()})
 
 
+@admin_only
+def message_templates(request):
+    """The wording of email, SMS and WhatsApp alerts, event by event."""
+    s = SiteSettings.load()
+    event = request.POST.get("event") or request.GET.get("event") or "raised"
+    if event not in wording.EVENT_KEYS:
+        event = "raised"
+    here = f"{request.path}?event={event}"
+    if request.method == "POST":
+        what = request.POST.get("do", "save")
+        if what == "reset":
+            MessageTemplate.objects.filter(event=event).delete()
+            messages.success(request, f"{wording.EVENT_LABELS[event]}: back to the built-in wording.")
+            return redirect(here)
+        sends = dict(MessageTemplate.SEND)
+        problems = []
+        for ch, label in wording.CHANNELS:
+            body = request.POST.get(f"{ch}-body", "").strip()
+            send = request.POST.get(f"{ch}-send", "always")
+            if send not in sends:
+                send = "always"
+            if not body and send != MessageTemplate.NEVER:
+                problems.append(f"The {label} message is empty.")
+                continue
+            unknown = sorted({k for k in wording.PLACE.findall(body + request.POST.get(f"{ch}-subject", ""))
+                              if k not in wording.KEYS})
+            if unknown:
+                problems.append(f"{label}: " + ", ".join("{" + k + "}" for k in unknown) +
+                                " is not a placeholder DiagTrack knows. It would be sent exactly as typed.")
+            MessageTemplate.objects.update_or_create(event=event, channel=ch, defaults={
+                "send": send, "body": body or wording.default(event, ch)[2],
+                "subject": request.POST.get(f"{ch}-subject", "").strip()[:200],
+                "provider_template": request.POST.get(f"{ch}-provider", "").strip()[:120],
+                "updated_by": request.user})
+        if what == "test":
+            ctx = wording.sample(s)
+            ctx["recipient"] = request.user.display_name
+            tpl = {ch: wording.get(event, ch) for ch, on in
+                   (("email", s.email_enabled), ("sms", s.sms_enabled), ("whatsapp", s.whatsapp_enabled)) if on}
+            made = notify.queue(tpl, ctx, email=request.user.email, mobile=request.user.mobile)
+            if made:
+                messages.success(request, "Test queued: " + ", ".join(f"{m.get_channel_display()} to {m.to}" for m in made) +
+                                 ". It is sent within a minute; the result shows under Masters and rules, Sent alerts.")
+            else:
+                messages.error(request, "Nothing to send. Switch the channel on in Settings and add your own email "
+                                        "and mobile number to your profile.")
+        else:
+            messages.success(request, f"{wording.EVENT_LABELS[event]}: wording saved.")
+        for p in problems:
+            messages.warning(request, p)
+        return redirect(here)
+    saved = {(m.event, m.channel): m for m in MessageTemplate.objects.all()}
+    groups = {}
+    for key, label, group, about in wording.EVENTS:
+        row = {"key": key, "label": label, "about": about,
+               "custom": any((key, c) in saved for c, _ in wording.CHANNELS),
+               "sends": [(c, saved[(key, c)].send if (key, c) in saved else wording.default(key, c)[0])
+                         for c, _ in wording.CHANNELS]}
+        groups.setdefault(group, []).append(row)
+    current = []
+    for ch, label in wording.CHANNELS:
+        t = wording.get(event, ch)
+        current.append({"ch": ch, "label": label, **t,
+                        "on": {"email": s.email_enabled, "sms": s.sms_enabled, "whatsapp": s.whatsapp_enabled}[ch],
+                        "limit": wording.LIMITS.get(ch, 0)})
+    return render(request, "message_templates.html", {
+        "event": event, "event_label": wording.EVENT_LABELS[event],
+        "event_about": next(e[3] for e in wording.EVENTS if e[0] == event),
+        "groups": groups.items(), "current": current, "placeholders": wording.PLACEHOLDERS,
+        "sample_json": json.dumps(wording.sample(s)), "send_choices": MessageTemplate.SEND,
+        "custom": any((event, c) in saved for c, _ in wording.CHANNELS),
+    })
+
+
 class PasswordResetView(auth_views.PasswordResetView):
     """Forgot-password email, sent from the address saved in Settings."""
     def form_valid(self, form):
@@ -654,10 +729,23 @@ def _qr_target(request, e):
 
 @not_requester
 def equipment_qr(request, pk):
+    """The QR code as a standalone SVG image (with its XML namespace, so browsers show it in <img>),
+    or as a PNG file to download with ?format=png."""
+    import io
+
     import segno
     e = get_object_or_404(Equipment, pk=pk)
-    out = segno.make(_qr_target(request, e), error="m").svg_inline(scale=6, border=2, dark="#0d1b2e")
-    return HttpResponse(out, content_type="image/svg+xml")
+    qr = segno.make(_qr_target(request, e), error="m")
+    buf = io.BytesIO()
+    if request.GET.get("format") == "png":
+        qr.save(buf, kind="png", scale=12, border=3, dark="#0d1b2e")
+        resp = HttpResponse(buf.getvalue(), content_type="image/png")
+        resp["Content-Disposition"] = f'attachment; filename="QR-{e.centre.code}-{e.pk}.png"'
+    else:
+        qr.save(buf, kind="svg", scale=6, border=2, dark="#0d1b2e", xmldecl=False)
+        resp = HttpResponse(buf.getvalue(), content_type="image/svg+xml")
+    resp["Cache-Control"] = "private, max-age=300"
+    return resp
 
 
 @not_requester

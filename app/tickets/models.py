@@ -464,6 +464,7 @@ class OutboundMessage(models.Model):
     to = models.CharField(max_length=200)
     subject = models.CharField(max_length=200, blank=True)
     body = models.TextField()
+    provider_template = models.CharField(max_length=120, blank=True)
     status = models.CharField(max_length=10, default=PENDING,
                               choices=[(PENDING, "Waiting"), (SENT, "Sent"), (FAILED, "Failed")])
     error = models.CharField(max_length=300, blank=True)
@@ -521,10 +522,11 @@ class SiteSettings(models.Model):
     sms_headers = models.TextField("SMS headers", blank=True,
                                    help_text="One per line, Name: value. For example  authkey: abc123")
     sms_body = models.TextField("SMS message format", blank=True,
-                                help_text="What your provider expects. Use {to} and {message} as placeholders.")
+                                help_text="What your provider expects. Use {to}, {message} and, if the provider needs one, {template} as placeholders.")
     whatsapp_url = models.CharField("WhatsApp gateway address", max_length=400, blank=True)
     whatsapp_headers = models.TextField("WhatsApp headers", blank=True)
-    whatsapp_body = models.TextField("WhatsApp message format", blank=True)
+    whatsapp_body = models.TextField("WhatsApp message format", blank=True,
+                                     help_text="What your provider expects. Use {to}, {message} and {template} as placeholders.")
 
     class Meta:
         verbose_name_plural = "site settings"
@@ -543,3 +545,28 @@ class Heartbeat(models.Model):
     name = models.CharField(max_length=40, unique=True)
     at = models.DateTimeField()
     detail = models.CharField(max_length=300, blank=True)
+
+
+class MessageTemplate(models.Model):
+    """The wording of email, SMS and WhatsApp alerts, one row per event and channel.
+    A missing row means the built-in wording in tickets/wording.py is used."""
+    ALWAYS, URGENT, NEVER = "always", "urgent", "never"
+    SEND = [(ALWAYS, "Always"), (URGENT, "Only urgent"), (NEVER, "Never")]
+    event = models.CharField(max_length=20)
+    channel = models.CharField(max_length=10, choices=OutboundMessage.CHANNELS)
+    send = models.CharField(max_length=8, choices=SEND, default=ALWAYS)
+    subject = models.CharField(max_length=200, blank=True)
+    body = models.TextField()
+    provider_template = models.CharField(
+        "provider template", max_length=120, blank=True,
+        help_text="Optional. The template name or DLT template ID your SMS or WhatsApp provider gave you. "
+                  "Used where the gateway message format says {template}.")
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        unique_together = [("event", "channel")]
+        ordering = ["event", "channel"]
+
+    def __str__(self):
+        return f"{self.event} {self.channel}"

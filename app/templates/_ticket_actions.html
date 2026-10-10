@@ -1,0 +1,16 @@
+{% load dt %}
+<div class="actionbar" role="toolbar" aria-label="Ticket actions">
+  {% if 'assign_me' in can %}<form method="post" action="{% url 'ticket_action' t.number 'assign_me' %}">{% csrf_token %}<button class="btn btn-s act">{% icon 'user' %}Assign to me</button></form>{% endif %}
+  {% if 'assign' in can %}<button class="btn btn-s act" type="button" data-open="dlg-assign">{% icon 'user-plus' %}{% if t.assignee %}Reassign{% else %}Assign{% endif %}</button>{% endif %}
+  {% if 'start' in can %}<form method="post" action="{% url 'ticket_action' t.number 'start' %}">{% csrf_token %}<button class="btn btn-s act {% if primary == 'start' %}btn-primary{% endif %}">{% icon 'play' %}Start work</button></form>{% endif %}
+  {% if 'resume' in can %}<form method="post" action="{% url 'ticket_action' t.number 'resume' %}">{% csrf_token %}<button class="btn btn-s act {% if primary == 'resume' %}btn-primary{% endif %}">{% icon 'play' %}Resume work</button></form>{% endif %}
+  {% if 'hold' in can %}<button class="btn btn-s act" type="button" data-open="dlg-hold">{% icon 'pause' %}Put on hold</button>{% endif %}
+  {% if 'resolve' in can %}<button class="btn btn-s act {% if primary == 'resolve' %}btn-primary{% else %}act-good{% endif %}" type="button" data-open="dlg-resolve">{% icon 'check' %}Resolve</button>{% endif %}
+  {% if 'close' in can %}<button class="btn btn-s act {% if primary == 'close' %}btn-primary{% endif %}" type="button" data-open="dlg-close">{% icon 'check-check' %}Confirm it is fixed</button>{% endif %}
+  {% if 'reopen' in can %}<button class="btn btn-s act {% if primary == 'reopen' %}btn-primary{% endif %}" type="button" data-open="dlg-reopen">{% icon 'rotate-ccw' %}Reopen</button>{% endif %}
+  {% if 'transfer' in can %}<button class="btn btn-s act" type="button" data-open="dlg-transfer">{% icon 'arrow-right-left' %}Transfer</button>{% endif %}
+  {% if 'set_priority' in can or 'raise_priority' in can %}<button class="btn btn-s act" type="button" data-open="dlg-priority">{% icon 'flag' %}{% if 'set_priority' in can %}Priority{% else %}Raise priority{% endif %}</button>{% endif %}
+  {% if can_vendor %}<button class="btn btn-s act" type="button" data-open="dlg-vendor">{% icon 'wrench' %}Log vendor call</button>{% endif %}
+  {% if 'comment' in can %}<button class="btn btn-s act" type="button" data-compose-open>{% icon 'message-square' %}Comment</button><button class="btn btn-s act" type="button" data-compose-open data-attach>{% icon 'paperclip' %}Attach</button>{% endif %}
+  {% if 'cancel' in can %}<button class="btn btn-s act act-bad" type="button" data-open="dlg-cancel">{% icon 'x' %}Cancel ticket</button>{% endif %}
+</div>

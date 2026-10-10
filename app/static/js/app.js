@@ -512,4 +512,57 @@
     setInterval(poll, 15000);
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") poll(); });
   }
+  // ---- Message templates: channel tabs, placeholder chips, live preview -------------
+  $$("[data-confirm]").forEach(b => b.addEventListener("click", e => { if (!window.confirm(b.dataset.confirm)) e.preventDefault(); }));
+  const tplRoot = $("[data-tpl]");
+  if (tplRoot) {
+    const sample = JSON.parse(tplRoot.dataset.sample || "{}");
+    const KEYS = Object.keys(sample);
+    const fill = (text) => {
+      const out = [];
+      String(text || "").split("\n").forEach(line => {
+        const keys = (line.match(/\{(\w+)\}/g) || []).map(k => k.slice(1, -1)).filter(k => KEYS.includes(k));
+        if (keys.length && keys.every(k => !String(sample[k] || "").trim())) return;
+        out.push(line.replace(/\{(\w+)\}/g, (m, k) => KEYS.includes(k) ? (sample[k] || "") : m));
+      });
+      return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    };
+    const wa = (t) => esc(t).replace(/\*([^*\n]+)\*/g, "<b>$1</b>").replace(/_([^_\n]+)_/g, "<i>$1</i>");
+    let lastField = null;
+    const update = (pane) => {
+      const body = $('[data-tpl-field="body"]', pane), subj = $('[data-tpl-field="subject"]', pane);
+      const limit = +pane.dataset.limit || 0;
+      let text = fill(body.value);
+      const count = $("[data-tpl-count]", pane);
+      if (limit) {
+        count.textContent = `${text.length} of ${limit} characters with the sample filled in${text.length > limit ? ". The end will be cut off" : ""}. SMS sends 160 characters per part.`;
+        count.classList.toggle("bad-text", text.length > limit);
+        text = text.slice(0, limit);
+      } else { count.textContent = ""; }
+      const pv = $("[data-pv-body]", pane);
+      if (pv.hasAttribute("data-wa")) pv.innerHTML = wa(text); else pv.textContent = text;
+      if (subj) $("[data-pv-subject]", pane).textContent = fill(subj.value).replace(/\n/g, " ");
+    };
+    $$("[data-tpl-pane]").forEach(pane => {
+      $$("[data-tpl-field]", pane).forEach(f => {
+        f.addEventListener("input", () => update(pane));
+        f.addEventListener("focus", () => { lastField = f; });
+      });
+      update(pane);
+    });
+    $$("[data-tpl-tab]").forEach(tab => tab.addEventListener("click", () => {
+      $$("[data-tpl-tab]").forEach(t => t.setAttribute("aria-selected", String(t === tab)));
+      $$("[data-tpl-pane]").forEach(p => { p.hidden = p.dataset.tplPane !== tab.dataset.tplTab; });
+      lastField = null;
+    }));
+    $$("[data-insert]").forEach(chip => chip.addEventListener("click", () => {
+      const pane = $$("[data-tpl-pane]").find(p => !p.hidden);
+      const f = (lastField && pane.contains(lastField)) ? lastField : $('[data-tpl-field="body"]', pane);
+      const token = `{${chip.dataset.insert}}`;
+      const a = f.selectionStart ?? f.value.length, b = f.selectionEnd ?? f.value.length;
+      f.value = f.value.slice(0, a) + token + f.value.slice(b);
+      f.focus(); f.selectionStart = f.selectionEnd = a + token.length;
+      update(pane);
+    }));
+  }
 })();

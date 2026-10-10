@@ -38,6 +38,7 @@ The entrypoint starts as root, fixes ownership of the data folders, then drops t
 | `tickets/models.py` | The data model |
 | `tickets/services.py` | **All business rules**: visibility, permissions, routing, assignment, status changes, SLA clock, escalation, vendor calls, AMC checks, mentions. Views never change a ticket directly |
 | `tickets/notify.py` | In-app alerts and the outbound queue for email, SMS and WhatsApp |
+| `tickets/wording.py` | Events, placeholders, built-in wording and the template renderer for email, SMS and WhatsApp |
 | `tickets/reports.py` | Home, dashboard, centre matrix, equipment figures |
 | `tickets/exports.py` | The Reports screen and the Excel workbook |
 | `tickets/views.py` | Screens and JSON feeds |
@@ -64,7 +65,8 @@ The entrypoint starts as root, fixes ownership of the data folders, then drops t
 | Ticket | Includes the SLA fields `sla_started_at`, `response_due`, `resolution_due`, `hold_started_at`, `hold_seconds` and the breach flags |
 | TicketComment, TicketAttachment, TicketHistory | Comments and internal notes (with `edited_at`), files, audit trail |
 | Notification | In-app alert with a `kind` (raised, closed, escalation, mention and others) that decides how the pop-up looks |
-| OutboundMessage | Queued email, SMS and WhatsApp with status and error, sent by the worker |
+| OutboundMessage | Queued email, SMS and WhatsApp with status and error, sent by the worker; carries `provider_template` |
+| MessageTemplate | Wording per event and channel: `send` (always, urgent, never), subject, body, provider template. No row means the built-in wording in `wording.py` |
 | SiteSettings | Single row: alert switches, mail server, gateways, branding, auto-close, reopen and AMC days |
 | Heartbeat | The worker's last run, shown on the health screen |
 
@@ -86,6 +88,15 @@ and every action checks it. `services.visible_tickets(user)` is the only way tic
 
 **Comments.** Stored as typed. `rich` escapes all HTML first, then applies bold, italics, code, lists, links (http and
 https only) and `@mentions`. Authors may edit for 24 hours (`services.EDIT_WINDOW`).
+
+**Alerts.** `notify.notify(users, ticket, title, body, urgent, kind=...)` writes the bell alert, then for each
+channel that is switched on looks up `wording.get(kind, channel)`; if its `send` rule matches `urgent`, the template
+is rendered per recipient with `wording.context()` and queued. `wording.render()` leaves out a line whose known
+placeholders are all empty, and leaves unknown placeholders as typed. The gateway message format may use `{template}`
+for the provider template. The editing screen is `views.message_templates` at `/settings/templates/`.
+
+**QR codes.** `/equipment/<id>/qr.svg` returns a standalone SVG (with its namespace, so it works in `<img>`), or a
+PNG with `?format=png`. The code opens `<site_url>/tickets/new/?equipment=<id>`.
 
 **Uploaded files** are served by Django only to people who may see the ticket, with
 `Content-Security-Policy: default-src 'none'` and `nosniff`. Profile photos accept JPG, PNG or WEBP only.
@@ -137,6 +148,6 @@ new migration; the web container applies migrations when it starts.
 
 ## Not built yet
 
-Scheduled email reports, saved replies, bulk actions, child tickets, a duplicate warning, a calendar view, saved
+HTML (designed) emails, scheduled email reports, saved replies, bulk actions, child tickets, a duplicate warning, a calendar view, saved
 filters, preventive maintenance schedules, knowledge articles, login lock-out and two-step login, bulk import from
 Excel, and archiving of tickets older than one year.

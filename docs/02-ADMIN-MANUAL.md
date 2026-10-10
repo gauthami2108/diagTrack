@@ -8,6 +8,7 @@ Sign in as an administrator. The side menu then shows two extra items:
 - **Masters and rules**: the lists DiagTrack works from (centres, departments, categories, users, SLA times,
   escalation rules, equipment, vendors). Every list has an **Add** button at the top right. Click a row to change it,
   then press **Save** at the bottom.
+- **Message templates**: the wording of email, SMS and WhatsApp alerts, and which alerts go out on each channel.
 - **Settings and health**: alerts, mail server, branding, and a check that the system is healthy.
 
 ## 1. First-day setup
@@ -147,7 +148,9 @@ What DiagTrack does with them:
 | QR labels | Equipment, Print QR labels | A printable sheet, one label per machine. Scanning a label with a phone opens Raise a ticket with the centre and machine already chosen |
 
 For the QR labels, first fill in "address of this system" in Settings, then choose a centre on the Machines tab and
-press **Print QR labels**. Print on A4, cut along the dashed lines and stick one on each machine.
+press **Print QR labels**. Print on A4, cut along the dashed lines and stick one on each machine. Each machine's own
+page also shows its QR code, the address it opens, a **Print label** button and **Download PNG** for a sticker
+printer.
 
 ## 7. Alerts
 
@@ -157,8 +160,11 @@ press **Print QR labels**. Print on A4, cut along the dashed lines and stick one
 | --- | --- |
 | In-app alerts (bell) | The bell at the top of every screen |
 | Email alerts | Emails for every alert. Needs the mail server below |
-| SMS alerts | Only for P1 tickets and escalations. Needs an SMS provider and internet |
-| WhatsApp alerts | Only for P1 tickets and escalations. Needs a WhatsApp Business provider and internet |
+| SMS alerts | Out of the box, only for urgent alerts. Needs an SMS provider and internet |
+| WhatsApp alerts | Out of the box, only for urgent alerts. Needs a WhatsApp Business provider and internet |
+
+These switches turn a whole channel on or off. Which events use each channel, and what the messages say, are set
+under Message templates (section 8).
 | Alert the area manager on every new ticket | When off, area managers hear only about P1 tickets and escalations |
 | Alert centre and area managers when a ticket is closed | Managers see each closure at their centres |
 | Pop-up messages on screen | New tickets, closures, escalations, mentions and AMC warnings slide in at the bottom right of the screen |
@@ -195,7 +201,56 @@ In India, SMS needs a registered sender ID and approved templates (DLT), and Wha
 account; the provider guides you through both. DiagTrack has not yet been tried with a specific provider, so allow
 time for this.
 
-## 8. General settings and branding
+If the provider gives you a template name (WhatsApp) or a DLT template ID (SMS), put `{template}` in the message
+format here, and type the name or ID on the matching event under Message templates.
+
+## 8. Message templates
+
+*Side menu, Message templates.* One page per event: New ticket, Assigned, Work started, On hold, Resolved, Closed,
+Reopened, Cancelled, Transferred, Priority changed, New reply, Internal note, Mentioned, Escalation, AMC ending, and
+Anything else. The list on the left shows for each event whether email, SMS and WhatsApp go out: dark blue is
+**Always**, amber is **Only urgent**, outline is **Never**. A blue dot after a name means its wording was changed.
+
+On an event's page there is a tab for each channel:
+
+| Item | What it does |
+| --- | --- |
+| Send | **Always**, **Only urgent** (P1 tickets, escalations and AMC contracts ending within 7 days) or **Never** |
+| Subject | Email only |
+| Message | The text. Type normally and add placeholders |
+| Provider template | SMS and WhatsApp only, and only if the provider asks for one (section 7) |
+| Preview | Shows the message with a sample ticket as you type. The SMS tab also counts characters |
+
+**Placeholders** are words in curly brackets that DiagTrack fills in when it sends. Click one under the message to
+put it where the cursor is.
+
+| Placeholder | Becomes |
+| --- | --- |
+| `{title}` | The alert's headline, as shown on the bell |
+| `{details}` | The comment, reason or resolution note |
+| `{recipient}` | The name of the person receiving it |
+| `{ticket}`, `{subject}` | Ticket number and title |
+| `{priority}`, `{status}` | For example P1 Critical, In progress |
+| `{centre}`, `{department}`, `{category}`, `{equipment}` | Where it is and what it is about |
+| `{requester}`, `{owner}` | Who raised it, who is working on it |
+| `{due}` | The resolution deadline |
+| `{link}` | Link to the ticket (or to the machine for AMC). Needs "address of this system" in Settings |
+| `{org}` | Organisation name |
+
+A line whose placeholders all come out empty is left out. For example "Machine: {equipment}" simply disappears on
+a ticket without a machine, so one template works for every ticket. A misspelt placeholder is sent as typed, and
+the screen warns you when you save.
+
+Buttons at the bottom:
+
+- **Save**.
+- **Save and send me a test**: sends this event's messages, filled with the sample ticket, to your own email and
+  mobile, on every channel that is switched on. The result shows under *Masters and rules, Sent alerts*.
+- **Back to built-in wording**: undoes your changes for this event, on all three channels.
+
+The bell and the pop-ups always use the headline and detail; templates change only email, SMS and WhatsApp.
+
+## 9. General settings and branding
 
 *Settings and health*
 
@@ -213,7 +268,7 @@ sign-in page and on printed reports, navy `#274a99` for buttons and sky blue `#2
 upload a new full logo (wide) or logo mark (square), or pick new colours, and save. Tick "Go back to the built-in
 logo" to undo an upload. Keep the main colour medium-dark so white text on buttons stays readable.
 
-## 9. The health strip
+## 10. The health strip
 
 The four boxes at the top of Settings and health. All should be green.
 
@@ -224,7 +279,7 @@ The four boxes at the top of Settings and health. All should be green.
 | Alerts sent out | Some emails or messages failed. The reason is shown, usually a wrong mail server detail |
 | In use | Always green: the number of tickets and active users |
 
-## 10. Records you can look up
+## 11. Records you can look up
 
 | What | Where |
 | --- | --- |
@@ -232,7 +287,7 @@ The four boxes at the top of Settings and health. All should be green.
 | Every email, SMS and WhatsApp sent, and any failure | *Masters and rules, Sent alerts* |
 | Every vendor call | *Masters and rules, Vendor calls* |
 
-## 11. Common tasks
+## 12. Common tasks
 
 | Task | How |
 | --- | --- |
@@ -244,4 +299,5 @@ The four boxes at the top of Settings and health. All should be green.
 | Make deadlines longer or shorter | Section 5, SLA times |
 | A new kind of problem | Add a category under the right department |
 | A new machine | Add it under Equipment, print its QR label |
+| Change what an alert says, or send it by WhatsApp too | Message templates (section 8) |
 | An AMC is renewed | Change the AMC expiry date on the machine. Warnings start again for the new date |

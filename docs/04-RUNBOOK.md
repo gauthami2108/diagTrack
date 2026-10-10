@@ -88,7 +88,8 @@ been restored has not been proven.
 | Emails do not arrive, but the box is green | The person has no email address, or email alerts are off | Check their email under Users, and the Email alerts switch |
 | Pop-ups do not appear | Pop-ups switched off, or the browser tab was asleep | Check "Pop-up messages on screen" in Settings. Pop-ups arrive within about 15 seconds |
 | No desktop alerts outside the browser | The site is on plain `http://` | Desktop alerts need HTTPS (Install guide, step 7). Pop-ups inside DiagTrack still work |
-| QR labels open the wrong address | "Address of this system" is empty or wrong | Fix it in Settings, then print the labels again |
+| QR labels open the wrong address | "Address of this system" is empty or wrong | Fix it in Settings, then print the labels again. The machine's page shows the address its label opens |
+| An alert's wording is wrong, or an SMS shows `{something}` | A template was changed, or a placeholder misspelt | Message templates, open the event, fix it or press **Back to built-in wording** |
 | "Server Error (500)" on a screen | A fault in the software | `docker compose logs --tail 50 web`, copy the lines and send them to whoever supports the software |
 | A photo will not upload | Larger than the limit | Raise "Largest attachment" in Settings, up to 50 MB |
 | The disk is filling up | Attachments and the database grow | `df -h` shows space. Add disk space before it passes 80% |
