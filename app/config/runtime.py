@@ -26,11 +26,18 @@ def home():
     return Path(value) if value else None
 
 
-def read_conf(path):
+def read_conf(path, required=False):
     values = {}
     try:
         text = Path(path).read_text(encoding="utf-8")
-    except OSError:
+    except FileNotFoundError:
+        if required:
+            raise RuntimeError(f"DiagTrack's settings file {path} is missing. Run setup and choose Repair.") from None
+        return values
+    except OSError as exc:
+        if required:
+            raise RuntimeError(f"DiagTrack cannot read its settings file {path} ({exc.strerror}). "
+                               "Run setup and choose Repair to fix the folder permissions.") from None
         return values
     for line in text.splitlines():
         line = line.strip()
@@ -97,10 +104,17 @@ def save_secrets(path, secrets):
         os.chmod(path, 0o600)
 
 
-def load_secrets_file(path):
+def load_secrets_file(path, required=False):
     try:
         raw = Path(path).read_bytes()
-    except OSError:
+    except FileNotFoundError:
+        if required:
+            raise RuntimeError(f"DiagTrack's secrets file {path} is missing. Run setup and choose Repair.") from None
+        return {}
+    except OSError as exc:
+        if required:
+            raise RuntimeError(f"DiagTrack cannot read its secrets file {path} ({exc.strerror}). "
+                               "Run setup and choose Repair to fix the folder permissions.") from None
         return {}
     if raw.startswith(b"DPAPI1"):
         raw = _dpapi(raw[6:], False)
@@ -111,9 +125,10 @@ def load():
     """Fill os.environ from the settings file, the secrets file and /run/secrets. Real variables win."""
     h = home()
     if h:
-        for key, value in read_conf(h / "diagtrack.conf").items():
+        # A native install must find both files: never fall back to development defaults.
+        for key, value in read_conf(h / "diagtrack.conf", required=True).items():
             os.environ.setdefault(key, value)
-        for key, value in load_secrets_file(h / "secrets.dat").items():
+        for key, value in load_secrets_file(h / "secrets.dat", required=True).items():
             if value:
                 os.environ.setdefault(key, value)
         os.environ.setdefault("MEDIA_ROOT", str(h / "media"))

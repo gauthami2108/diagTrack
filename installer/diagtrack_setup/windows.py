@@ -442,8 +442,11 @@ def install_service(pg):
 def set_permissions():
     """Data folder: SYSTEM and Administrators full control, the DiagTrack service may change files, nobody else."""
     DATA.mkdir(parents=True, exist_ok=True)
+    # The folder itself: no inherited rights, only these three.
     run(["icacls", DATA, "/inheritance:r", "/grant:r", f"{SID_SYSTEM}:(OI)(CI)F", f"{SID_ADMINS}:(OI)(CI)F",
-         f"NT SERVICE\\{SERVICE}:(OI)(CI)M", "/T", "/C", "/Q"], "Setting permissions on the data folder", "DT-S07")
+         f"NT SERVICE\\{SERVICE}:(OI)(CI)M", "/C", "/Q"], "Setting permissions on the data folder", "DT-S07")
+    # Everything inside: inherit exactly those rights from the folder.
+    run(["icacls", str(DATA / "*"), "/reset", "/T", "/C", "/Q"], "Setting permissions inside the data folder", "DT-S07")
 
 
 def firewall(port):
