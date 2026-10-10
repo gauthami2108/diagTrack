@@ -10,7 +10,8 @@ fi
 require_setup() {
     if [ ! -s secrets/db_password ]; then
         echo
-        if [ -f data/postgres/PG_VERSION ]; then
+        # The database folder belongs to the database's own user, so it may not be readable from here.
+        if [ -d data/postgres ] && { [ ! -r data/postgres ] || [ -n "$(ls -A data/postgres 2>/dev/null)" ]; }; then
             echo "This folder holds a DiagTrack made by an earlier version. Run setup once to upgrade it;"
             echo "every ticket, user and attachment is kept:"
         else
