@@ -96,7 +96,7 @@ Staff pick from this list when they raise an equipment ticket. Downtime and upti
 
 ## 6. Settings and health
 
-**Brand.** Upload your logo (PNG or SVG, ideally square) and pick the brand colour. Both appear in the menu, buttons and the sign-in page straight away. Choose a medium-dark colour so white text on buttons stays readable.
+**Brand.** The Pramodini logo and colours are built in: the P mark in the menu and browser tab, the full logo on the sign-in page and printed reports, navy (#274a99) for buttons and sky blue (#24aee8) for highlights. To change them, upload a new full logo (wide) or logo mark (square), or pick new colours, and save. Tick "Go back to the built-in logo" to undo an upload. Choose a medium-dark main colour so white text on buttons stays readable.
 
 **Pop-ups.** "Pop-up messages on screen" shows new tickets, closures and escalations sliding in at the bottom right of everyone's screen. "Alert centre and area managers when a ticket is closed" adds closures for managers.
 

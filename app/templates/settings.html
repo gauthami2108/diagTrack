@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load dt %}
+{% extends "base.html" %}{% load dt static %}
 {% block title %}Settings and health{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Settings and health</h1><p class="sub">Alert channels, mail server and a check that the system is running well.</p></div></div>
@@ -30,10 +30,14 @@
     <header><h2>Brand</h2></header>
     <p class="panel-sub">Your logo and colour appear in the menu, buttons and the sign-in page.</p>
     <div class="brand-row">
-      <div class="brand-preview" style="--brand: {{ form.brand_color.value }}">{% if cfg.logo %}<img src="{% url 'brand_logo' %}" alt="Current logo">{% else %}<span class="brand-mark brand-mark-l"><i></i><i></i><i></i></span>{% endif %}<span class="btn btn-primary">Sample button</span></div>
+      <div class="brand-preview" style="--brand: {{ form.brand_color.value }}; --brand-2: {{ form.brand_color_2.value }}">
+        <img class="bp-wide" src="{% if cfg.logo_wide %}{% url 'brand_logo_wide' %}{% else %}{% static 'img/brand-logo.png' %}{% endif %}" alt="Full logo">
+        <span class="bp-row"><span class="brand-tile">{% if cfg.logo %}<img src="{% url 'brand_logo' %}" alt="Logo mark">{% else %}<img src="{% static 'img/brand-mark.svg' %}" alt="Logo mark">{% endif %}</span><span class="btn btn-primary">Sample button</span></span>
+      </div>
       <div class="stack-s">
-        <label class="field"><span>Logo</span><input type="file" name="logo" accept="image/png,image/svg+xml,image/jpeg,image/webp"><small>{{ form.logo.help_text }}</small>{% if cfg.logo %}<label class="chip-check"><input type="checkbox" name="logo-clear"><span>Remove the current logo</span></label>{% endif %}</label>
-        {% include "_field.html" with f=form.brand_color %}
+        <label class="field"><span>Full logo (wide)</span><input type="file" name="logo_wide" accept="image/png,image/svg+xml,image/jpeg,image/webp"><small>{{ form.logo_wide.help_text }}</small>{% if cfg.logo_wide %}<label class="chip-check"><input type="checkbox" name="logo_wide-clear"><span>Go back to the built-in logo</span></label>{% endif %}</label>
+        <label class="field"><span>Logo mark (square)</span><input type="file" name="logo" accept="image/png,image/svg+xml,image/jpeg,image/webp"><small>{{ form.logo.help_text }}</small>{% if cfg.logo %}<label class="chip-check"><input type="checkbox" name="logo-clear"><span>Go back to the built-in mark</span></label>{% endif %}</label>
+        <div class="field-row">{% include "_field.html" with f=form.brand_color %}{% include "_field.html" with f=form.brand_color_2 %}</div>
       </div>
     </div>
   </section>

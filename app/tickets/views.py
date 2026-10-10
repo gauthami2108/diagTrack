@@ -537,6 +537,7 @@ class SettingsForm(forms.ModelForm):
         fields = "__all__"
         widgets = {
             "brand_color": forms.TextInput(attrs={"type": "color"}),
+            "brand_color_2": forms.TextInput(attrs={"type": "color"}),
             "smtp_password": forms.PasswordInput(render_value=True),
             "sms_headers": forms.Textarea(attrs={"rows": 2}), "sms_body": forms.Textarea(attrs={"rows": 2}),
             "whatsapp_headers": forms.Textarea(attrs={"rows": 2}),
@@ -732,6 +733,16 @@ def brand_logo(request):
         raise Http404
 
 
+def brand_logo_wide(request):
+    s = SiteSettings.load()
+    if not s.logo_wide:
+        raise Http404
+    try:
+        return _safe(FileResponse(s.logo_wide.open("rb")))
+    except FileNotFoundError:
+        raise Http404
+
+
 @login_required
 def person_photo(request, pk):
     u = get_object_or_404(User, pk=pk)
@@ -767,3 +778,38 @@ def profile(request):
                 messages.success(request, "Profile saved.")
                 return redirect("profile")
     return render(request, "profile.html", {"form": form})
+
+
+# --------------------------------------------------------------------------
+# Reports: on screen, Excel, and a print view for PDF
+# --------------------------------------------------------------------------
+from . import exports  # noqa: E402
+
+
+def _report_context(request):
+    r = exports.build_report(request.user, request.GET)
+    return {"r": r, "groups": exports.GROUPS, "periods": exports.PERIODS,
+            "centres": Centre.objects.filter(active=True), "departments": Department.objects.filter(active=True),
+            "priorities": Priority.choices, "query": request.GET.urlencode()}
+
+
+@not_requester
+def reports_view(request):
+    return render(request, "reports.html", _report_context(request))
+
+
+@not_requester
+def report_excel(request):
+    ctx = _report_context(request)
+    s = SiteSettings.load()
+    r = ctx["r"]
+    data = exports.to_excel(r, s.org_name, request.user.display_name, s.brand_color)
+    name = f"diagtrack-{r['group']}-{r['start']:%Y%m%d}-{r['end']:%Y%m%d}.xlsx"
+    resp = HttpResponse(data, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = f'attachment; filename="{name}"'
+    return resp
+
+
+@not_requester
+def report_print(request):
+    return render(request, "report_print.html", _report_context(request))

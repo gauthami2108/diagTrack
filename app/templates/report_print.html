@@ -1,0 +1,31 @@
+{% load static dt %}<!doctype html>
+<html lang="en" data-theme="light"><head><meta charset="utf-8"><title>{{ cfg.org_name }} report {{ r.start|date:"j M Y" }} to {{ r.end|date:"j M Y" }}</title>
+<link rel="stylesheet" href="{% static 'css/app.css' %}">
+<style>:root{--brand:{{ cfg.brand_color }};--brand-2:{{ cfg.brand_color_2 }}} @page { size: A4 landscape; margin: 12mm; }</style>
+</head><body class="print-page">
+<div class="print-bar"><span>This page is laid out for printing. Choose "Save as PDF" in the print window to make a PDF.</span><button class="btn btn-primary" onclick="window.print()">Print or save as PDF</button></div>
+<header class="print-head">
+  <img src="{% if cfg.logo_wide %}{% url 'brand_logo_wide' %}{% else %}{% static 'img/brand-logo.png' %}{% endif %}" alt="{{ cfg.org_name }}">
+  <div><h1>Tickets by {{ r.group_label|lower }}</h1>
+  <p>Raised {{ r.start|date:"j M Y" }} to {{ r.end|date:"j M Y" }}. {% for k, v in r.filters.items %}{{ k }}: {{ v }}. {% endfor %}</p>
+  <p class="muted">Prepared by {{ request.user.display_name }}, {{ r.generated|date:"j M Y, H:i" }}</p></div>
+</header>
+<section class="print-band">
+  <div><b>{{ r.totals.raised }}</b><span>Raised</span></div><div><b>{{ r.totals.resolved }}</b><span>Resolved</span></div>
+  <div><b>{{ r.totals.open }}</b><span>Still open</span></div><div><b>{{ r.totals.late }}</b><span>Missed or past deadline</span></div>
+  <div><b>{% if r.totals.sla_pct is None %}-{% else %}{{ r.totals.sla_pct }}%{% endif %}</b><span>Resolved in time</span></div>
+  <div><b>{% if r.totals.resp_pct is None %}-{% else %}{{ r.totals.resp_pct }}%{% endif %}</b><span>Responded in time</span></div>
+  <div><b>{% if r.totals.avg_hours is None %}-{% else %}{{ r.totals.avg_hours }} h{% endif %}</b><span>Average to resolve</span></div>
+</section>
+{% include "_report_tables.html" %}
+{% if r.pivot %}<h2 class="print-h2">Raised, centre by department</h2>
+<table class="matrix"><thead><tr><th>Centre</th>{% for d in r.pivot_depts %}<th class="n">{{ d.name }}</th>{% endfor %}<th class="n">Total</th></tr></thead>
+<tbody>{% for p in r.pivot %}<tr><th scope="row">{{ p.centre.name }}</th>{% for n in p.cells %}<td class="n">{{ n }}</td>{% endfor %}<td class="n"><b>{{ p.total }}</b></td></tr>{% endfor %}</tbody>
+<tfoot><tr><th>Total</th>{% for n in r.pivot_totals %}<td class="n">{{ n }}</td>{% endfor %}<td class="n">{{ r.totals.raised }}</td></tr></tfoot></table>{% endif %}
+{% if r.breaches %}<h2 class="print-h2">Missed or past the deadline ({{ r.breaches|length }})</h2>
+<table class="matrix"><thead><tr><th>Ticket</th><th>Raised</th><th>Centre</th><th>Department</th><th>Title</th><th>Priority</th><th>Status</th><th>Owner</th></tr></thead>
+<tbody>{% for t in r.breaches|slice:":60" %}<tr><td class="num">{{ t.number }}</td><td>{{ t.created_at|date:"j M, H:i" }}</td><td>{{ t.centre.name }}</td><td>{{ t.department.name }}</td><td class="wrap">{{ t.subject }}</td><td>{{ t.priority }}</td><td>{{ t.get_status_display }}</td><td>{{ t.assignee.display_name|default:"Unassigned" }}</td></tr>{% endfor %}</tbody></table>
+{% if r.breaches|length > 60 %}<p class="muted">Showing 60 of {{ r.breaches|length }}. The Excel download has all of them.</p>{% endif %}{% endif %}
+<footer class="print-foot">DiagTrack, {{ cfg.org_name }}. Targets: resolved and responded in time 90% or more; watch 75 to 89%.</footer>
+<script>if (location.hash !== "#noprint") setTimeout(() => window.print(), 600);</script>
+</body></html>

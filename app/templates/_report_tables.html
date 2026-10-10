@@ -1,0 +1,26 @@
+{% load dt %}
+<table class="matrix report-table">
+  <thead><tr>{% for c in r.group_columns %}<th{% if forloop.first %} class="sticky"{% endif %}>{{ c }}</th>{% endfor %}
+    <th class="n">Raised</th><th class="n">Resolved</th><th class="n">Still open</th><th class="n">Past deadline</th><th class="n">P1</th>
+    <th>Resolved in time</th><th>Responded in time</th><th class="n">Average to resolve</th><th class="n">Rating</th></tr></thead>
+  <tbody>
+  {% for m in r.rows %}<tr>
+    {% for l in m.labels %}{% if forloop.first %}<th class="sticky" scope="row">{{ l }}</th>{% else %}<td>{{ l }}</td>{% endif %}{% endfor %}
+    <td class="n">{{ m.raised }}</td><td class="n">{{ m.resolved }}</td><td class="n">{{ m.open }}</td>
+    <td class="n {% if m.late %}hot{% endif %}">{{ m.late }}</td><td class="n {% if m.p1 %}hot{% endif %}">{{ m.p1 }}</td>
+    <td>{% include "_meter.html" with pct=m.sla_pct band=m.sla_band %}</td>
+    <td>{% include "_meter.html" with pct=m.resp_pct band=m.resp_band %}</td>
+    <td class="n">{% if m.avg_hours is None %}<span class="muted">-</span>{% else %}{{ m.avg_hours }} h{% endif %}</td>
+    <td class="n">{% if m.rating %}{{ m.rating }}{% else %}<span class="muted">-</span>{% endif %}</td>
+  </tr>{% empty %}<tr><td colspan="12" class="empty-s">No tickets were raised with these filters.</td></tr>{% endfor %}
+  </tbody>
+  {% if r.rows %}<tfoot><tr>
+    <th class="sticky" scope="row">All</th>{% for c in r.group_columns|slice:"1:" %}<td></td>{% endfor %}
+    <td class="n">{{ r.totals.raised }}</td><td class="n">{{ r.totals.resolved }}</td><td class="n">{{ r.totals.open }}</td>
+    <td class="n">{{ r.totals.late }}</td><td class="n">{{ r.totals.p1 }}</td>
+    <td>{% include "_meter.html" with pct=r.totals.sla_pct band=r.totals.sla_band %}</td>
+    <td>{% include "_meter.html" with pct=r.totals.resp_pct band=r.totals.resp_band %}</td>
+    <td class="n">{% if r.totals.avg_hours is None %}-{% else %}{{ r.totals.avg_hours }} h{% endif %}</td>
+    <td class="n">{{ r.totals.rating|default:"-" }}</td>
+  </tr></tfoot>{% endif %}
+</table>

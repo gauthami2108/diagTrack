@@ -4,7 +4,7 @@
   "description": "Internal ticketing for diagnostic centres",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0d1b2e",
+  "background_color": "#0b1726",
   "theme_color": "#0d1b2e",
-  "icons": [{"src": "/static/img/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+  "icons": [{"src": "/static/img/brand-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
 }

@@ -59,6 +59,12 @@
   $$("dialog.dialog").forEach(d => d.addEventListener("click", e => { if (e.target === d) d.close(); }));
   $$("[data-dismiss]").forEach(b => b.addEventListener("click", () => b.closest(".toast").remove()));
 
+  /* ---------- reports: show the date boxes only for "Choose dates" ---------- */
+  const rf = $("[data-report-form]");
+  if (rf) rf.addEventListener("change", e => {
+    if (e.target.name === "period") $("[data-custom-dates]", rf).hidden = e.target.value !== "custom";
+  });
+
   /* ---------- filters apply as soon as they change ---------- */
   $$("[data-autosubmit]").forEach(f => f.addEventListener("change", e => {
     if (e.target.type === "search") return;

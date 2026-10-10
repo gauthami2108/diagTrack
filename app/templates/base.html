@@ -6,20 +6,20 @@
 <meta name="theme-color" content="#0b1726">
 <title>{% block title %}DiagTrack{% endblock %} | {{ cfg.org_name }}</title>
 <link rel="manifest" href="{% static 'manifest.json' %}">
-<link rel="icon" href="{% if cfg.logo %}{% url 'brand_logo' %}{% else %}{% static 'img/icon.svg' %}{% endif %}">
+<link rel="icon" href="{% if cfg.logo %}{% url 'brand_logo' %}{% else %}{% static 'img/brand-mark.svg' %}{% endif %}">
 <script>
 (function(){try{var d=document.documentElement,t=localStorage.getItem('dt-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
 d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini';var x=localStorage.getItem('dt-density');if(x)d.dataset.density=x;}catch(e){}})();
 </script>
 <link rel="stylesheet" href="{% static 'css/app.css' %}">
-<style>:root{--brand:{{ cfg.brand_color|default:"#2a5bd7" }}}</style>
+<style>:root{--brand:{{ cfg.brand_color|default:"#274a99" }};--brand-2:{{ cfg.brand_color_2|default:"#24aee8" }}}</style>
 </head>
 <body data-last-alert="{{ last_alert_id|default:0 }}" data-popups="{% if cfg.popups_enabled %}1{% endif %}">
 <a class="skip" href="#main">Skip to content</a>
 <div class="shell">
   <aside class="nav" id="nav">
     <a class="brand" href="{% url 'home' %}">
-      {% if cfg.logo %}<img class="brand-logo" src="{% url 'brand_logo' %}" alt="">{% else %}<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>{% endif %}
+      <span class="brand-tile">{% if cfg.logo %}<img src="{% url 'brand_logo' %}" alt="">{% else %}<img src="{% static 'img/brand-mark.svg' %}" alt="">{% endif %}</span>
       <span class="brand-text"><b>DiagTrack</b><small>{{ cfg.org_name }}</small></span>
     </a>
     {% with r=request.user.role p=request.resolver_match.url_name v=request.GET.view %}
@@ -41,6 +41,7 @@ d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini
       {% if not request.user.is_resolver %}<a href="{% url 'board' %}" {% if p == 'board' %}aria-current="page"{% endif %}>{% icon 'square-kanban' %}<span>Board</span></a>{% endif %}
       <a href="{% url 'dashboard' %}" {% if p == 'dashboard' %}aria-current="page"{% endif %}>{% icon 'chart-column' %}<span>Dashboard</span></a>
       <a href="{% url 'centres' %}" {% if p == 'centres' %}aria-current="page"{% endif %}>{% icon 'building-2' %}<span>Centres</span></a>
+      <a href="{% url 'reports' %}" {% if p == 'reports' %}aria-current="page"{% endif %}>{% icon 'file-text' %}<span>Reports</span></a>
       <a href="{% url 'equipment_list' %}" {% if p == 'equipment_list' or p == 'equipment_detail' %}aria-current="page"{% endif %}>{% icon 'scan-line' %}<span>Equipment</span></a>
       {% endif %}
       {% if request.user.is_admin %}
@@ -138,6 +139,7 @@ d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini
   {"t":"Past the deadline","u":"{% url 'ticket_list' %}?view=all&sla=breached","i":"triangle-alert"},
   {"t":"Dashboard","u":"{% url 'dashboard' %}","i":"chart-column"},
   {"t":"Centres","u":"{% url 'centres' %}","i":"building-2"},
+  {"t":"Reports","u":"{% url 'reports' %}","i":"file-text"},
   {"t":"Equipment","u":"{% url 'equipment_list' %}","i":"scan-line"},{% endif %}
   {% if request.user.is_admin %}{"t":"Masters and rules","u":"{% url 'admin:index' %}","i":"sliders-horizontal"},
   {"t":"Settings and health","u":"{% url 'settings' %}","i":"settings"},{% endif %}

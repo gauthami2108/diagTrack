@@ -478,16 +478,22 @@ class OutboundMessage(models.Model):
 
 class SiteSettings(models.Model):
     """One row only. Edited on the Settings screen."""
-    org_name = models.CharField("organisation name", max_length=120, default="DiagTrack")
+    org_name = models.CharField("organisation name", max_length=120, default="Pramodini Medicare Limited")
     site_url = models.CharField(
         "address of this system", max_length=200, blank=True,
         help_text="Used for links in emails and on equipment QR labels, for example http://diagtrack.local")
-    logo = models.FileField(upload_to="brand/", blank=True,
-                            help_text="Your logo, shown in the menu and on the sign-in page. PNG or SVG, ideally square.")
+    logo = models.FileField("logo mark (square)", upload_to="brand/", blank=True,
+                            help_text="Optional. Replaces the P mark in the menu and browser tab. PNG or SVG, square.")
+    logo_wide = models.FileField("full logo (wide)", upload_to="brand/", blank=True,
+                                 help_text="Optional. Replaces the full logo on the sign-in page and on printed reports.")
     brand_color = models.CharField(
-        "brand colour", max_length=7, default="#2a5bd7",
-        validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Use a colour code like #2a5bd7.")],
-        help_text="Used for buttons and highlights. Choose a medium-dark colour so white text on it stays readable.")
+        "brand colour", max_length=7, default="#274a99",
+        validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Use a colour code like #274a99.")],
+        help_text="Buttons and highlights. Choose a medium-dark colour so white text on it stays readable.")
+    brand_color_2 = models.CharField(
+        "second brand colour", max_length=7, default="#24aee8",
+        validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Use a colour code like #24aee8.")],
+        help_text="The glow on the home screen and sign-in page.")
 
     inapp_enabled = models.BooleanField("In-app alerts (bell)", default=True)
     email_enabled = models.BooleanField("Email alerts", default=False)

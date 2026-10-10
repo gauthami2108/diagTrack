@@ -1,0 +1,64 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Reports</h1><p class="sub">Choose the period, centres and departments, then download Excel or print a PDF. Figures are for tickets raised in the period.</p></div>
+  <div class="head-actions">
+    <a class="btn" href="{% url 'report_print' %}?{{ query }}" target="_blank">{% icon 'file-text' %}Print or save as PDF</a>
+    <a class="btn btn-primary" href="{% url 'report_excel' %}?{{ query }}">{% icon 'download' %}Download Excel</a>
+  </div>
+</div>
+
+<form class="report-filters panel" method="get" data-report-form>
+  <div class="rf-row">
+    <div class="rf-block"><span class="rf-label">Period</span>
+      <div class="seg seg-wrap">{% for k, l in periods.items %}<label><input type="radio" name="period" value="{{ k }}" {% if r.period == k %}checked{% endif %}><span>{{ l }}</span></label>{% endfor %}</div>
+      <div class="rf-dates" {% if r.period != 'custom' %}hidden{% endif %} data-custom-dates>
+        <label class="field"><span>From</span><input type="date" name="from" value="{{ r.start|date:'Y-m-d' }}"></label>
+        <label class="field"><span>To</span><input type="date" name="to" value="{{ r.end|date:'Y-m-d' }}"></label>
+      </div>
+    </div>
+    <label class="field rf-group"><span>Group by</span><select name="group">{% for k, l in groups.items %}<option value="{{ k }}" {% if r.group == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+    <label class="field rf-group"><span>Tickets</span><select name="state"><option value="any">All</option><option value="open" {% if r.state == 'open' %}selected{% endif %}>Still open</option><option value="done" {% if r.state == 'done' %}selected{% endif %}>Finished</option></select></label>
+  </div>
+  <div class="rf-block"><span class="rf-label">Centres <small>none ticked means all</small></span>
+    <div class="chips">{% for c in centres %}<label class="chip"><input type="checkbox" name="centre" value="{{ c.pk }}" {% if c.pk in r.selected.centre %}checked{% endif %}><span>{{ c.name }}</span></label>{% endfor %}</div></div>
+  <div class="rf-block"><span class="rf-label">Departments</span>
+    <div class="chips">{% for d in departments %}<label class="chip"><input type="checkbox" name="department" value="{{ d.pk }}" {% if d.pk in r.selected.department %}checked{% endif %}><span>{{ d.name }}</span></label>{% endfor %}</div></div>
+  <div class="rf-block"><span class="rf-label">Priority</span>
+    <div class="chips">{% for k, l in priorities %}<label class="chip"><input type="checkbox" name="priority" value="{{ k }}" {% if k in r.selected.priority %}checked{% endif %}><span>{{ l }}</span></label>{% endfor %}</div></div>
+  <div class="rf-foot"><span class="muted">{{ r.start|date:"j M Y" }} to {{ r.end|date:"j M Y" }}</span><a class="link-quiet" href="{% url 'reports' %}">Clear</a><button class="btn btn-primary" type="submit">Show report</button></div>
+</form>
+
+<section class="band" aria-label="Totals">
+  <div class="band-cell"><span class="band-n" data-count>{{ r.totals.raised }}</span><span class="band-l">Raised</span></div>
+  <div class="band-cell"><span class="band-n" data-count>{{ r.totals.resolved }}</span><span class="band-l">Resolved</span></div>
+  <div class="band-cell"><span class="band-n" data-count>{{ r.totals.open }}</span><span class="band-l">Still open</span></div>
+  <div class="band-cell {% if r.totals.late %}is-bad{% endif %}"><span class="band-n" data-count>{{ r.totals.late }}</span><span class="band-l">Missed or past the deadline</span></div>
+  <div class="band-cell {% if r.totals.sla_band == 'bad' %}is-bad{% elif r.totals.sla_band == 'fair' %}is-warn{% endif %}"><span class="band-n">{% if r.totals.sla_pct is None %}-{% else %}{{ r.totals.sla_pct }}%{% endif %}</span><span class="band-l">Resolved in time</span></div>
+  <div class="band-cell"><span class="band-n">{% if r.totals.avg_hours is None %}-{% else %}{{ r.totals.avg_hours }} h{% endif %}</span><span class="band-l">Average to resolve</span></div>
+</section>
+
+<section class="panel panel-flush">
+  <header class="panel-pad"><h2>By {{ r.group_label|lower }}</h2><span class="legend"><span><i class="lv lv-good"></i>On target, 90% or more</span><span><i class="lv lv-fair"></i>Watch</span><span><i class="lv lv-bad"></i>Below 75%</span></span></header>
+  <div class="matrix-wrap">{% include "_report_tables.html" %}</div>
+</section>
+
+{% if r.pivot %}
+<div class="grid-2 grid-even">
+  <section class="panel panel-flush panel-wide">
+    <header class="panel-pad"><h2>Raised, centre by department</h2></header>
+    <div class="matrix-wrap"><table class="matrix">
+      <thead><tr><th class="sticky">Centre</th>{% for d in r.pivot_depts %}<th class="n">{{ d.name }}</th>{% endfor %}<th class="n">Total</th></tr></thead>
+      <tbody>{% for p in r.pivot %}<tr><th class="sticky" scope="row">{{ p.centre.name }}</th>{% for n in p.cells %}<td class="n">{% if n %}{{ n }}{% else %}<span class="muted">0</span>{% endif %}</td>{% endfor %}<td class="n"><b>{{ p.total }}</b></td></tr>{% endfor %}</tbody>
+      <tfoot><tr><th class="sticky">Total</th>{% for n in r.pivot_totals %}<td class="n">{{ n }}</td>{% endfor %}<td class="n">{{ r.totals.raised }}</td></tr></tfoot>
+    </table></div>
+  </section>
+  <section class="panel">
+    <header><h2>Missed or past the deadline</h2>{% if r.breaches|length > 8 %}<small>First 8 of {{ r.breaches|length }}. All are in the Excel file.</small>{% endif %}</header>
+    {% if r.breaches %}{% include "_rows.html" with tickets=r.breaches|slice:":8" show_owner=True %}{% else %}<div class="empty-mini">{% icon 'circle-check' %}<p>Every ticket in this report met its deadlines.</p></div>{% endif %}
+  </section>
+</div>
+{% endif %}
+<p class="sub report-note">The Excel file has six sheets: this summary, the centre by department grid, every ticket, missed deadlines, equipment downtime and vendor calls.</p>
+{% endblock %}

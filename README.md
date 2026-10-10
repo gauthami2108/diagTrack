@@ -10,7 +10,8 @@ in Docker, with all data on local disk and a nightly backup to your NAS.
 - Live pop-ups when tickets are raised, closed or escalated; in-app, email, SMS and WhatsApp alerts with on/off switches.
 - Centres matrix: load, SLA performance and equipment uptime for every centre side by side.
 - Equipment register with downtime, vendor call log and response times, AMC renewal alerts, repeat-fault list and QR labels.
-- Board, dashboard, command palette (Ctrl K), ticket preview, light and dark themes, your own logo and brand colour.
+- Reports by centre, department, category, priority, owner or equipment, downloadable as a six-sheet Excel file or printed to PDF.
+- Board, dashboard, command palette (Ctrl K), ticket preview, light and dark themes, Pramodini logo and brand colours built in.
 
 ## Start here
 

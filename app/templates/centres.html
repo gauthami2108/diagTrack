@@ -3,6 +3,8 @@
 {% block content %}
 <div class="page-head">
   <div><h1>Centres</h1><p class="sub">Every centre side by side: load right now, and service levels over the last {{ m.days }} days. Select a centre or a cell to open its tickets.</p></div>
+  <div class="head-actions">
+  <a class="btn" href="{% url 'report_excel' %}?group=centre&period={{ m.days }}{% if request.GET.department %}&department={{ request.GET.department }}{% endif %}">{% icon 'download' %}Excel</a>
   <form class="filters filters-inline" method="get" data-autosubmit>
     <div class="seg" role="group" aria-label="Period">
       <label><input type="radio" name="days" value="7" {% if m.days == 7 %}checked{% endif %}><span>7 days</span></label>
@@ -11,6 +13,7 @@
     </div>
     <select name="department" aria-label="Department"><option value="">All departments</option>{% for d in departments %}<option value="{{ d.pk }}" {% if request.GET.department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
   </form>
+  </div>
 </div>
 
 <section class="band" aria-label="All centres together">

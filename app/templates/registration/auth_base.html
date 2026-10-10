@@ -3,23 +3,24 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Sign in{% endblock %} | DiagTrack</title>
-<link rel="icon" href="{% static 'img/icon.svg' %}" type="image/svg+xml">
+<link rel="icon" href="{% if cfg.logo %}{% url 'brand_logo' %}{% else %}{% static 'img/brand-mark.svg' %}{% endif %}">
 <script>(function(){try{var t=localStorage.getItem('dt-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=t;}catch(e){}})();</script>
 <link rel="stylesheet" href="{% static 'css/app.css' %}">
-<style>:root{--brand:{{ cfg.brand_color|default:"#2a5bd7" }}}</style>
+<style>:root{--brand:{{ cfg.brand_color|default:"#274a99" }};--brand-2:{{ cfg.brand_color_2|default:"#24aee8" }}}</style>
 </head>
 <body class="auth">
   <div class="auth-film" aria-hidden="true">
     <div class="film-frames"><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <div class="auth-pitch">
-      {% if cfg.logo %}<img class="auth-logo" src="{% url 'brand_logo' %}" alt="">{% else %}<span class="brand-mark brand-mark-l"><i></i><i></i><i></i></span>{% endif %}
+      <span class="brand-tile brand-tile-l">{% if cfg.logo %}<img src="{% url 'brand_logo' %}" alt="">{% else %}<img src="{% static 'img/brand-mark.svg' %}" alt="">{% endif %}</span>
       <p class="auth-line">Every fault logged.<br>Every deadline watched.</p>
       <p class="auth-org">{{ cfg.org_name }}</p>
     </div>
   </div>
   <main class="auth-main">
     <div class="auth-card">
-      <p class="auth-brand">{% if cfg.logo %}<img class="brand-logo" src="{% url 'brand_logo' %}" alt="">{% else %}<span class="brand-mark"><i></i><i></i><i></i></span>{% endif %}DiagTrack</p>
+      <img class="auth-wordmark" src="{% if cfg.logo_wide %}{% url 'brand_logo_wide' %}{% else %}{% static 'img/brand-logo.png' %}{% endif %}" alt="{{ cfg.org_name }}">
+      <p class="auth-product">DiagTrack, internal service desk</p>
       {% block card %}{% endblock %}
     </div>
   </main>

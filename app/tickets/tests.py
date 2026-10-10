@@ -518,3 +518,64 @@ class Phase2Tests(Base):
             "a.png", b"\x89PNG fake", content_type="image/png")])
         resp = self.client.get(reverse("attachment", args=[t.attachments.get().pk]))
         self.assertIn("default-src 'none'", resp["Content-Security-Policy"])
+
+
+class ReportTests(Base):
+    def setUp(self):
+        self.t1 = self.raise_ticket()                                                    # KKP, IT
+        services.start_work(self.t1, self.t1.assignee)
+        services.resolve(self.t1, self.t1.assignee, "Done")
+        self.t2 = self.raise_ticket(self.aircon)                                          # KKP, Facilities
+        self.t3 = services.create_ticket(self.other, self.sec, self.printer, "SEC printer", "x")  # SEC, IT
+
+    def get(self, user, name, **params):
+        from urllib.parse import urlencode
+        self.client.force_login(user)
+        return self.client.get(reverse(name) + "?" + urlencode(params, doseq=True))
+
+    def test_grouping_and_filters(self):
+        from . import exports
+        from django.http import QueryDict
+        r = exports.build_report(self.director, QueryDict("group=centre"))
+        self.assertEqual([(m["labels"][0], m["raised"], m["resolved"]) for m in r["rows"]],
+                         [("Kukatpally", 2, 1), ("Secunderabad", 1, 0)])
+        self.assertEqual(r["totals"]["sla_pct"], 100)
+        r = exports.build_report(self.director, QueryDict(f"group=department&centre={self.kkp.pk}"))
+        self.assertEqual([(m["labels"][0], m["raised"]) for m in r["rows"]], [("Facilities", 1), ("IT", 1)])
+        r = exports.build_report(self.director, QueryDict(f"group=centre_department&department={self.it.pk}"))
+        self.assertEqual([m["labels"] for m in r["rows"]], [("Kukatpally", "IT"), ("Secunderabad", "IT")])
+        self.assertEqual(r["pivot_totals"], [2])
+        r = exports.build_report(self.cm, QueryDict("group=centre"))  # centre manager sees only KKP
+        self.assertEqual([m["labels"][0] for m in r["rows"]], ["Kukatpally"])
+
+    def test_period_choices(self):
+        from . import exports
+        from datetime import date
+        today = date(2026, 10, 10)
+        self.assertEqual(exports.period_bounds({"period": "lastmonth"}, today)[:2], (date(2026, 9, 1), date(2026, 9, 30)))
+        self.assertEqual(exports.period_bounds({"period": "month"}, today)[:2], (date(2026, 10, 1), today))
+        self.assertEqual(exports.period_bounds({"period": "custom", "from": "2026-10-05", "to": "2026-09-20"}, today)[:2],
+                         (date(2026, 9, 20), date(2026, 10, 5)))
+
+    def test_excel_download(self):
+        import io
+        from openpyxl import load_workbook
+        resp = self.get(self.director, "report_excel", group="department", centre=[self.kkp.pk, self.sec.pk])
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("attachment", resp["Content-Disposition"])
+        wb = load_workbook(io.BytesIO(resp.content))
+        self.assertEqual(wb.sheetnames, ["Summary", "Centre x Department", "Tickets", "Missed deadlines",
+                                         "Equipment downtime", "Vendor calls"])
+        ws = wb["Summary"]
+        values = [[c.value for c in row] for row in ws.iter_rows(min_row=5)]
+        self.assertEqual(values[0][:3], ["Department", "Raised", "Resolved"])
+        self.assertEqual([v[:3] for v in values[1:]], [["Facilities", 1, 0], ["IT", 2, 1], ["All", 3, 1]])
+        self.assertEqual(wb["Tickets"].max_row, 4 + 3)
+
+    def test_screens(self):
+        self.assertContains(self.get(self.am, "reports", group="priority"), "By priority")
+        resp = self.get(self.am, "report_print", group="centre")
+        self.assertContains(resp, "Tickets by centre")
+        self.assertContains(resp, "brand-logo.png")
+        self.assertEqual(self.get(self.req, "reports").status_code, 403)
+        self.assertEqual(self.get(self.req, "report_excel").status_code, 403)

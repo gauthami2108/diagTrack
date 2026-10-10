@@ -63,6 +63,10 @@ If you do not start an assigned ticket within its response time, it moves to you
 
 - **All tickets** shows every ticket of your centres. Filter by status, priority, department or deadline. **Export to Excel** saves the current list.
 - **Centres** shows every centre side by side: open tickets, late tickets, machines down, resolved and responded in time, average time to resolve, rating and uptime. Green is on target (90% or more), amber is watch, red is below target. Select any number to open those tickets.
+- **Reports** (side menu): pick the period (last 7, 30 or 90 days, this month, last month, or your own dates), tick the centres, departments and priorities you want (none ticked means all), and choose how to group the figures: by centre, department, centre and department, category, priority, owner or equipment. Press **Show report**, then:
+    - **Download Excel** for a workbook with six sheets: the summary, a centre by department grid, every ticket, missed deadlines, equipment downtime and vendor calls.
+    - **Print or save as PDF** for a one-page summary with the logo, ready to print or to save as a PDF from the print window.
+  All figures are for tickets raised in the chosen period. The **Centres** page also has an **Excel** button for the same figures by centre.
 - **Dashboard** and **Equipment** show performance and machine uptime.
 - Area managers are alerted on every new ticket in their centres (this can be switched off in Settings).
 - Management logins can view everything but not change tickets.

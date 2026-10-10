@@ -2,11 +2,11 @@
 @font-face { font-family: "Plex"; src: url("../fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2"); font-weight: 400; }
 @font-face { font-family: "Plex"; src: url("../fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2"); font-weight: 600; }
 :root, html[data-theme="light"] {
-  --primary: #2a5bd7; --secondary: #0d1b2e; --accent: #c9d5e3; --primary-fg: #fff;
+  --primary: #274a99; --secondary: #0d1b2e; --accent: #c9d5e3; --primary-fg: #fff;
   --header-color: #c9d5e3; --header-branding-color: #fff; --header-bg: #0d1b2e; --header-link-color: #fff;
   --breadcrumbs-bg: #16283f; --breadcrumbs-fg: #c9d5e3; --breadcrumbs-link-fg: #fff;
-  --link-fg: #1f48b3; --link-hover-color: #0f1e30; --link-selected-fg: #1f48b3;
-  --button-bg: #2a5bd7; --button-hover-bg: #1f48b3; --default-button-bg: #0d1b2e; --default-button-hover-bg: #16283f;
+  --link-fg: #274a99; --link-hover-color: #0f1e30; --link-selected-fg: #274a99;
+  --button-bg: #274a99; --button-hover-bg: #1d3a7d; --default-button-bg: #0d1b2e; --default-button-hover-bg: #16283f;
   --selected-row: #e6edfc; --font-family-primary: "Plex", system-ui, sans-serif;
 }
 body { font-size: 14px; }
