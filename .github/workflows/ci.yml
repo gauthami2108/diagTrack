@@ -87,6 +87,44 @@ jobs:
           done
           [ -f data/status/setup.log ] && echo "::warning title=setup.log::$(tail -n 60 data/status/setup.log | tail -c 3500 | sed ':a;N;$!ba;s/\n/%0A/g')" || true
 
+  docker-upgrade:
+    # The first Docker version kept its passwords in .env. Install it, add data, then upgrade the way a user does.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Install the first Docker version and add demo data
+        run: |
+          git checkout -q a410a88
+          docker compose up -d --build --wait
+          docker compose exec -T web python manage.py seed_demo
+          docker compose exec -T web python manage.py shell -c "from tickets.models import Ticket; print(Ticket.objects.count())" | tail -1 | tee "$RUNNER_TEMP/before"
+          docker compose down
+      - name: start.sh explains that setup is needed
+        run: |
+          git checkout -q -f "$GITHUB_SHA"
+          if ./scripts/start.sh > "$RUNNER_TEMP/start.out" 2>&1; then echo "::error::start.sh started without setup"; exit 1; fi
+          cat "$RUNNER_TEMP/start.out"
+          grep -q "earlier version" "$RUNNER_TEMP/start.out"
+      - name: Setup upgrades it
+        run: |
+          docker compose run --rm -T -e DT_BACKUP_PASSPHRASE -v "$PWD/ci:/ci:ro" setup --answers /ci/answers-upgrade.json
+          if [ -f .env ] && grep -E "DB_PASSWORD|ADMIN_PASSWORD|SECRET_KEY" .env; then echo "::error::passwords left in .env"; exit 1; fi
+          ./scripts/start.sh
+      - name: Verify, and every ticket is still there
+        run: |
+          docker compose run --rm -T setup verify
+          after=$(docker compose exec -T web python manage.py shell -c "from tickets.models import Ticket; print(Ticket.objects.count())" | tail -1)
+          echo "before $(cat "$RUNNER_TEMP/before"), after $after"
+          test "$after" = "$(cat "$RUNNER_TEMP/before")"
+      - name: Report
+        if: failure()
+        continue-on-error: true
+        run: |
+          for svc in db web worker backup; do
+            docker compose logs --no-color --tail 40 $svc 2>&1 | tail -40 | python3 -c "import sys; t=sys.stdin.read()[-3000:].replace('%','%25').replace('\r','').replace('\n','%0A'); print(f'::warning title=$svc log::{t}')"
+          done
+
   windows:
     runs-on: windows-2022
     steps:

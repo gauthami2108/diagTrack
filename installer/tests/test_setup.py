@@ -105,6 +105,39 @@ class DockerSetupTests(unittest.TestCase):
             self.assertEqual(cfg["destinations"][0]["path"], "/backups")
             self.assertTrue((project / "secrets" / "admin_password_hash").read_text().startswith("pbkdf2_sha256$"))
 
+    def test_upgrade_of_the_first_docker_version_keeps_its_passwords(self):
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d)
+            (project / "docker-compose.yml").write_text("name: diagtrack\n")
+            (project / "data" / "postgres").mkdir(parents=True)
+            (project / "data" / "postgres" / "PG_VERSION").write_text("17\n")
+            (project / "data" / "status").mkdir(parents=True)
+            (project / "data" / "status" / ".secret_key").write_text("old-session-key\n")
+            (project / ".env").write_text("SECRET_KEY=\nDB_PASSWORD=old-db-pass\nADMIN_USERNAME=admin\n"
+                                          "ADMIN_PASSWORD=ChangeMe@123\nBACKUP_DIR=/mnt/nas\nBACKUP_TIME=02:15\n"
+                                          "BACKUP_KEEP_DAYS=30\nBACKUP_REQUIRE_MARKER=1\nHTTP_PORT=8080\n"
+                                          "HTTPS_MODE=\nTIME_ZONE=Asia/Kolkata\n")
+            with mock.patch.object(docker_mode, "PROJECT", project), \
+                    mock.patch.object(docker_mode, "SECRETS", project / "secrets"), \
+                    mock.patch.object(docker_mode, "STATUS", project / "data" / "status"), \
+                    mock.patch.dict(os.environ, {"DT_BACKUP_PASSPHRASE": "blue lamps over kukatpally"}):
+                ui.ANSWERS.update({"site_url": "http://dt", "backup2_wanted": "no", "confirm": "yes"})
+                try:
+                    self.assertEqual(docker_mode.install(), 0)
+                finally:
+                    ui.ANSWERS.clear()
+            secrets_dir = project / "secrets"
+            self.assertEqual((secrets_dir / "db_password").read_text().strip(), "old-db-pass")
+            self.assertEqual((secrets_dir / "secret_key").read_text().strip(), "old-session-key")
+            self.assertFalse((secrets_dir / "admin_password_hash").exists())
+            env = (project / ".env").read_text()
+            for gone in ("DB_PASSWORD", "SECRET_KEY", "ADMIN_PASSWORD", "ChangeMe", "BACKUP_TIME"):
+                self.assertNotIn(gone, env)
+            self.assertIn("HTTP_PORT=8080", env)
+            self.assertIn("BACKUP_DIR=/mnt/nas", env)
+            dest = json.loads((project / "data" / "status" / "backup-config.json").read_text())["destinations"][0]
+            self.assertEqual((dest["time"], dest["keep_daily"], dest["require_marker"]), ("02:15", 30, True))
+
 
 if __name__ == "__main__":
     unittest.main()

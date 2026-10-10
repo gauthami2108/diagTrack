@@ -20,6 +20,20 @@ def preset(key):
         return env
     value = ANSWERS.get(key)
     return None if value is None else str(value)
+
+
+def unattended():
+    return bool(ANSWERS) or os.environ.get("DT_UNATTENDED") == "1"
+
+
+def no_answer(key, default):
+    """Unattended and no answer given: use the question's default, or stop instead of waiting for a keyboard."""
+    if default not in (None, ""):
+        log(f"Q: {key} -> {default} (unattended, default)")
+        return default
+    raise Failed("DT-Q02", f"The unattended run has no answer for '{key}'.",
+                 todo=f"Add \"{key}\" to the answers file, or set DT_{(key or '').upper()}.")
+
 COLOR = sys.stdout.isatty()
 if os.name == "nt":
     os.system("")  # switches on colour codes in the Windows console
@@ -153,6 +167,8 @@ def ask(question, default="", check=None, hint="", key=None):
             raise Failed("DT-Q01", f"The unattended answer for {key} is not valid: {problem}")
         log(f"Q: {question} -> {given} (unattended)")
         return given
+    if unattended():
+        return no_answer(key, default)
     while True:
         prompt = f"{question}" + (f" [{default}]" if default else "") + ": "
         if hint:
@@ -173,6 +189,9 @@ def ask_secret(question, check=None, confirm=True, hint="", key=None):
             raise Failed("DT-Q02", f"The unattended secret DT_{key.upper()} is not valid: {problem}")
         hide(given)
         return given
+    if unattended():
+        raise Failed("DT-Q02", f"The unattended run has no value for the secret '{key}'.",
+                     todo=f"Set the environment variable DT_{(key or '').upper()}.")
     while True:
         if hint:
             print(dim(f"  {hint}"))
@@ -193,6 +212,8 @@ def yes(question, default=True, key=None):
     given = preset(key)
     if given is not None:
         return given.lower() in ("1", "true", "yes", "y")
+    if unattended():
+        return no_answer(key, default)
     d = "Y/n" if default else "y/N"
     while True:
         answer = input(f"{question} [{d}]: ").strip().lower()
@@ -212,6 +233,8 @@ def choose(question, options, default=1, key=None):
         if given not in [k for k, _ in options]:
             raise Failed("DT-Q03", f"The unattended answer for {key} must be one of {[k for k, _ in options]}.")
         return given
+    if unattended():
+        return no_answer(key, options[default - 1][0])
     say("")
     say(bold(question))
     for i, (_, label) in enumerate(options, 1):

@@ -25,6 +25,30 @@ SECRETS = PROJECT / "secrets"
 STATUS = Path(os.environ.get("STATUS_DIR", "/data/status"))
 IMPORT = PROJECT / "data" / "import"
 
+# Settings the first Docker version kept in .env. Secrets move to ./secrets; the rest become backup defaults.
+OLD_SECRET_KEYS = ("DB_PASSWORD", "SECRET_KEY", "ADMIN_PASSWORD")
+OLD_BACKUP_KEYS = ("BACKUP_TIME", "BACKUP_KEEP_DAYS", "BACKUP_REQUIRE_MARKER")
+
+
+def earlier_install():
+    """True when this folder already holds a database made by the first Docker version (before ./secrets)."""
+    folder = PROJECT / "data" / "postgres"
+    try:
+        return (folder / "PG_VERSION").exists() or any(folder.iterdir())
+    except PermissionError:  # the database owns the folder: it is there, and not empty
+        return True
+    except OSError:
+        return False
+
+
+def old_secret_key(env):
+    if env.get("SECRET_KEY"):
+        return env["SECRET_KEY"]
+    try:  # the first version created one here when .env had none
+        return (STATUS / ".secret_key").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
 
 def write_secret(name, value):
     SECRETS.mkdir(parents=True, exist_ok=True)
@@ -70,14 +94,22 @@ def install():
     steps.ok(str(PROJECT))
 
     steps.start("ask")
-    mode = ui.choose("What would you like to do?", [("new", "New install"),
-                                                     ("move", "Move in from another DiagTrack (move file in data/import)")],
-                     key="mode")
+    old_env = read_env()
+    if earlier_install():
+        ui.say("An earlier version of DiagTrack is installed in this folder (its database is in data/postgres).")
+        ui.say("Setup keeps every ticket, user and attachment, and moves its passwords out of .env into ./secrets.")
+        mode = "upgrade"
+    else:
+        mode = ui.choose("What would you like to do?", [("new", "New install"),
+                                                         ("move", "Move in from another DiagTrack (move file in data/import)")],
+                         key="mode")
     a = {"mode": mode}
     if mode == "new":
         a["admin_user"] = ui.ask("DiagTrack administrator user name", "admin", key="admin_user")
         a["admin_password"] = ui.ask_secret("Administrator password (10 or more characters, letters and a digit)",
                                             check=ui.password_problem, key="admin_password")
+    elif mode == "upgrade":
+        ui.say("The administrator and staff logins stay as they are.")
     else:
         files = sorted(IMPORT.glob("*.dtbak")) if IMPORT.exists() else []
         if not files:
@@ -98,23 +130,25 @@ def install():
                 ui.say(ui.red(f"  {f.what}"))
         a.update(move_file=chosen, backup_passphrase=pp, move_summary=summary)
         ui.say(ui.green(f"  The file opens: {common.describe_summary(summary)}."))
-    a["port"] = ui.ask("Web port staff will use on this computer", "80", key="port",
+    a["port"] = ui.ask("Web port staff will use on this computer", old_env.get("HTTP_PORT") or "80", key="port",
                        check=lambda v: None if v.isdigit() and 0 < int(v) < 65536 else "Type a port number.")
     a["site_url"] = ui.ask("Address staff will type in the browser", "http://diagtrack.local", key="site_url",
                            check=lambda v: None if v.startswith(("http://", "https://")) else "Start with http://")
-    a["backup_dir"] = ui.ask("Backup folder on this computer (where the NAS is mounted)", "./data/backups",
+    a["backup_dir"] = ui.ask("Backup folder on this computer (where the NAS is mounted)",
+                             old_env.get("BACKUP_DIR") or "./data/backups",
                              key="backup1_path", hint="An absolute path such as /mnt/nas/diagtrack, or ./data/backups")
     a["backup_dir_2"] = ""
     if ui.yes("Add a second backup folder, for example another centre's NAS?", False, key="backup2_wanted"):
         a["backup_dir_2"] = ui.ask("Second backup folder on this computer", key="backup2_path",
                                    check=lambda v: None if v else "Type a folder.")
-    a["backup_time"] = ui.ask("Daily backup time (24-hour clock)", "01:30", key="backup_time")
-    if mode == "new":
+    a["backup_time"] = ui.ask("Daily backup time (24-hour clock)", old_env.get("BACKUP_TIME") or "01:30",
+                              key="backup_time")
+    if mode in ("new", "upgrade"):
         ui.say("Backups are always encrypted. Choose a passphrase: a short sentence is best.")
         a["backup_passphrase"] = ui.ask_secret("Backup passphrase (12 or more characters)",
                                                check=common.passphrase_problem, key="backup_passphrase")
     ui.section("Summary")
-    for k, v in [("Install", "Move in" if mode == "move" else "New install"), ("Web port", a["port"]),
+    for k, v in [("Install", {"move": "Move in", "upgrade": "Upgrade the earlier version"}.get(mode, "New install")), ("Web port", a["port"]),
                  ("Address", a["site_url"]), ("Backup folder", a["backup_dir"]),
                  ("Second backup folder", a["backup_dir_2"] or "none"), ("Daily backup at", a["backup_time"])]:
         ui.say(f"  {k + ':':<22}{v}")
@@ -124,13 +158,19 @@ def install():
 
     steps.start("write")
     field_key = common.new_key()
-    write_secret("db_password", common.new_password(32))
-    write_secret("secret_key", common.new_password(50))
+    if mode == "upgrade":
+        # The existing database was created with this password (the first version's default was "diagtrack").
+        # It is reachable only from inside Docker; keeping it is what lets the database start.
+        write_secret("db_password", old_env.get("DB_PASSWORD") or "diagtrack")
+        write_secret("secret_key", old_secret_key(old_env) or common.new_password(50))
+    else:
+        write_secret("db_password", common.new_password(32))
+        write_secret("secret_key", common.new_password(50))
     write_secret("field_key", field_key)
     write_secret("backup_passphrase", a["backup_passphrase"])
     if mode == "new":
         write_secret("admin_password_hash", common.password_hash(a["admin_password"]))
-    env = read_env()
+    env = {k: v for k, v in old_env.items() if k not in OLD_SECRET_KEYS + OLD_BACKUP_KEYS}
     env.update({"TIME_ZONE": env.get("TIME_ZONE", "Asia/Kolkata"), "HTTP_PORT": a["port"], "SITE_URL": a["site_url"],
                 "BACKUP_DIR": a["backup_dir"], "BACKUP_DIR_2": a["backup_dir_2"] or "./data/backups2",
                 "ADMIN_USERNAME": a.get("admin_user", "admin")})
@@ -143,9 +183,11 @@ def install():
     if a["backup_dir_2"]:
         dests.append({"id": "dest2", "name": "Second backup folder", "path": "/backups2"})
     for d in dests:
+        keep_daily = old_env.get("BACKUP_KEEP_DAYS", "")
         d.update(enabled=True, frequency="daily", every_hours=6, time=a["backup_time"], weekday=6, monthday=1,
-                 keep_daily=14, keep_weekly=8, keep_monthly=12, keep_manual_days=30, alert_after_hours=26,
-                 require_marker=False, nas_user="", nas_password="")
+                 keep_daily=int(keep_daily) if keep_daily.isdigit() else 14, keep_weekly=8, keep_monthly=12, keep_manual_days=30, alert_after_hours=26,
+                 require_marker=d["id"] == "dest1" and old_env.get("BACKUP_REQUIRE_MARKER") == "1",
+                 nas_user="", nas_password="")
     STATUS.mkdir(parents=True, exist_ok=True)
     (STATUS / "backup-config.json").write_text(json.dumps({
         "destinations": dests, "alert_users": [], "verify_days": 7, "test_restore_days": 30,
@@ -158,11 +200,16 @@ def install():
             "status": "queued", "percent": 0, "step": "Waiting for the backup container", "message": "", "result": {},
             "created": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()), "started": None, "finished": None,
             "log": []}, indent=1))
-    steps.ok("Settings in .env, secrets in ./secrets, backup schedule written.")
+    steps.ok("Settings in .env, secrets in ./secrets, backup schedule written." +
+             (" Passwords removed from .env." if mode == "upgrade" else ""))
 
     steps.start("next")
     ui.say("Now run, in this folder:")
     ui.say(ui.bold("    docker compose up -d"))
+    if mode == "upgrade":
+        ui.say("On first start DiagTrack updates its database to this version and makes its first encrypted backup.")
+        ui.say("Backup files made by the earlier version stay in the backup folder; delete them once the new ones")
+        ui.say("have run for a month.")
     ui.say("The first start builds DiagTrack and takes a few minutes." +
            (" The backup container then restores the move file; staff see 'Back shortly' until it is done." if mode == "move" else ""))
     ui.say("Then check everything with:")
