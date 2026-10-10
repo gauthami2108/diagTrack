@@ -435,7 +435,7 @@ def install_service(pg):
         time.sleep(2)
     run([wrapper, "install"], "Registering the DiagTrack service", "DT-S07")
     # A virtual service account: no password, only the rights given below.
-    run(["sc.exe", "config", SERVICE, "obj=", f"NT SERVICE\\{SERVICE}", "password=", ""],
+    run(["sc.exe", "config", SERVICE, "obj=", f"NT SERVICE\\{SERVICE}"],
         "Setting the DiagTrack service account", "DT-S07")
 
 

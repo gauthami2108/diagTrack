@@ -8,6 +8,7 @@ Sign in as an administrator. The side menu then shows two extra items:
 - **Masters and rules**: the lists DiagTrack works from (centres, departments, categories, users, SLA times,
   escalation rules, equipment, vendors). Every list has an **Add** button at the top right. Click a row to change it,
   then press **Save** at the bottom.
+- **Backups**: backup folders, schedules, retention, Back up now, restores and moving to another server.
 - **Message templates**: the wording of email, SMS and WhatsApp alerts, and which alerts go out on each channel.
 - **Settings and health**: alerts, mail server, branding, and a check that the system is healthy.
 
@@ -23,7 +24,9 @@ starting values, so most of the work is centres, people and equipment.
 4. **Departments:** set the head of each department (section 3).
 5. **Vendors and Equipment:** add the service vendors, then each machine with its AMC expiry date (section 6).
 6. **Mail server:** fill it in and send yourself a test email, then switch on email alerts (section 7).
-7. Ask one person at one centre to raise a test ticket and follow it through to closed.
+7. **Backups:** check that the backup folder shows "Up to date", press **Check folder**, and tick who else should
+   be alerted about backups (section 13).
+8. Ask one person at one centre to raise a test ticket and follow it through to closed.
 
 ## 2. Centres
 
@@ -275,7 +278,7 @@ The four boxes at the top of Settings and health. All should be green.
 | Box | If it is red |
 | --- | --- |
 | Background worker | Deadlines are not being checked and alerts are not going out. Runbook, section 5 |
-| Backup to NAS | Last night's backup failed or the NAS is disconnected. Runbook, section 4 |
+| Backups | A backup failed, is overdue, or a folder cannot be reached. The Backups page shows which and why. Runbook, section 4 |
 | Alerts sent out | Some emails or messages failed. The reason is shown, usually a wrong mail server detail |
 | In use | Always green: the number of tickets and active users |
 
@@ -301,3 +304,46 @@ The four boxes at the top of Settings and health. All should be green.
 | A new machine | Add it under Equipment, print its QR label |
 | Change what an alert says, or send it by WhatsApp too | Message templates (section 8) |
 | An AMC is renewed | Change the AMC expiry date on the machine. Warnings start again for the new date |
+| Add a second backup place, such as another centre's NAS | Backups page, **Add a backup destination** (section 13) |
+| Copy everything to a USB drive | Backups page, **Save a full copy** |
+| Go back to how things were yesterday | Backups page, **Restore** (Runbook, section 7) |
+| Move DiagTrack to another server | Backups page, **Prepare to move** (Runbook, section 9) |
+
+## 13. Backups
+
+*Side menu, Backups.* Everything about backups is on this page. The runner that does the work is part of the
+DiagTrack service on Windows, and the backup container in Docker; the page asks it to act and shows the progress.
+
+**At the top:** the last good backup, the next one due, and the **last proven restore** (the monthly test restore).
+Below them, **Tasks** shows what is running and the results of recent backups, checks and restores.
+
+**Buttons**
+
+| Button | What it does |
+| --- | --- |
+| Back up now | Backs up to every folder that is switched on. Progress shows under Tasks; you can leave the page |
+| Save a full copy | Writes one self-contained encrypted file to a folder you type, for example a USB drive (`E:\DiagTrack-Copies`) |
+| Check folder | Writes, reads and deletes a test file, and shows the free space |
+| Back up here now | Backs up to that one folder |
+| Check | Reads a backup back and compares every checksum |
+| Test restore | Restores a backup into a scratch database, compares it, then removes it. Live data is not touched |
+| Restore | Replaces all current data with that backup, after you type RESTORE (Runbook, section 7) |
+
+**Each backup folder** has its own settings, under **Change schedule, retention or folder**:
+
+| Setting | Meaning |
+| --- | --- |
+| Name, Folder | For example "Main NAS" and `\\nas01\backups\diagtrack`. In Docker: `/backups` or `/backups2` |
+| Frequency, Time | Every few hours, daily, weekly (choose the day) or monthly (choose the date), at the time given |
+| Daily, weekly and monthly copies to keep | For example 14, 8 and 12: the newest backup of each of the last 14 days, the last 8 weeks and the last 12 months |
+| Keep manual backups for | Days to keep backups made with Back up now |
+| Alert if no backup for | Hours without a good backup before an overdue alert |
+| NAS user name and password | Windows network shares only, when the share needs a login |
+| Treat a missing marker file as "NAS not connected" | Put an empty file named `.diagtrack-backup-target` in the NAS folder first. Then a disconnected NAS is reported instead of filling the local disk |
+| Switched on | Untick to pause a folder without removing it |
+
+**Who is alerted.** Administrators always are. Tick others, for example the IT head. Alerts use the **Backup
+failed** and **Backup overdue** wording on the Message templates page, on the channels switched on there.
+
+**Move to another server.** See the Runbook, section 9.
+

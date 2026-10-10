@@ -8,26 +8,31 @@ For a software developer who needs to change or extend DiagTrack. The other guid
 | --- | --- |
 | Language and framework | Python 3.13, Django 6.1, server-rendered templates |
 | Database | PostgreSQL 17 (SQLite when `DB_HOST` is not set, for local work) |
-| Web server | Gunicorn behind Caddy 2 |
+| Web server | Docker: Gunicorn behind Caddy 2. Native Windows: Waitress inside `manage.py serve` |
 | Front end | Hand-written CSS (`static/css/app.css`) and plain JavaScript (`static/js/app.js`). No build step and no CDN: fonts (IBM Plex) and icons (Lucide) are bundled, so it works without internet |
-| Background jobs | `manage.py runworker`: a loop that runs once a minute; AMC checks once a day |
+| Background jobs | `tickets.worker.Worker` once a minute (`runworker` in Docker, a thread of `serve` on Windows); the backup runner every 5 seconds (`runbackups` in Docker, a thread of `serve` on Windows) |
+| Encryption | `cryptography`: AES-256-GCM for backups and stored secrets, scrypt for the backup key, Windows DPAPI for the secrets file |
 | Live updates | The browser polls `/api/live/` every 15 seconds; no extra server |
 | Excel and QR | `openpyxl` and `segno` |
 
 Python packages are pinned in `app/requirements.txt`.
 
-## Containers (`docker-compose.yml`)
+## Two kinds of install
 
-| Service | Image | Role | Data |
-| --- | --- | --- | --- |
-| proxy | caddy:2-alpine | Ports 80 and 443, forwards to web | `data/caddy` |
-| web | built from `Dockerfile` | `docker/entrypoint.sh web`: migrate, `setup_initial`, then Gunicorn | `data/media`, `data/status` |
-| worker | same image | `docker/entrypoint.sh worker`: `manage.py runworker` | same |
-| db | postgres:17-alpine | Database | `data/postgres` |
-| backup | postgres:17-alpine | `docker/backup.sh`: nightly `pg_dump -Fc` and attachment copy, writes `data/status/backup.json` | `BACKUP_DIR` |
+| | Docker (`docker-compose.yml`) | Native Windows (`installer/`) |
+| --- | --- | --- |
+| Screens | `web`: `docker/entrypoint.sh web` (migrate, `setup_initial`, Gunicorn), behind `proxy` (Caddy) | Windows service **DiagTrack** (WinSW wrapper `DiagTrackService.exe`) running `manage.py serve` as `NT SERVICE\DiagTrack` |
+| Worker | `worker`: `manage.py runworker` | thread in `serve` |
+| Backups | `backup`: same image, `manage.py runbackups`, folders mounted at `/backups`, `/backups2`, `/import` | thread in `serve`; Task Scheduler safety net runs `backup --if-overdue` daily |
+| Database | `db`: postgres:17-alpine, `POSTGRES_PASSWORD_FILE` | EDB PostgreSQL 17 service `postgresql-x64-17`, role `diagtrack` with CREATEDB |
+| Settings | `.env` (no secrets) | `C:\ProgramData\DiagTrack\diagtrack.conf` |
+| Secrets | `./secrets/<name>` mounted read-only at `/run/secrets` | `secrets.dat`, JSON encrypted with DPAPI (machine scope) |
+| Setup | `docker compose run --rm setup` (profile `setup`, runs `installer/setup.py --docker`) | `Setup.cmd` -> `installer/windows/bootstrap.ps1` (NuGet Python 3.13, packages) -> `installer/setup.py --windows` |
 
-The entrypoint starts as root, fixes ownership of the data folders, then drops to user `diagtrack` (uid 1000). If
-`SECRET_KEY` is empty it creates one in `data/status/.secret_key`.
+`config/runtime.py` fills the environment before Django settings load: the settings file and secrets file named by
+`DIAGTRACK_HOME`, then `/run/secrets/<lower-case name>` (or `<NAME>_FILE`). Real environment variables always win.
+Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_PASSWORD_HASH` (used once by
+`setup_initial`); Windows also keeps `PG_SUPERPASSWORD`.
 
 ## Layout of `app/`
 
@@ -38,6 +43,12 @@ The entrypoint starts as root, fixes ownership of the data folders, then drops t
 | `tickets/models.py` | The data model |
 | `tickets/services.py` | **All business rules**: visibility, permissions, routing, assignment, status changes, SLA clock, escalation, vendor calls, AMC checks, mentions. Views never change a ticket directly |
 | `tickets/notify.py` | In-app alerts and the outbound queue for email, SMS and WhatsApp |
+| `tickets/worker.py` | One round of background work; skipped during maintenance, reduced to sending alerts when read-only |
+| `tickets/backup/` | `container.py` the encrypted file format, `engine.py` backup/verify/restore/test-restore/retention, `destinations.py` folders, schedules, retention rules, NAS logon, `runner.py` jobs, schedule, checks, alerts |
+| `tickets/state.py` | Shared JSON state in `STATUS_DIR`: jobs, maintenance and read-only flags, backup state and catalog, a file lock |
+| `tickets/middleware.py` | Maintenance page during restores (no database access), read-only mode during a move |
+| `tickets/crypto.py` | `EncryptedTextField` (AES-256-GCM) for the mail password and gateway headers |
+| `tickets/views_backup.py` | The Backups page; it only queues jobs and reads state |
 | `tickets/wording.py` | Events, placeholders, built-in wording and the template renderer for email, SMS and WhatsApp |
 | `tickets/reports.py` | Home, dashboard, centre matrix, equipment figures |
 | `tickets/exports.py` | The Reports screen and the Excel workbook |
@@ -45,7 +56,7 @@ The entrypoint starts as root, fixes ownership of the data folders, then drops t
 | `tickets/admin.py` | Masters and rules (Django admin) |
 | `tickets/templatetags/dt.py` | SLA bar, avatars, icons, the safe comment formatter (`rich`) |
 | `tickets/mail.py` | Email backend that reads the SMTP details from Settings |
-| `tickets/management/commands/` | `runworker`, `setup_initial` (idempotent defaults), `seed_demo` |
+| `tickets/management/commands/` | `serve`, `runworker`, `runbackups`, `backup`, `restore`, `verifybackup`, `setup_initial` (idempotent defaults, admin from a password hash), `setupcheck` and `siteconfig` (used by setup), `seed_demo` |
 | `tickets/tests.py` | Automated tests of the rules and screens |
 | `templates/`, `static/` | Screens, styles, script, fonts, icons, logo |
 
@@ -101,6 +112,17 @@ PNG with `?format=png`. The code opens `<site_url>/tickets/new/?equipment=<id>`.
 **Ticket actions.** `templates/_ticket_actions.html` draws one button per action in `allowed_actions`; `primary` in
 the view picks the highlighted next step.
 
+**Backups.** A `.dtbak` file is `DTBAK\x01`, a 4-byte header length, a JSON header (cipher, scrypt salt and cost,
+nonce prefix, and a readable summary), then AES-256-GCM chunks of 1 MiB. Each chunk's associated data is the header's
+SHA-256, its index and a final flag, so changes, reordering and truncation are refused. Inside is a tar stream:
+`manifest.json` (versions, applied migrations, counts, checksums, name clashes), `keys.json` (the field key),
+`attachments.json`, `database.dump` (`pg_dump -Fc`), and for full copies `attachments/<sha256>`. In a backup folder,
+attachments are stored once as `attachments/ab/<sha256>.dta`; `store.json` holds the folder's salt and a passphrase
+check. Restore loads the dump into `<db>_incoming`, migrates it in a subprocess, compares counts with the manifest,
+then renames databases (live becomes `<db>_previous`), copies attachments (renaming ones that clash on the target
+system and updating the rows), and re-encrypts stored secrets for this server's field key. Jobs and state live in
+`STATUS_DIR`, not the database, so they survive a restore.
+
 **Uploaded files** are served by Django only to people who may see the ticket, with
 `Content-Security-Policy: default-src 'none'` and `nosniff`. Profile photos accept JPG, PNG or WEBP only.
 
@@ -137,20 +159,34 @@ Without `DB_HOST` set, it uses a local SQLite file. Set `DB_HOST`, `DB_PORT`, `D
 use PostgreSQL; the tests pass on both. After changing `models.py`, run `python manage.py makemigrations` and commit the
 new migration; the web container applies migrations when it starts.
 
-## Environment variables
+## Settings
 
-| Variable | Used by | Meaning |
-| --- | --- | --- |
-| `SECRET_KEY` | web, worker | Django secret. Created automatically when empty |
-| `DB_PASSWORD` | db, web, worker, backup | Database password. Fixed at the first start |
-| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | web | First administrator, created only if none exists |
-| `SITE_ADDRESS`, `HTTPS_MODE`, `HTTP_PORT`, `HTTPS_PORT` | proxy | Address and TLS |
-| `BACKUP_DIR`, `BACKUP_TIME`, `BACKUP_KEEP_DAYS`, `BACKUP_REQUIRE_MARKER` | backup | Backup target and schedule |
-| `TIME_ZONE` | all | Default Asia/Kolkata |
-| `WEB_WORKERS` | web | Gunicorn processes, default 3 |
+| Variable | Meaning |
+| --- | --- |
+| `DIAGTRACK_HOME` | Native Windows: folder with `diagtrack.conf` and `secrets.dat`; sets `MEDIA_ROOT` and `STATUS_DIR` under it |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` | Database. Without `DB_HOST`, SQLite (development only; backups need PostgreSQL) |
+| `PG_BIN` | Folder of `pg_dump` and `pg_restore` (Windows: `C:\Program Files\PostgreSQL\17\bin`) |
+| `MEDIA_ROOT`, `STATUS_DIR`, `STATIC_ROOT` | Attachments, shared state, collected static files |
+| `HTTP_PORT`, `LISTEN_HOST` | `serve` (native) listening address |
+| `SITE_URL` | Address of this system, applied by `setup_initial` when empty |
+| `ADMIN_USERNAME` | First administrator |
+| `BACKUP_DIR`, `BACKUP_DIR_2` | Docker: host folders mounted at `/backups` and `/backups2` |
+| `SITE_ADDRESS`, `HTTPS_MODE`, `HTTPS_PORT` | Docker proxy |
+| `TIME_ZONE` | Default Asia/Kolkata |
+| `WEB_WORKERS` | Gunicorn processes (Docker), default 3 |
+
+## Testing
+
+`python manage.py test tickets --noinput` against PostgreSQL (the backup tests run real `pg_dump` and `pg_restore`;
+the role needs CREATEDB). `python -m unittest discover -s installer/tests` for the setup program.
+`.github/workflows/ci.yml` runs both, plus a Docker setup with verify and test restore, a native install, update and
+removal on Windows Server 2022, and a move from Docker to native Windows. Unattended runs use `--answers file.json`
+with secrets in `DT_<KEY>` variables (see `ci/`). Windows Server 2016 and Windows 11 are not offered by GitHub and are
+first tested on the real machines.
 
 ## Not built yet
 
-HTML (designed) emails, scheduled email reports, saved replies, bulk actions, child tickets, a duplicate warning, a calendar view, saved
+HTML (designed) emails, HTTPS on the native Windows install, a graphical Windows installer (.exe), changing the
+backup passphrase in place, scheduled email reports, saved replies, bulk actions, child tickets, a duplicate warning, a calendar view, saved
 filters, preventive maintenance schedules, knowledge articles, login lock-out and two-step login, bulk import from
 Excel, and archiving of tickets older than one year.

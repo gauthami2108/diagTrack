@@ -2,7 +2,7 @@
 
 The internal service desk for Pramodini's diagnostic centres. Staff report a problem, DiagTrack sends it to the right
 department, starts a deadline clock, alerts the right people and records everything until it is fixed. It runs on
-your own server in Docker; ticket data never leaves the organisation.
+your own server, natively on Windows or in Docker; ticket data never leaves the organisation.
 
 ## What it does
 
@@ -13,18 +13,19 @@ your own server in Docker; ticket data never leaves the organisation.
 - Reports by centre, department, category, priority, owner or equipment, as a six-sheet Excel file or a printed PDF.
 - Equipment register with downtime, vendor call log and response times, AMC renewal alerts, repeat faults and QR labels.
 - Board, dashboard, search and jump (Ctrl K), ticket preview, light and dark themes, Pramodini logo and colours.
+- Encrypted backups to one or more folders on a schedule, checks and monthly test restores, one-click restore, and
+  moving between Windows and Docker servers.
 
 ## Start
 
-On a server with Docker and git:
+Two ways to install; both ask every password at the start, install, check and report. Details: [Install guide](docs/01-INSTALL.md).
 
-```
-git clone https://github.com/gauthami2108/diagTrack.git
-cd diagTrack
-docker compose up -d
-```
+| Windows Server 2016 to 2025, Windows 11 | Linux or Mac with Docker already installed |
+| --- | --- |
+| Download the zip from GitHub, extract it, double-click **Setup.cmd** | `git clone https://github.com/gauthami2108/diagTrack.git && cd diagTrack` |
+| Setup installs Python and PostgreSQL 17, the DiagTrack Windows service, the firewall rule and a backup safety net | `docker compose run --rm setup`, then `docker compose up -d`, then `docker compose run --rm setup verify` |
 
-Open `http://<server address>`, sign in as `admin` with password `ChangeMe@123`, and change the password at once.
+Open the address you gave during setup and sign in with the administrator password you chose.
 
 ## Guides
 
@@ -35,26 +36,19 @@ Open `http://<server address>`, sign in as `admin` with password `ChangeMe@123`,
 | Staff, agents, department heads and managers | [Staff guide](docs/03-USER-GUIDES.md) |
 | A software developer | [Technical reference](docs/05-TECHNICAL.md) |
 
-## Everyday commands
+## Everyday tasks
 
-Run these from the DiagTrack folder on the server.
-
-| Task | Command |
-| --- | --- |
-| Is everything running? | `docker compose ps` |
-| Start, or apply a settings change | `docker compose up -d` |
-| Stop (no data is lost) | `docker compose down` |
-| Back up now | `docker compose exec backup sh /backup.sh now` |
-| Install the newest version | `./scripts/update.sh` |
-| Restore a backup | `./scripts/restore.sh` |
+Backups, restores and moving to another server are buttons on the **Backups** page. Everything else is in the
+[Runbook](docs/04-RUNBOOK.md), section 3, for both kinds of install.
 
 ## What is in this folder
 
 | Item | What it is |
 | --- | --- |
 | `app/` | The application |
-| `docker/`, `Dockerfile`, `docker-compose.yml` | How the five containers are built and run |
+| `Setup.cmd`, `installer/` | Setup for Windows (native) and Docker |
+| `docker/`, `Dockerfile`, `docker-compose.yml` | How the containers are built and run |
 | `scripts/` | Update, restore, password reset and other shortcuts |
 | `docs/` | The guides |
-| `.env.example` | Optional settings. Copy to `.env` only to change a default |
-| `data/` | **Your data**: database, attachments, backup status. Created on first start. Never delete it |
+| `.env.example` | Docker settings; setup writes `.env` |
+| `data/`, `secrets/` | Docker only: **your data** and passwords. Created by setup. Never delete them |
