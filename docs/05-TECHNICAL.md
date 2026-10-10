@@ -98,6 +98,9 @@ for the provider template. The editing screen is `views.message_templates` at `/
 **QR codes.** `/equipment/<id>/qr.svg` returns a standalone SVG (with its namespace, so it works in `<img>`), or a
 PNG with `?format=png`. The code opens `<site_url>/tickets/new/?equipment=<id>`.
 
+**Ticket actions.** `templates/_ticket_actions.html` draws one button per action in `allowed_actions`; `primary` in
+the view picks the highlighted next step.
+
 **Uploaded files** are served by Django only to people who may see the ticket, with
 `Content-Security-Policy: default-src 'none'` and `nosniff`. Profile photos accept JPG, PNG or WEBP only.
 
