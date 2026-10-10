@@ -108,7 +108,7 @@ jobs:
           grep -q "earlier version" "$RUNNER_TEMP/start.out"
       - name: Setup upgrades it
         run: |
-          docker compose run --rm -T -e DT_BACKUP_PASSPHRASE -v "$PWD/ci:/ci:ro" setup --answers /ci/answers-upgrade.json
+          docker compose run --rm --build -T -e DT_BACKUP_PASSPHRASE -v "$PWD/ci:/ci:ro" setup --answers /ci/answers-upgrade.json
           if [ -f .env ] && grep -E "DB_PASSWORD|ADMIN_PASSWORD|SECRET_KEY" .env; then echo "::error::passwords left in .env"; exit 1; fi
           ./scripts/start.sh
       - name: Verify, and every ticket is still there

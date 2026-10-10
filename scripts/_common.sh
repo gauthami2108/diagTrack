@@ -18,7 +18,7 @@ require_setup() {
             echo "DiagTrack is not set up in this folder yet. Run setup first:"
         fi
         echo
-        echo "    docker compose run --rm setup"
+        echo "    docker compose run --rm --build setup"
         echo
         echo "Then start it again with:  ./scripts/start.sh"
         exit 1
