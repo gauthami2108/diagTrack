@@ -12,7 +12,6 @@ import traceback
 from datetime import timedelta
 from pathlib import Path
 
-from django.conf import settings
 from django.db import close_old_connections
 from django.utils import timezone
 
@@ -204,6 +203,9 @@ class Runner:
         state.set_maintenance("A backup is being restored.", job=params.get("_job", ""))
         try:
             res = engine.restore(path, root, progress)
+            if params.get("site_url"):  # moving in: this server's address replaces the old one
+                from ..models import SiteSettings
+                SiteSettings.objects.update(site_url=params["site_url"].rstrip("/"))
         finally:
             state.clear_maintenance()
         renamed = len(res["renamed"])

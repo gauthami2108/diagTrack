@@ -293,8 +293,12 @@ def create(root=None, kind="scheduled", full_to=None, progress=_noop, extra=None
         summary["latest_migration"] = manifest["schema"][-1] if manifest["schema"] else None
         summary["db_size"] = dump_size
         stamp = timezone.localtime(created).strftime("%Y%m%d-%H%M%S")
-        name = f"diagtrack-{manifest['site']}-{stamp}-{kind}.dtbak"
         out_dir.mkdir(parents=True, exist_ok=True)
+        name = f"diagtrack-{manifest['site']}-{stamp}-{kind}.dtbak"
+        n = 2
+        while (out_dir / name).exists():  # two backups in the same second never overwrite each other
+            name = f"diagtrack-{manifest['site']}-{stamp}-{n}-{kind}.dtbak"
+            n += 1
         final = out_dir / name
         part = out_dir / f"{name}.part"
         with open(part, "wb") as fout:

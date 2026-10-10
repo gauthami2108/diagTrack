@@ -1,17 +1,18 @@
-# DiagTrack: five containers on one server. All data stays in the "data" folder
-# next to this file, and backups go to BACKUP_DIR (your NAS).
+# DiagTrack in Docker: five containers on one computer, plus a setup helper.
 #
 #   proxy    front door (port 80, and 443 when HTTPS is on)
 #   web      the screens
 #   worker   SLA timers, escalations, alerts, auto-close
-#   db       PostgreSQL database
-#   backup   nightly copy of database and attachments
+#   db       PostgreSQL 17 database
+#   backup   scheduled backups, Back up now, restores, checks (same engine as the Windows install)
 #
-# Start:   docker compose up -d        (builds on first run; restarts by itself after a reboot)
-# Stop:    docker compose down
-# Health:  docker compose ps
+# First time:   docker compose run --rm setup        asks the questions, writes .env and the secrets folder
+#               docker compose up -d                 starts DiagTrack; it restarts by itself after a reboot
+#               docker compose run --rm setup verify checks that everything works
+# Stop:         docker compose down
+# Health:       docker compose ps
 #
-# No settings file is needed. To change a default, copy .env.example to .env and edit it.
+# Passwords are never kept in .env: they are files in ./secrets, mounted read-only at /run/secrets.
 
 name: diagtrack
 
@@ -26,14 +27,11 @@ x-app: &app
     DB_HOST: db
     DB_NAME: diagtrack
     DB_USER: diagtrack
-    DB_PASSWORD: ${DB_PASSWORD:-diagtrack}
-    SECRET_KEY: ${SECRET_KEY:-}
-    ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-    ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe@123}
     TIME_ZONE: ${TIME_ZONE:-Asia/Kolkata}
   volumes:
     - ./data/media:/data/media
     - ./data/status:/data/status
+    - ./secrets:/run/secrets:ro
 
 services:
   db:
@@ -42,10 +40,11 @@ services:
     environment:
       POSTGRES_DB: diagtrack
       POSTGRES_USER: diagtrack
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-diagtrack}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
       TZ: ${TIME_ZONE:-Asia/Kolkata}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
+      - ./secrets:/run/secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U diagtrack -d diagtrack"]
       interval: 5s
@@ -72,6 +71,20 @@ services:
       web:
         condition: service_healthy
 
+  backup:
+    <<: *app
+    command: ["backups"]
+    volumes:
+      - ./data/media:/data/media
+      - ./data/status:/data/status
+      - ./secrets:/run/secrets:ro
+      - ${BACKUP_DIR:-./data/backups}:/backups
+      - ${BACKUP_DIR_2:-./data/backups2}:/backups2
+      - ./data/import:/import
+    depends_on:
+      db:
+        condition: service_healthy
+
   proxy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -87,23 +100,20 @@ services:
     depends_on:
       - web
 
-  backup:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    entrypoint: ["/bin/sh", "/backup.sh"]
+  # Run on demand only:  docker compose run --rm setup
+  setup:
+    build: .
+    image: diagtrack-app:latest
+    profiles: ["setup"]
+    entrypoint: ["/entrypoint.sh", "setup"]
     environment:
+      DB_HOST: db
       DB_NAME: diagtrack
       DB_USER: diagtrack
-      DB_PASSWORD: ${DB_PASSWORD:-diagtrack}
-      BACKUP_TIME: ${BACKUP_TIME:-01:30}
-      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
-      BACKUP_REQUIRE_MARKER: ${BACKUP_REQUIRE_MARKER:-0}
-      TZ: ${TIME_ZONE:-Asia/Kolkata}
+      DIAGTRACK_PROJECT: /project
+      DIAGTRACK_SECRETS_DIR: /project/secrets
     volumes:
-      - ./docker/backup.sh:/backup.sh:ro
-      - ./data/media:/data/media:ro
+      - .:/project
       - ./data/status:/data/status
-      - ${BACKUP_DIR:-./data/backups}:/backups
-    depends_on:
-      db:
-        condition: service_healthy
+    stdin_open: true
+    tty: true

@@ -1,24 +1,29 @@
 #!/bin/sh
-# Starts either the web application or the background worker.
+# Starts one part of DiagTrack: web, worker, backups or setup.
 set -e
+
+if [ "$1" = "setup" ]; then
+    shift
+    exec python /installer/setup.py --docker "$@"
+fi
+
+# Setup writes the secrets folder. Without it there is no database password: say so plainly.
+if [ ! -s /run/secrets/db_password ] && [ -z "$DB_PASSWORD" ]; then
+    echo "DiagTrack is not set up yet. In the DiagTrack folder run:  docker compose run --rm setup"
+    exit 1
+fi
 
 # The data folders are on the server's disk. Make sure the app user can write to them,
 # then drop from root to that user.
 if [ "$(id -u)" = "0" ]; then
     mkdir -p /data/media /data/status
     chown -R diagtrack:diagtrack /data/media /data/status
+    # Backup folders: the app user must be able to write there. A NAS mounted with
+    # uid=1000 already is; a local folder is handed over here.
+    for d in /backups /backups2 /import; do
+        [ -d "$d" ] && chown diagtrack:diagtrack "$d" 2>/dev/null || true
+    done
     exec setpriv --reuid=diagtrack --regid=diagtrack --init-groups "$0" "$@"
-fi
-
-# No SECRET_KEY given: create one on first start and keep it on disk, so nothing has to be set up by hand.
-if [ -z "$SECRET_KEY" ]; then
-    KEY_FILE=/data/status/.secret_key
-    if [ ! -s "$KEY_FILE" ]; then
-        python -c "import secrets; print(secrets.token_urlsafe(50))" > "$KEY_FILE"
-        chmod 600 "$KEY_FILE"
-    fi
-    SECRET_KEY=$(cat "$KEY_FILE")
-    export SECRET_KEY
 fi
 
 case "$1" in
@@ -32,6 +37,9 @@ case "$1" in
     ;;
   worker)
     exec python manage.py runworker
+    ;;
+  backups)
+    exec python manage.py runbackups
     ;;
   *)
     exec "$@"

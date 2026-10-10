@@ -1,0 +1,17 @@
+{
+  "python": {
+    "version": "3.13.16",
+    "url": "https://www.python.org/ftp/python/3.13.16/python-3.13.16-amd64.exe",
+    "signer": "Python Software Foundation"
+  },
+  "postgresql": {
+    "version": "17.11",
+    "urls": [
+      "https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64.exe",
+      "https://sbp.enterprisedb.com/getfile.jsp?fileid=1260614"
+    ],
+    "signer": "EnterpriseDB",
+    "service": "postgresql-x64-17",
+    "prefix": "C:\\Program Files\\PostgreSQL\\17"
+  }
+}

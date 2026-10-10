@@ -1,0 +1,109 @@
+# Checks every change on real machines:
+#   tests            the test suite on PostgreSQL 17, and the setup program's own tests
+#   docker           setup -> up -> verify -> test restore, and a move file for the next job
+#   windows          native install on Windows Server 2022: install, check, update, test restore, remove
+#   windows-move-in  native Windows install that moves in from the Docker move file
+# Windows Server 2016 and Windows 11 are not offered by GitHub: test those on the real server (see the runbook).
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DT_ADMIN_PASSWORD: Ci-Admin-2026x
+  DT_BACKUP_PASSPHRASE: continuous integration passphrase
+  DT_UNATTENDED: "1"
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    services:
+      db:
+        image: postgres:17
+        env: {POSTGRES_USER: diagtrack, POSTGRES_PASSWORD: diagtrack, POSTGRES_DB: diagtrack}
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U diagtrack" --health-interval 5s --health-retries 20
+    env: {DB_HOST: localhost, DB_PORT: "5432", DB_NAME: diagtrack, DB_USER: diagtrack, DB_PASSWORD: diagtrack, DEBUG: "1"}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.13"}
+      - name: PostgreSQL 17 client tools
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -q && sudo apt-get install -y -q postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+      - run: pip install -r app/requirements.txt
+      - run: python manage.py test tickets --noinput
+        working-directory: app
+      - run: python -m unittest discover -s installer/tests -v
+
+  docker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+      - name: Setup (unattended)
+        run: docker compose run --rm -T -e DT_ADMIN_PASSWORD -e DT_BACKUP_PASSPHRASE -v "$PWD/ci:/ci:ro" setup --answers /ci/answers-docker.json
+      - run: docker compose up -d
+      - name: Verify
+        run: docker compose run --rm -T setup verify
+      - name: Check and test-restore the newest backup
+        run: docker compose exec -T backup python manage.py verifybackup --dest dest1 --test-restore
+      - name: Move file for the Windows job
+        run: |
+          docker compose exec -T web python manage.py seed_demo || true
+          docker compose exec -T backup python manage.py backup --full-to /backups/move
+          mkdir -p move && sudo cp data/backups/move/*-full.dtbak move/move.dtbak
+      - uses: actions/upload-artifact@v4
+        with: {name: move-file, path: move/move.dtbak}
+      - if: failure()
+        run: docker compose logs --tail 200
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        shell: cmd
+        run: Setup.cmd --answers ci\answers-windows.json install
+      - name: Screens answer
+        shell: pwsh
+        run: (Invoke-WebRequest http://localhost/healthz -UseBasicParsing).StatusCode
+      - name: Check and test-restore the first backup
+        shell: cmd
+        run: |
+          set DIAGTRACK_HOME=C:\ProgramData\DiagTrack
+          "C:\Program Files\DiagTrack\python\python.exe" "C:\Program Files\DiagTrack\app\manage.py" verifybackup --dest dest1 --test-restore
+      - name: Update (same version, proves the update path)
+        shell: cmd
+        run: Setup.cmd --answers ci\answers-windows.json update
+      - name: Remove
+        shell: cmd
+        run: Setup.cmd --answers ci\answers-windows.json remove
+      - if: failure()
+        shell: pwsh
+        run: |
+          Get-Content C:\ProgramData\DiagTrack\setup.log -Tail 200 -ErrorAction SilentlyContinue
+          Get-ChildItem C:\ProgramData\DiagTrack\logs -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 80 }
+
+  windows-move-in:
+    runs-on: windows-2022
+    needs: docker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: move-file, path: C:\move}
+      - name: Move in from the Docker move file
+        shell: cmd
+        run: Setup.cmd --answers ci\answers-windows-move.json move
+      - name: Screens answer on the new port
+        shell: pwsh
+        run: (Invoke-WebRequest http://localhost:8080/healthz -UseBasicParsing).StatusCode
+      - if: failure()
+        shell: pwsh
+        run: Get-Content C:\ProgramData\DiagTrack\setup.log -Tail 200 -ErrorAction SilentlyContinue

@@ -1,8 +1,9 @@
-data/
+*.pyc
 .env
 __pycache__/
-*.pyc
 app/db.sqlite3
-app/staticfiles/
 app/media/
+app/staticfiles/
 app/status/
+data/
+secrets/

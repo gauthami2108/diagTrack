@@ -43,7 +43,10 @@ class Command(BaseCommand):
     help = "Create the starting departments, categories, SLA times, escalation rules and the first administrator."
 
     def handle(self, *args, **opts):
-        SiteSettings.load()
+        site = SiteSettings.load()
+        if os.environ.get("SITE_URL") and not site.site_url:
+            site.site_url = os.environ["SITE_URL"].rstrip("/")
+            site.save(update_fields=["site_url"])
         if not Department.objects.exists():
             for name, (mode, equip, cats) in DEPARTMENTS.items():
                 d = Department.objects.create(name=name, assignment_mode=mode, handles_equipment=equip)
@@ -68,7 +71,14 @@ class Command(BaseCommand):
             self.stdout.write("Created the escalation rules.")
         username = os.environ.get("ADMIN_USERNAME", "admin")
         if not User.objects.filter(is_superuser=True).exists():
-            password = os.environ.get("ADMIN_PASSWORD") or "ChangeMe@123"
-            User.objects.create_superuser(username=username, password=password, role=User.ADMIN,
-                                          first_name="System", last_name="Administrator")
-            self.stdout.write(f"Created the administrator login '{username}'. Change its password after first login.")
+            # Setup stores only a hash of the chosen password (ADMIN_PASSWORD_HASH), never the password itself.
+            pw_hash = os.environ.get("ADMIN_PASSWORD_HASH", "")
+            password = os.environ.get("ADMIN_PASSWORD") or ("" if pw_hash else "ChangeMe@123")
+            user = User.objects.create_superuser(username=username, password=password or None, role=User.ADMIN,
+                                                 first_name="System", last_name="Administrator")
+            if pw_hash:
+                user.password = pw_hash
+                user.save(update_fields=["password"])
+                self.stdout.write(f"Created the administrator login '{username}' with the password chosen in setup.")
+            else:
+                self.stdout.write(f"Created the administrator login '{username}'. Change its password after first login.")

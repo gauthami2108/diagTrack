@@ -8,7 +8,6 @@ Back up from the command line (also used by the Windows safety-net task).
   manage.py backup --list                show destinations and their backups
 """
 from django.core.management.base import BaseCommand, CommandError
-from django.utils import timezone
 
 from tickets import state
 from tickets.backup import destinations as dests

@@ -795,7 +795,7 @@ class ModesTests(Base):
         self.assertContains(self.client.get(reverse("home")), "Moving.")
 
 
-class BackupEngineTests(TransactionTestCase):
+class BackupBase(TransactionTestCase):
     """Real pg_dump / pg_restore against the test database."""
 
     def setUp(self):
@@ -830,6 +830,8 @@ class BackupEngineTests(TransactionTestCase):
         except Exception:
             pass
 
+
+class BackupEngineTests(BackupBase):
     def test_backup_check_test_restore_and_restore(self):
         root = _dests.prepare(self.dest)
         out = _engine.create(root, kind="manual")
@@ -917,3 +919,33 @@ class BackupEngineTests(TransactionTestCase):
         self.assertEqual(len(planned), 2)
         self.assertIn("a/photo.jpg", renames)
         self.assertEqual(len(_engine.name_clashes(files[:2])), 1)
+
+
+class MoveTests(BackupBase):
+    def test_prepare_to_move_end_move_and_retire(self):
+        from . import middleware
+        admin = User.objects.create_user("boss", password="x" * 10, role=User.ADMIN)
+        self.client.force_login(admin)
+        self.client.post(reverse("backups_action"), {"do": "moveout", "to": str(self.tmp / "move"), "confirm": "nope"})
+        self.assertIsNone(_state.active_job())
+        self.client.post(reverse("backups_action"), {"do": "moveout", "to": str(self.tmp / "move"), "confirm": "MOVE"})
+        _Runner().tick()
+        job = _state.list_jobs(1)[0]
+        self.assertEqual(job["status"], "done", job.get("message"))
+        self.assertTrue(_state.readonly())
+        self.assertEqual(len(list((self.tmp / "move").glob("*-full.dtbak"))), 1)
+        middleware._cache["at"] = 0
+        self.assertContains(self.client.get(reverse("home")), "Moving to a new server")
+        self.client.post(reverse("backups_action"), {"do": "endmove"})
+        self.assertIsNone(_state.readonly())
+        self.client.post(reverse("backups_action"), {"do": "retire", "confirm": "RETIRE"})
+        self.assertTrue(_state.readonly())
+        self.assertTrue(_state.read_json(_state.status_dir() / "retired.json"))
+
+    def test_restore_job_applies_new_address(self):
+        out = _engine.create(kind="full", full_to=str(self.tmp / "usb"))
+        job = _state.new_job("restore", {"path": out["file"], "site_url": "http://new-server/"})
+        _Runner().tick()
+        self.assertEqual(_state.get_job(job["id"])["status"], "done")
+        self.assertEqual(SiteSettings.load().site_url, "http://new-server")
+        self.assertIsNone(_state.maintenance())

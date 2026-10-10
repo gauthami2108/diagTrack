@@ -1,0 +1,2 @@
+{"mode": "new", "admin_user": "admin", "port": "80", "site_url": "http://localhost", "backup1_path": "./data/backups",
+ "backup2_wanted": "yes", "backup2_path": "./data/backups2", "backup_time": "01:30", "confirm": "yes"}
