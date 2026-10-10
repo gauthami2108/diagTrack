@@ -1,11 +1,11 @@
 # Runbook
 
-For the person who looks after the DiagTrack server. Every command is typed on the server, inside the DiagTrack
-folder. Start each session with:
+For the person who looks after the DiagTrack server. Most tasks are buttons on the **Backups** and **Settings and
+health** pages. This guide covers the rest, for both kinds of install:
 
-```
-cd /opt/diagtrack
-```
+- **Windows (native)**: commands are typed in **Command Prompt opened as administrator** (Start, type `cmd`,
+  right-click, Run as administrator). The `diagtrack` command works in any such window.
+- **Docker**: commands are typed in a terminal inside the DiagTrack folder (`cd /opt/diagtrack`).
 
 ## 1. Daily check (one minute)
 
@@ -14,149 +14,164 @@ whole daily check. If one is red, find it in section 5.
 
 ## 2. What is where
 
-| Folder or file | What it holds | Can it be deleted? |
+| | Windows native | Docker |
 | --- | --- | --- |
-| `data/postgres` | The database: every ticket, user and setting | **Never** |
-| `data/media` | Attachments, photos and logos people uploaded | **Never** |
-| `data/status` | The backup result and the secret key | **Never** |
-| `data/caddy` | HTTPS certificates | Only if HTTPS is off |
-| `data/backups` | Backups, if no NAS is attached | Old copies are removed automatically |
-| `.env` | Your settings, if you created it | Keep a copy somewhere safe |
-| Everything else | The software, from GitHub | Replaced by updates |
+| Program | `C:\Program Files\DiagTrack` | the DiagTrack folder |
+| Settings (no passwords) | `C:\ProgramData\DiagTrack\diagtrack.conf` | `.env` |
+| Passwords | `C:\ProgramData\DiagTrack\secrets.dat`, encrypted for this computer | `secrets/` folder |
+| Attachments | `C:\ProgramData\DiagTrack\media` | `data/media` |
+| Database | Windows service `postgresql-x64-17` | `data/postgres` |
+| Backup state, task progress | `C:\ProgramData\DiagTrack\status` | `data/status` |
+| Logs | `C:\ProgramData\DiagTrack\logs` | `docker compose logs <part>` |
 
-DiagTrack runs as five parts, called containers:
+**Never delete** the data folders, `secrets.dat` or the `secrets` folder. Keep the recovery sheet safe: it holds the
+backup passphrase.
 
-| Part | Job |
-| --- | --- |
-| proxy | The front door: answers the browser on port 80 (and 443 with HTTPS) |
-| web | The screens |
-| worker | Every minute: checks deadlines, sends escalations, closes old resolved tickets, sends emails and messages. Once a day: AMC warnings |
-| db | The PostgreSQL database |
-| backup | The nightly backup to the NAS |
+On Windows, DiagTrack is one Windows service, **DiagTrack**, that runs the screens, the background worker and the
+backups. It starts with Windows, after PostgreSQL, and restarts itself if it stops. In Docker the same work is split
+into five containers: proxy, web, worker, db and backup.
 
-## 3. Everyday commands
+## 3. Everyday tasks
 
-| Task | Command |
-| --- | --- |
-| Is everything running? | `docker compose ps` |
-| Start, or apply a change to `.env` | `docker compose up -d` |
-| Stop, for example before moving the server | `docker compose down` |
-| Restart one part | `docker compose restart worker` (or `web`, `proxy`, `db`, `backup`) |
-| Recent messages from one part | `docker compose logs --tail 100 web` |
-| Back up now | `docker compose exec backup sh /backup.sh now` |
-| Install the newest version | `./scripts/update.sh` (section 8) |
-| Restore a backup | `./scripts/restore.sh` (section 7) |
-| Set a new password for a login | `./scripts/reset-password.sh admin` |
-
-`docker compose ps` should show all five parts as `Up`, and `web` as `(healthy)`. After a power cut or a restart of
-the server, everything starts by itself.
-
-The `scripts` folder also has `start.sh`, `stop.sh`, `status.sh` and `logs.sh`: shortcuts that do the same as the
-commands above, with plain-language messages.
+| Task | Windows native | Docker |
+| --- | --- | --- |
+| Is everything running? | Services: **DiagTrack** and **postgresql-x64-17** say Running | `docker compose ps` |
+| Restart | `sc stop DiagTrack` then `sc start DiagTrack` (or Services, right-click, Restart) | `docker compose restart` |
+| Stop / start | `sc stop DiagTrack` / `sc start DiagTrack` | `docker compose down` / `docker compose up -d` |
+| Recent messages | Open the newest file in `C:\ProgramData\DiagTrack\logs` | `docker compose logs --tail 100 web` (or worker, backup) |
+| Back up now | Backups page, **Back up now**, or `diagtrack backup` | Backups page, or `./scripts/backup-now.sh` |
+| List backups | Backups page, or `diagtrack backup --list` | Backups page, or `./scripts/restore.sh` |
+| Check a backup | Backups page, **Check**, or `diagtrack verifybackup --dest dest1` | Backups page |
+| Test restore | Backups page, **Test restore**, or `diagtrack verifybackup --dest dest1 --test-restore` | Backups page |
+| Restore | Backups page, **Restore** (section 7) | Backups page (section 7) |
+| New password for a login | `diagtrack changepassword admin` | `./scripts/reset-password.sh admin` |
+| Install a new version | section 8 | section 8 |
+| Check the whole install | Run **Setup.cmd**, choose **Repair** | `docker compose run --rm setup verify` |
 
 ## 4. Backups
 
-- A backup runs every night at 01:30. To change the time, set `BACKUP_TIME` in `.env` and run `docker compose up -d`.
-- It saves the whole database to `db/` and copies new attachments to `media/` in the backup folder on the NAS.
-- 30 days of database copies are kept (`BACKUP_KEEP_DAYS`); older ones are removed automatically.
-- Before every update, `./scripts/update.sh` makes an extra backup.
+**How they work.** Every backup holds the whole database and every attachment, is encrypted with the backup
+passphrase, and is checked as it is made. Attachments are stored once in each backup folder, so a daily backup only
+adds new photos. The Backups page shows each folder, its schedule, what it keeps and every backup in it.
 
-**When the backup box is red**
+| Feature | Detail |
+| --- | --- |
+| Folders | One or more: the NAS, another centre's NAS, a second disk. Each has its own schedule and retention |
+| Schedule | Every few hours, daily, weekly or monthly, at a chosen time. A backup missed while the server was off runs within minutes of start-up |
+| Retention | How many daily, weekly and monthly copies to keep, and how many days to keep manual ones. Older copies are removed only after a new backup has succeeded. The newest is never removed |
+| Alerts | Administrators (and anyone ticked on the Backups page) are alerted when a backup fails, when none has succeeded for longer than allowed, and when a check fails |
+| Weekly check | The newest backup is read back and its checksums compared; a sample of attachments is decrypted |
+| Monthly test restore | The newest backup is restored into a scratch database, compared with its record, then removed. The page shows **Last proven restore** |
+| Safety net (Windows) | A Task Scheduler task, **DiagTrack backup safety net**, runs every day at 06:15 and backs up any folder that has missed its schedule, even if the DiagTrack service was stopped |
+
+**Manual backup.** **Back up now** on the Backups page, the **DiagTrack Backups** shortcut on the server's desktop,
+or the commands in section 3. **Save a full copy** writes one self-contained file to a folder the server can reach,
+for example a USB drive. It opens only with the backup passphrase.
+
+**The passphrase.** It cannot be recovered and cannot be changed in place, because existing backups were encrypted
+with it. If it may have leaked, ask whoever supports DiagTrack to set a new one and start new, empty backup folders;
+remove the old folders once the new ones hold a month of backups.
+
+**When the Backups status is red**
 
 | Message | What to do |
 | --- | --- |
-| The NAS is not connected: the marker file is missing | The NAS is off or not attached. Switch the NAS on, run `sudo mount -a`, then back up now |
-| Cannot write to the backup folder | The NAS share is full or read-only. Free space or fix the share's permissions |
-| The database copy failed | Run `docker compose logs --tail 50 backup` and read the last lines |
-| The last backup is more than a day old | The backup part has stopped. Run `docker compose up -d` |
+| The NAS is not connected: the marker file is missing | The NAS is off or not attached. Switch the NAS on; on Docker run `sudo mount -a`. Then **Check folder** |
+| Cannot write to `<folder>` | The share is full, read-only, or the login is wrong. Free space, fix the share's permissions, or retype the NAS password on the Backups page |
+| Could not log on to `\\nas...` (Windows error 86 or 1326) | Wrong NAS user name or password. Fix it under **Change schedule, retention or folder** |
+| This backup folder was started with a different backup passphrase | The folder belongs to another passphrase. Use the passphrase from the recovery sheet, or choose an empty folder |
+| No backup passphrase is set | Run setup and choose **Repair**; it asks for it |
+| pg_dump was not found | Windows: run setup, **Repair**. Docker: `docker compose up -d --build` |
+| The last backup is more than a day old | The DiagTrack service (Windows) or the backup container (Docker) is stopped. Start it; the missed backup runs within minutes |
 
-**Every three months, prove the backup works** by restoring it on a spare computer: install DiagTrack there (Install
-guide, steps 1 to 3), point `BACKUP_DIR` at a copy of the backup folder, and follow section 7. A backup that has never
-been restored has not been proven.
+**Every three months, prove it on another computer.** Install DiagTrack on a spare computer using setup's
+**Move in** option with a recent full copy. Sign in and look at a few tickets and photos. A backup that has never been
+restored somewhere else has not been proven.
 
 ## 5. When something is wrong
 
 | What you see | Likely cause | What to do |
 | --- | --- | --- |
-| The browser cannot reach DiagTrack | The server is off, or DiagTrack stopped | Check the server is on. Run `docker compose ps`, then `docker compose up -d` |
-| Only the other centres cannot reach it | The VPN or the network between centres | Call the network vendor. DiagTrack is fine if the main site can open it |
-| A part shows `Restarting` or `Exited` | That part keeps failing | `docker compose logs --tail 100 <part>`, read the last lines, then `docker compose up -d` |
-| `web` never becomes `(healthy)` after the first start | `DB_PASSWORD` in `.env` was changed after the first start | Put the original password back. Never change it after the first start |
-| **Background worker** box is red | The worker stopped | `docker compose up -d`. If it stops again, `docker compose logs --tail 100 worker` |
-| No escalations, no alerts | The worker stopped, or alert channels are off | Check the worker box, then the switches under Alert channels |
+| The browser cannot reach DiagTrack | Server off, DiagTrack stopped, or the firewall | Check the server is on and the DiagTrack service (or `docker compose ps`) is running. Windows: run setup, **Repair** |
+| Only the other centres cannot reach it | The VPN between centres | Call the network vendor |
+| Every page says "DiagTrack is back shortly" | A restore is running | Wait; the page refreshes itself. If it stays for more than an hour, see the logs, then restart DiagTrack |
+| A yellow bar says DiagTrack is read-only | A move to a new server was started | Backups page, **End move**, if the move is not going ahead |
+| **Background worker** box is red | The service or worker container stopped | Restart DiagTrack. If it stops again, read the newest log |
 | **Alerts sent out** box is red | Wrong mail server or gateway details | Read the reason shown, correct it in Settings, use the test button |
-| Emails do not arrive, but the box is green | The person has no email address, or email alerts are off | Check their email under Users, and the Email alerts switch |
-| Pop-ups do not appear | Pop-ups switched off, or the browser tab was asleep | Check "Pop-up messages on screen" in Settings. Pop-ups arrive within about 15 seconds |
-| No desktop alerts outside the browser | The site is on plain `http://` | Desktop alerts need HTTPS (Install guide, step 7). Pop-ups inside DiagTrack still work |
-| QR labels open the wrong address | "Address of this system" is empty or wrong | Fix it in Settings, then print the labels again. The machine's page shows the address its label opens |
-| An alert's wording is wrong, or an SMS shows `{something}` | A template was changed, or a placeholder misspelt | Message templates, open the event, fix it or press **Back to built-in wording** |
-| "Server Error (500)" on a screen | A fault in the software | `docker compose logs --tail 50 web`, copy the lines and send them to whoever supports the software |
+| Pop-ups or emails do not arrive | Alerts switched off, or the person has no email address | Check the switches in Settings and the person's details under Users |
+| QR labels open the wrong address | "Address of this system" is empty or wrong | Fix it in Settings, then print the labels again |
+| "Server Error (500)" on a screen | A fault in the software | Copy the last lines of the newest log and send them to whoever supports DiagTrack |
 | A photo will not upload | Larger than the limit | Raise "Largest attachment" in Settings, up to 50 MB |
-| The disk is filling up | Attachments and the database grow | `df -h` shows space. Add disk space before it passes 80% |
+| The disk is filling up | Attachments, database, local backups | Add disk space before it passes 80% full. The Backups page shows free space in each backup folder |
+| Windows: the DiagTrack service stops right after starting | PostgreSQL not running, or a damaged setting | Start **postgresql-x64-17** in Services, then DiagTrack. Otherwise run setup, **Repair** |
+| Setup stopped with a code such as `DT-S04` | See the message: it names the cause and what to do | Fix it and run setup again; it continues where it stopped. The full log is `setup.log` |
 
 ## 6. Passwords
 
 | Task | How |
 | --- | --- |
 | A user forgot their password | Masters and rules, Users, open the person, use the link in the password line |
-| The administrator password is lost | `./scripts/reset-password.sh admin`, then type the new password twice |
+| The administrator password is lost | Windows: `diagtrack changepassword admin`. Docker: `./scripts/reset-password.sh admin` |
 | Someone left | Untick Active on their user. Do not delete them |
 
 ## 7. Restore from a backup
 
-Use this after a disk failure, or to move DiagTrack to a new server. Everything entered after that backup was taken is
-lost, so normally use the newest backup.
+Use this after data was lost or damaged. Everything entered after the chosen backup was made is replaced.
 
-On a **new server**, first follow the Install guide steps 1 to 3 and step 5, so the NAS is attached. Then:
+1. Backups page: find the backup by date, press **Restore**, type `RESTORE`.
+2. Staff see "DiagTrack is back shortly" for a few minutes. The backup is loaded **beside** the live database and
+   checked against its record first; only then is it switched in. If anything fails, the live data is not changed.
+3. Everyone signs in again afterwards. The database as it was just before is kept until the next restore, as a
+   fallback for whoever supports DiagTrack.
 
-1. List the backups:
+When the screens cannot open at all:
 
-   ```
-   ./scripts/restore.sh
-   ```
+- Windows: `diagtrack restore --dest dest1` (the newest backup), or add `--name <file>` for a specific one, or give
+  the path of a full copy: `diagtrack restore E:\Copies\<file>.dtbak`.
+- Docker: `./scripts/restore.sh` lists them; `./scripts/restore.sh dest1 <file>` restores one.
 
-2. Restore one, normally the newest, at the bottom of the list:
-
-   ```
-   ./scripts/restore.sh diagtrack-20261010-0130.dump
-   ```
-
-3. Type `YES` when asked and wait for "Done".
-4. Sign in and check that the newest tickets are there.
-
-Warnings that say something "does not exist" during the restore are normal. If other errors appear, run
-`docker compose logs --tail 50 db` and send the lines to whoever supports the software. A failed restore does not
-change the backup file.
+The restore asks you to type `YES`.
 
 ## 8. Installing a new version
 
-When a new version is pushed to GitHub:
+| Windows native | Docker |
+| --- | --- |
+| 1. Download the new zip from GitHub and extract it, as in the Install guide, A2. | `./scripts/update.sh` |
+| 2. Double-click **Setup.cmd** in the new folder and choose **Update**. | It backs up, downloads the new version with git, rebuilds and restarts |
+| Setup backs up first, installs the new version beside the old, updates the database and starts DiagTrack. If the new version does not start, it puts the old version and the backup back by itself. | Check afterwards with `docker compose run --rm setup verify` |
 
-```
-./scripts/update.sh
-```
+Users are interrupted for a few minutes, so update out of hours.
 
-It makes a backup, downloads the new version (`git pull`), then rebuilds and restarts. Users are interrupted for about a
-minute, so do it out of hours. Your data folder and `.env` are never touched.
+## 9. Moving to another server
 
-If the download fails with a message about local changes, someone edited a file in the folder. Run
-`git status` to see which, then `git checkout -- <file>` to undo it, and run the update again.
+Works in any direction: Windows Server 2016 to 2022, Windows to Docker, Docker to Windows.
 
-## 9. Moving to a new server
+1. **Old server, Backups page, Prepare to move.** Choose a folder (for example a USB drive) and type `MOVE`.
+   DiagTrack becomes read-only for everyone and saves the move file. Note the checksum shown.
+2. Copy the move file to the new server.
+3. **New server: install with Move in.**
+   - Windows: Setup.cmd, **Move in from another DiagTrack server**, give the file's path and the old backup
+     passphrase.
+   - Docker: put the file in `data/import`, run `docker compose run --rm setup`, choose **Move in**, then
+     `docker compose up -d`.
+   Setup checks the file, installs, restores, checks every count against the file, and reports.
+4. Open the new server's address, sign in with your usual login, look at recent tickets and photos.
+5. Point staff to the new server: keep the old address (ask the network vendor to move the name or IP address), or
+   reprint the QR labels with the new address.
+6. **Old server, Backups page, Retire**, once the new one has run well for a day or two. It stays read-only and stops
+   its backups. Keep it for 30 days, then switch it off.
 
-1. On the old server: `docker compose exec backup sh /backup.sh now`, then `docker compose down`.
-2. On the new server: Install guide steps 1 to 3, and step 5 pointing at the same NAS folder.
-3. Restore the newest backup (section 7).
-4. Ask the network vendor to give the new server the old server's IP address, or update "address of this system" in
-   Settings and reprint the QR labels.
+**If the move goes wrong** before you retire the old server: on the old server press **End move**, and everything
+continues there as before. Nothing on the old server was changed.
 
 ## 10. Housekeeping calendar
 
 | When | Task |
 | --- | --- |
 | Every day | Look at Settings and health |
-| Every month | `df -h`: keep the disk under 80% full. Install operating system updates out of hours: `sudo apt update && sudo apt upgrade`, then restart the server |
-| Every 3 months | Test a restore (section 4) |
+| Every week | Glance at the Backups page: green, recent, weekly check passed |
+| Every month | Disk under 80% full. Install Windows (or Linux) updates out of hours, then restart the server |
+| Every 3 months | Restore a full copy on a spare computer (section 4) |
 | When staff join or leave | Add the user, or untick Active |
-| When a centre opens | Administrator guide, section 2 |
 | When an AMC is renewed | Change the AMC expiry date on the machine |
+| **Before 12 January 2027** | Windows Server 2016 loses security updates: move to Server 2022 or 2025 (section 9) |

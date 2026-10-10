@@ -78,7 +78,7 @@ jobs:
         run: Setup.cmd --answers ci\answers-windows.json install
       - name: Screens answer
         shell: pwsh
-        run: (Invoke-WebRequest http://localhost/healthz -UseBasicParsing).StatusCode
+        run: (Invoke-WebRequest http://localhost:8088/healthz -UseBasicParsing).StatusCode
       - name: Check and test-restore the first backup
         shell: cmd
         run: |
@@ -113,9 +113,9 @@ jobs:
       - name: Move in from the Docker move file
         shell: cmd
         run: Setup.cmd --answers ci\answers-windows-move.json move
-      - name: Screens answer on the new port
+      - name: Screens answer
         shell: pwsh
-        run: (Invoke-WebRequest http://localhost:8080/healthz -UseBasicParsing).StatusCode
+        run: (Invoke-WebRequest http://localhost:8090/healthz -UseBasicParsing).StatusCode
       - if: failure()
         name: Report the logs as annotations
         shell: pwsh
