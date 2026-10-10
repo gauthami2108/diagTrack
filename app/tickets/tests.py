@@ -743,7 +743,8 @@ class CryptoAndRuntimeTests(TestCase):
             runtime.write_conf(home / "diagtrack.conf", {"DT_TEST_PORT": "8181"})
             runtime.save_secrets(home / "secrets.dat", {"DT_TEST_SECRET": "abc"})
             with mock.patch.dict(_os.environ, {"DIAGTRACK_HOME": str(home)}):
-                _os.environ.pop("DT_TEST_PORT", None)
+                for key in ("DT_TEST_PORT", "MEDIA_ROOT", "STATUS_DIR"):
+                    _os.environ.pop(key, None)
                 runtime.load()
                 self.assertEqual(_os.environ["DT_TEST_PORT"], "8181")
                 self.assertEqual(_os.environ["DT_TEST_SECRET"], "abc")

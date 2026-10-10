@@ -38,8 +38,21 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q postgresql-client-17
           echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
       - run: pip install -r app/requirements.txt
-      - run: python manage.py test tickets --noinput
+      - name: Test suite
         working-directory: app
+        run: |
+          set -o pipefail
+          python manage.py test tickets --noinput 2>&1 | tee "$RUNNER_TEMP/tests.log"
+      - name: Report test failures
+        if: failure()
+        run: |
+          python - <<'PY'
+          import os, re
+          text = open(os.path.join(os.environ["RUNNER_TEMP"], "tests.log"), errors="replace").read()
+          for block in re.split(r"\n=+\n", text)[1:6]:
+              msg = block[-3000:].replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+              print(f"::error title=test failure::{msg}")
+          PY
       - run: python -m unittest discover -s installer/tests -v
 
   docker:
