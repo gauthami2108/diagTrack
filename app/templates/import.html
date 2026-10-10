@@ -1,0 +1,77 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Import from Excel{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Import from Excel</h1><p class="sub">Add or change centres, vendors, departments, people and equipment in one go. Nothing is saved until you have seen what will change.</p></div>
+  <div class="head-actions"><a class="btn" href="{% url 'import_workbook' %}">{% icon 'download' %}Download the workbook</a></div>
+</div>
+
+{% if done %}
+<section class="panel im-done">
+  <header><h2>{% icon 'circle-check' %} Imported</h2></header>
+  <ul class="im-counts">{% for s in sheets %}{% if not s.missing %}<li><b>{{ s.name }}</b> {{ s.counts.new }} added, {{ s.counts.change }} changed</li>{% endif %}{% endfor %}</ul>
+  {% if passwords %}
+  <div class="im-pw">
+    <h3>Passwords for the new people</h3>
+    <p class="panel-sub">Shown once, now. Print this page or copy them, give each person theirs, and ask them to change it under My profile after signing in.</p>
+    <table class="table table-s"><thead><tr><th>User name</th><th>Password</th></tr></thead>
+      <tbody>{% for u, p in passwords %}<tr><td>{{ u }}</td><td><code>{{ p }}</code></td></tr>{% endfor %}</tbody></table>
+    <button class="btn" type="button" onclick="window.print()">{% icon 'file-text' %}Print</button>
+  </div>
+  {% endif %}
+  <p><a class="btn btn-primary" href="{% url 'admin:index' %}">{% icon 'sliders-horizontal' %}Open Masters and rules</a> <a class="btn" href="{% url 'import_page' %}">Import another file</a></p>
+</section>
+
+{% elif plan %}
+<section class="panel">
+  <header><h2>{% if plan.errors %}{% icon 'circle-alert' %} The file needs fixing{% elif plan.empty %}Nothing to change{% else %}Ready to import{% endif %}</h2><span class="muted">{{ file_name }}</span></header>
+  {% if plan.errors %}<p class="callout callout-bad">{% icon 'circle-alert' %}<span>{{ plan.errors|length }} row{{ plan.errors|length|pluralize }} need{{ plan.errors|length|pluralize:"s," }} fixing. Nothing has been saved. Fix them in Excel, save, and upload the file again.</span></p>
+  {% elif plan.empty %}<p class="panel-sub">Every row matches what is already in DiagTrack.</p>
+  {% else %}<p class="panel-sub">Check the changes below. Pressing Import saves all of them together.</p>{% endif %}
+  <ul class="im-counts">
+    {% for s in sheets %}<li>{% if s.missing %}<b>{{ s.name }}</b> <span class="muted">not in the file</span>{% else %}<b>{{ s.name }}</b> {{ s.counts.new }} new, {{ s.counts.change }} changed, {{ s.counts.same }} unchanged{% if s.counts.error %}, <span class="bad-text">{{ s.counts.error }} to fix</span>{% endif %}{% endif %}</li>{% endfor %}
+  </ul>
+  {% if not plan.errors and not plan.empty %}
+  <form method="post" class="im-go">{% csrf_token %}<input type="hidden" name="step" value="import"><input type="hidden" name="token" value="{{ token }}">
+    <button class="btn btn-primary">{% icon 'upload' %}Import</button> <a class="btn" href="{% url 'import_page' %}">Cancel</a></form>
+  {% endif %}
+</section>
+
+{% for s in sheets %}{% if s.shown %}
+<section class="panel">
+  <header><h2>{{ s.name }}</h2></header>
+  <div class="table-wrap im-table"><table class="table table-s">
+    <thead><tr><th>Row</th><th></th><th>Which</th><th>What happens</th></tr></thead>
+    <tbody>{% for r in s.shown %}<tr class="im-{{ r.action }}">
+      <td class="num-col">{{ r.line }}</td>
+      <td>{% if r.action == 'error' %}<span class="loz im-loz-bad">Fix</span>{% elif r.action == 'new' %}<span class="loz st-resolved">New</span>{% elif r.action == 'change' %}<span class="loz st-assigned">Change</span>{% else %}<span class="loz">Same</span>{% endif %}</td>
+      <td><b>{{ r.label|default:"(empty)" }}</b></td>
+      <td>{% if r.errors %}<ul class="im-msgs bad-text">{% for e in r.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% elif r.action == 'change' %}Changes {{ r.changes|join:", " }}{% elif r.action == 'new' %}Added{% endif %}{% if r.notes %}<ul class="im-msgs muted">{% for n in r.notes %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% if s.rows|length > s.shown|length %}<p class="muted im-more">Rows that stay the same are not listed.</p>{% endif %}
+</section>
+{% endif %}{% endfor %}
+
+{% else %}
+<div class="grid-2 im-start">
+  <section class="panel">
+    <header><h2>How it works</h2></header>
+    <ol class="im-steps">
+      <li><b>Download the workbook.</b> It already holds everything in DiagTrack, one sheet each for centres, vendors, departments, people and equipment. The first sheet explains every column.</li>
+      <li><b>Add or change rows in Excel.</b> New rows go at the bottom. An empty cell leaves the current value alone. To retire something, set Active to No.</li>
+      <li><b>Upload it here.</b> DiagTrack checks every row and shows what will be added and changed, and any rows to fix. Nothing is saved yet.</li>
+      <li><b>Press Import.</b> Everything is saved together. New people without a password get one, shown once.</li>
+    </ol>
+  </section>
+  <section class="panel">
+    <header><h2>Upload</h2></header>
+    <form method="post" enctype="multipart/form-data" class="stack-s">{% csrf_token %}<input type="hidden" name="step" value="check">
+      <label class="drop" data-drop>{% icon 'upload' %}<span><b>Choose the Excel file</b><small>.xlsx, up to 5 MB</small></span><input type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+      <ul class="file-list" data-file-list></ul>
+      <div><button class="btn btn-primary">{% icon 'check' %}Check the file</button></div>
+    </form>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

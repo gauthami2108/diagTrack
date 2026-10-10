@@ -618,6 +618,24 @@ a.band-cell:hover { background: var(--surface-2); text-decoration: none; }
 .rate input:checked ~ label .i { fill: currentColor; }
 .rate input:focus-visible + label { outline: 2px solid var(--accent); border-radius: 4px; }
 
+/* ================= import from Excel ================= */
+.im-steps { list-style: decimal; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+.im-steps b { color: var(--ink); font-weight: 600; }
+.im-counts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 4px 0 4px; font-size: 14px; color: var(--ink-2); }
+.im-counts b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+.im-go { margin-top: 14px; display: flex; gap: 8px; }
+.im-table { box-shadow: none; }
+.im-table td { vertical-align: top; }
+.im-msgs { margin: 0; padding-left: 16px; list-style: disc; font-size: 13.5px; }
+.im-loz-bad { background: var(--bad-soft); color: var(--bad); }
+.im-more { font-size: 13px; margin-top: 8px; }
+.im-done h2 .i { color: var(--good); }
+.im-pw { margin: 14px 0 18px; padding: 16px; border-radius: 12px; background: var(--surface-2); }
+.im-pw h3 { font-size: 15px; margin-bottom: 8px; }
+.im-pw table { margin-bottom: 12px; max-width: 460px; }
+.im-pw code { font: 600 14px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+@media print { .im-pw { background: none; padding: 0; } }
+
 /* ================= board ================= */
 .board { display: grid; grid-template-columns: repeat(4, minmax(205px, 1fr)); gap: 16px; align-items: start; overflow-x: auto; padding-bottom: 8px; }
 .col { background: var(--surface-3); border: 1px solid transparent; border-radius: var(--r-l); min-height: 200px; transition: background .15s, border-color .15s; }

@@ -1046,3 +1046,135 @@ class SignInLockTests(Base):
         self.client.post(r.redirect_chain[-1][0], {"new_password1": "Fresh-Pass-2026x", "new_password2": "Fresh-Pass-2026x"})
         self.login("ravi", "Fresh-Pass-2026x")
         self.assertIn("_auth_user_id", self.client.session)
+
+
+from .models import Vendor  # noqa: E402
+
+
+class BulkImportTests(Base):
+    def book(self):
+        from openpyxl import load_workbook
+        from . import bulk_import
+        return load_workbook(_io.BytesIO(bulk_import.workbook()))
+
+    def save(self, wb):
+        out = _io.BytesIO()
+        wb.save(out)
+        return out.getvalue()
+
+    def add(self, wb, sheet, row):
+        ws = wb[sheet]
+        heads = [c.value.rstrip(" *") for c in ws[1]]
+        ws.append([row.get(h, "") for h in heads])
+
+    def test_downloaded_workbook_reads_back_unchanged(self):
+        from . import bulk_import
+        plan = bulk_import.read(self.save(self.book()))
+        self.assertEqual(plan.errors, [])
+        self.assertTrue(plan.empty)
+        self.assertEqual(plan.counts("People")["same"], User.objects.count())
+
+    def test_rows_may_refer_to_other_sheets_of_the_same_file(self):
+        from . import bulk_import
+        wb = self.book()
+        self.add(wb, "Centres", {"Code": "MDP", "Name": "Madhapur", "City": "Hyderabad"})
+        self.add(wb, "Vendors", {"Name": "Wipro GE Service", "Phone": 4012345678})
+        self.add(wb, "Departments", {"Name": "Radiology", "Head (user name)": "lakshmi", "How tickets are assigned": "Least loaded",
+                                     "Receives equipment tickets": "No"})
+        self.add(wb, "People", {"User name": "lakshmi", "First name": "Lakshmi", "Role": "Department head",
+                                "Centres": "MDP, KKP", "Departments": "Radiology", "Mobile": 919876543210.0})
+        self.add(wb, "People", {"User name": "kumar", "First name": "Kumar", "Role": "Requester", "Centres": "MDP",
+                                "Initial password": "Kumar-Pass-2026"})
+        self.add(wb, "Equipment", {"Centre code": "MDP", "Name": "CT 64 slice", "Make": "GE", "Serial number": 77812,
+                                   "Vendor": "Wipro GE Service", "AMC expiry date": "31-03-2027"})
+        plan = bulk_import.read(self.save(wb))
+        self.assertEqual([r.errors for r in plan.errors], [])
+        counts, passwords = bulk_import.apply(plan)
+        self.assertEqual(counts["People"]["new"], 2)
+        lak = User.objects.get(username="lakshmi")
+        self.assertEqual(lak.role, User.DEPT_HEAD)
+        self.assertEqual(lak.mobile, "919876543210")
+        self.assertEqual(sorted(c.code for c in lak.centres.all()), ["KKP", "MDP"])
+        dept = Department.objects.get(name="Radiology")
+        self.assertEqual((dept.head, dept.assignment_mode), (lak, Department.LEAST_LOADED))
+        ct = Equipment.objects.get(serial_no="77812")
+        self.assertEqual((ct.centre.code, ct.vendor.name, str(ct.amc_expiry)), ("MDP", "Wipro GE Service", "2027-03-31"))
+        # a password was made for lakshmi only, and both can sign in
+        self.assertEqual([u for u, _ in passwords], ["lakshmi"])
+        self.assertTrue(self.client.login(username="lakshmi", password=passwords[0][1]))
+        self.assertTrue(self.client.login(username="kumar", password="Kumar-Pass-2026"))
+
+    def test_errors_are_listed_and_nothing_is_saved(self):
+        from . import bulk_import
+        wb = self.book()
+        self.add(wb, "Centres", {"Code": "MDP", "Name": "Madhapur"})
+        self.add(wb, "People", {"User name": "new one", "Role": "Boss"})
+        self.add(wb, "People", {"User name": "x1", "Role": "Agent", "Centres": "ZZZ", "Departments": "Nowhere"})
+        self.add(wb, "People", {"User name": "x1", "Role": "Agent"})
+        self.add(wb, "Equipment", {"Centre code": "KKP", "Name": "Echo", "AMC expiry date": "next year"})
+        plan = bulk_import.read(self.save(wb))
+        text = " ".join(e for r in plan.errors for e in r.errors)
+        for bit in ("User name:", "Role: use", "no centre with the code ZZZ", "no department called Nowhere",
+                    "Same as row", "is not a date"):
+            self.assertIn(bit, text)
+        with self.assertRaises(ValueError):
+            bulk_import.apply(plan)
+        self.assertFalse(Centre.objects.filter(code="MDP").exists())
+
+    def test_changes_only_what_is_filled_in(self):
+        from . import bulk_import
+        wb = self.book()
+        ws = wb["People"]
+        heads = [c.value.rstrip(" *") for c in ws[1]]
+        for row in ws.iter_rows(min_row=2):
+            if row[heads.index("User name")].value == "ravi":
+                row[heads.index("Mobile")].value = 919800000001
+                row[heads.index("Email")].value = None  # empty: left as it is
+                row[heads.index("Active")].value = "No"
+        self.ravi.email = "ravi@example.com"
+        self.ravi.save()
+        plan = bulk_import.read(self.save(wb))
+        changed = [r for r in plan.rows["People"] if r.action == "change"]
+        self.assertEqual([r.label for r in changed], ["ravi"])
+        bulk_import.apply(plan)
+        self.ravi.refresh_from_db()
+        self.assertEqual((self.ravi.mobile, self.ravi.email, self.ravi.is_active), ("919800000001", "ravi@example.com", False))
+
+    def test_adding_a_serial_number_updates_the_machine(self):
+        from . import bulk_import
+        self.mri.serial_no = ""
+        self.mri.save()
+        wb = self.book()
+        ws = wb["Equipment"]
+        heads = [c.value.rstrip(" *") for c in ws[1]]
+        for row in ws.iter_rows(min_row=2):
+            if row[heads.index("Name")].value == self.mri.name and row[heads.index("Centre code")].value == self.mri.centre.code:
+                row[heads.index("Serial number")].value = "SN-1"
+        before = Equipment.objects.count()
+        bulk_import.apply(bulk_import.read(self.save(wb)))
+        self.assertEqual(Equipment.objects.count(), before)
+        self.mri.refresh_from_db()
+        self.assertEqual(self.mri.serial_no, "SN-1")
+
+    def test_screen_checks_then_imports_and_is_for_administrators_only(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        wb = self.book()
+        self.add(wb, "Vendors", {"Name": "Philips Healthcare"})
+        data = self.save(wb)
+        self.client.force_login(self.ravi)
+        self.assertEqual(self.client.get(reverse("import_page")).status_code, 403)
+        admin = User.objects.create_user("boss", password="x", role=User.ADMIN, is_superuser=True, is_staff=True)
+        self.client.force_login(admin)
+        self.assertEqual(self.client.get(reverse("import_workbook")).status_code, 200)
+        r = self.client.post(reverse("import_page"), {"step": "check", "file": SimpleUploadedFile("people.xlsx", data)})
+        self.assertContains(r, "Ready to import")
+        self.assertFalse(Vendor.objects.filter(name="Philips Healthcare").exists())
+        token = r.context["token"]
+        r = self.client.post(reverse("import_page"), {"step": "import", "token": token})
+        self.assertContains(r, "Imported")
+        self.assertTrue(Vendor.objects.filter(name="Philips Healthcare").exists())
+        r = self.client.post(reverse("import_page"), {"step": "import", "token": token}, follow=True)
+        self.assertContains(r, "expired")
+        r = self.client.post(reverse("import_page"), {"step": "check", "file": SimpleUploadedFile("x.xlsx", b"not excel")},
+                             follow=True)
+        self.assertContains(r, "not an Excel workbook")

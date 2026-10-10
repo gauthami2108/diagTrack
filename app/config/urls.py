@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth import views as auth
 from django.urls import path
 
-from tickets import views, views_backup
+from tickets import views, views_backup, views_import
 from tickets.signin import SignInForm
 
 handler403 = "tickets.views.error_403"
@@ -24,6 +24,8 @@ urlpatterns = [
     path("alerts/<int:pk>/", views.notification_open, name="notification_open"),
     path("settings/", views.settings_view, name="settings"),
     path("settings/templates/", views.message_templates, name="message_templates"),
+    path("settings/import/", views_import.import_page, name="import_page"),
+    path("settings/import/workbook.xlsx", views_import.import_workbook, name="import_workbook"),
     path("settings/backups/", views_backup.backups_view, name="backups"),
     path("settings/backups/action/", views_backup.backups_action, name="backups_action"),
     path("settings/backups/jobs/<str:job_id>.json", views_backup.backup_job, name="backup_job"),
