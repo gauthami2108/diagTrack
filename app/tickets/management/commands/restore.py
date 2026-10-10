@@ -49,7 +49,7 @@ class Command(BaseCommand):
         if not path.exists():
             raise CommandError(f"{path} was not found.")
         s = engine.container.summary_of(path)
-        self.stdout.write(f"Backup: {path.name}\n  made {s.get('created')} by DiagTrack {s.get('app_version')} "
+        self.stdout.write(f"Backup: {path.name}\n  made {str(s.get('created'))[:19].replace('T', ' ')} UTC by DiagTrack {s.get('app_version')} "
                           f"on {s.get('platform')}\n  {s.get('counts', {}).get('tickets', '?')} tickets")
         if not o["yes"]:
             answer = input("This replaces ALL current DiagTrack data. Type YES to continue: ")

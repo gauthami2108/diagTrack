@@ -277,7 +277,7 @@ def create(root=None, kind="scheduled", full_to=None, progress=_noop, extra=None
         created = datetime.now(dt_timezone.utc)
         cnt = counts()
         manifest = {
-            "format": 1, "created": created.isoformat(timespec="seconds"), "kind": kind, "full": bool(full_to),
+            "format": 1, "created": created.isoformat(timespec="microseconds"), "kind": kind, "full": bool(full_to),
             "site": site_slug(), "app_version": settings.DIAGTRACK_VERSION, "schema": applied_migrations(),
             "pg_server": server_version(), "pg_dump": tool_version("pg_dump"),
             "platform": f"{platform.system()} {platform.release()}", "install": os.environ.get("DIAGTRACK_INSTALL", ""),
