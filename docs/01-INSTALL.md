@@ -163,6 +163,22 @@ docker compose run --rm setup verify
 `verify` checks the screens, the database, the worker and makes a first backup. It ends with "Everything works".
 From now on DiagTrack starts by itself with the computer.
 
+### B6. Upgrading a DiagTrack installed with the first Docker version
+
+The first version kept its passwords in `.env`. The new version keeps them in the `secrets` folder, so after
+downloading it, `./scripts/start.sh` stops and asks you to run setup once:
+
+```
+docker compose run --rm --build setup
+./scripts/start.sh
+docker compose run --rm setup verify
+```
+
+Setup notices the existing database and keeps every ticket, user and attachment, and the logins stay the same. It
+moves the database password and session key out of `.env` into `secrets`, and offers the port and backup settings
+already in `.env` as its answers. It asks two new things: the address staff type and the backup passphrase. Backup files
+made by the first version stay in the backup folder; delete them once the new backups have run for a month.
+
 ---
 
 ## Let the other centres reach the server (both ways)

@@ -140,7 +140,8 @@ The restore asks you to type `YES`.
 | 2. Double-click **Setup.cmd** in the new folder and choose **Update**. | It backs up, downloads the new version with git, rebuilds and restarts |
 | Setup backs up first, installs the new version beside the old, updates the database and starts DiagTrack. If the new version does not start, it puts the old version and the backup back by itself. | Check afterwards with `docker compose run --rm setup verify` |
 
-Users are interrupted for a few minutes, so update out of hours.
+Users are interrupted for a few minutes, so update out of hours. A Docker install made by the first version needs
+setup once after the update: `docker compose run --rm --build setup` (Install guide, B6).
 
 ## 9. Moving to another server
 
