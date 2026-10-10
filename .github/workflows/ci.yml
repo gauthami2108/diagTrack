@@ -93,15 +93,22 @@ jobs:
       - if: failure()
         name: Report the logs as annotations
         shell: pwsh
+        continue-on-error: true
         run: |
-          $files = @('C:\ProgramData\DiagTrack\setup-bootstrap.log', 'C:\ProgramData\DiagTrack\setup.log') + (Get-ChildItem C:\ProgramData\DiagTrack\logs -File -ErrorAction SilentlyContinue | ForEach-Object FullName)
-          foreach ($f in $files) {
-            if (Test-Path $f) {
-              $tail = (Get-Content $f -Tail 60) -join '%0A'
-              if ($tail.Length -gt 3500) { $tail = $tail.Substring($tail.Length - 3500) }
-              Write-Output "::warning title=$(Split-Path $f -Leaf)::$tail"
-            }
+          $ErrorActionPreference = 'Continue'
+          function Tail($f) {
+            try {
+              $fs = [System.IO.File]::Open($f, 'Open', 'Read', 'ReadWrite')
+              $sr = New-Object System.IO.StreamReader($fs); $t = $sr.ReadToEnd(); $sr.Close()
+              $lines = ($t -replace '%', '%25' -replace "`r", '') -split "`n" | Where-Object { $_ -notmatch 'Applying ' } | Select-Object -Last 70
+              $m = $lines -join '%0A'
+              if ($m.Length -gt 4000) { $m = $m.Substring($m.Length - 4000) }
+              return $m
+            } catch { return "could not read: $($_.Exception.Message)" }
           }
+          $files = @('C:\ProgramData\DiagTrack\setup-bootstrap.log', 'C:\ProgramData\DiagTrack\setup.log')
+          $files += @(Get-ChildItem C:\ProgramData\DiagTrack\logs -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+          foreach ($f in $files) { if (Test-Path $f) { Write-Output "::warning title=$(Split-Path $f -Leaf)::$(Tail $f)" } }
 
   windows-move-in:
     runs-on: windows-2022
@@ -119,12 +126,19 @@ jobs:
       - if: failure()
         name: Report the logs as annotations
         shell: pwsh
+        continue-on-error: true
         run: |
-          $files = @('C:\ProgramData\DiagTrack\setup-bootstrap.log', 'C:\ProgramData\DiagTrack\setup.log') + (Get-ChildItem C:\ProgramData\DiagTrack\logs -File -ErrorAction SilentlyContinue | ForEach-Object FullName)
-          foreach ($f in $files) {
-            if (Test-Path $f) {
-              $tail = (Get-Content $f -Tail 60) -join '%0A'
-              if ($tail.Length -gt 3500) { $tail = $tail.Substring($tail.Length - 3500) }
-              Write-Output "::warning title=$(Split-Path $f -Leaf)::$tail"
-            }
+          $ErrorActionPreference = 'Continue'
+          function Tail($f) {
+            try {
+              $fs = [System.IO.File]::Open($f, 'Open', 'Read', 'ReadWrite')
+              $sr = New-Object System.IO.StreamReader($fs); $t = $sr.ReadToEnd(); $sr.Close()
+              $lines = ($t -replace '%', '%25' -replace "`r", '') -split "`n" | Where-Object { $_ -notmatch 'Applying ' } | Select-Object -Last 70
+              $m = $lines -join '%0A'
+              if ($m.Length -gt 4000) { $m = $m.Substring($m.Length - 4000) }
+              return $m
+            } catch { return "could not read: $($_.Exception.Message)" }
           }
+          $files = @('C:\ProgramData\DiagTrack\setup-bootstrap.log', 'C:\ProgramData\DiagTrack\setup.log')
+          $files += @(Get-ChildItem C:\ProgramData\DiagTrack\logs -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+          foreach ($f in $files) { if (Test-Path $f) { Write-Output "::warning title=$(Split-Path $f -Leaf)::$(Tail $f)" } }

@@ -49,6 +49,7 @@ def passphrase_problem(pp):
 
 def read_move_file(path, passphrase):
     """Open a backup or move file with its passphrase. Returns its readable summary, or raises ui.Failed."""
+    app_dir(Path(__file__).resolve().parent.parent.parent)
     from tickets.backup import container
     try:
         with open(path, "rb") as f:

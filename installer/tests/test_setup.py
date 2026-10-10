@@ -47,6 +47,20 @@ class UiTests(unittest.TestCase):
             self.assertIn("****", text)
 
 
+class MoveFileTests(unittest.TestCase):
+    def test_read_move_file_without_any_path_set_up(self):
+        import io
+        import subprocess
+        code = (
+            "import sys, io; sys.path.insert(0, %r)\n"
+            "from diagtrack_setup import common, ui\n"
+            "try:\n    common.read_move_file(%r, 'x' * 12)\n"
+            "except ui.Failed as f:\n    print('FAILED', f.code)\n"
+        ) % (str(ROOT / "installer"), str(ROOT / "installer" / "versions.json"))
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd="/")
+        self.assertIn("FAILED DT-M02", out.stdout, out.stderr)
+
+
 class WindowsPieceTests(unittest.TestCase):
     def test_service_definition(self):
         xml = windows.service_xml({"service": "postgresql-x64-17"})
