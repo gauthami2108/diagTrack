@@ -3,6 +3,8 @@ from django.core.validators import RegexValidator
 from django.db import models
 from django.utils import timezone
 
+from .crypto import EncryptedTextField
+
 
 # --------------------------------------------------------------------------
 # Masters
@@ -512,19 +514,19 @@ class SiteSettings(models.Model):
     smtp_host = models.CharField("mail server", max_length=120, blank=True)
     smtp_port = models.PositiveIntegerField("port", default=587)
     smtp_user = models.CharField("user name", max_length=120, blank=True)
-    smtp_password = models.CharField("password", max_length=200, blank=True)
+    smtp_password = EncryptedTextField("password", blank=True)
     smtp_security = models.CharField("security", max_length=8, default="tls",
                                      choices=[("tls", "STARTTLS (port 587)"), ("ssl", "SSL (port 465)"), ("none", "None")])
     from_email = models.CharField("send from", max_length=160, blank=True,
                                   help_text="For example: DiagTrack <helpdesk@yourdomain.in>")
 
     sms_url = models.CharField("SMS gateway address", max_length=400, blank=True)
-    sms_headers = models.TextField("SMS headers", blank=True,
+    sms_headers = EncryptedTextField("SMS headers", blank=True,
                                    help_text="One per line, Name: value. For example  authkey: abc123")
     sms_body = models.TextField("SMS message format", blank=True,
                                 help_text="What your provider expects. Use {to}, {message} and, if the provider needs one, {template} as placeholders.")
     whatsapp_url = models.CharField("WhatsApp gateway address", max_length=400, blank=True)
-    whatsapp_headers = models.TextField("WhatsApp headers", blank=True)
+    whatsapp_headers = EncryptedTextField("WhatsApp headers", blank=True)
     whatsapp_body = models.TextField("WhatsApp message format", blank=True,
                                      help_text="What your provider expects. Use {to}, {message} and {template} as placeholders.")
 

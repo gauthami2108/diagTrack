@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth import views as auth
 from django.urls import path
 
-from tickets import views
+from tickets import views, views_backup
 
 handler403 = "tickets.views.error_403"
 handler404 = "tickets.views.error_404"
@@ -23,6 +23,9 @@ urlpatterns = [
     path("alerts/<int:pk>/", views.notification_open, name="notification_open"),
     path("settings/", views.settings_view, name="settings"),
     path("settings/templates/", views.message_templates, name="message_templates"),
+    path("settings/backups/", views_backup.backups_view, name="backups"),
+    path("settings/backups/action/", views_backup.backups_action, name="backups_action"),
+    path("settings/backups/jobs/<str:job_id>.json", views_backup.backup_job, name="backup_job"),
     path("centres/", views.centres, name="centres"),
     path("reports/", views.reports_view, name="reports"),
     path("reports/excel/", views.report_excel, name="report_excel"),

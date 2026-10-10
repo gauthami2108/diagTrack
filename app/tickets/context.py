@@ -3,7 +3,7 @@ from .models import Notification, SiteSettings
 
 def shell(request):
     """Values every page needs: organisation settings, unread alerts, the newest alert id for pop-ups."""
-    ctx = {"cfg": SiteSettings.load()}
+    ctx = {"cfg": SiteSettings.load(), "readonly": getattr(request, "readonly", None)}
     user = getattr(request, "user", None)
     if user is not None and user.is_authenticated:
         mine = Notification.objects.filter(user=user)

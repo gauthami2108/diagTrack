@@ -7,10 +7,8 @@ import logging
 import time
 
 from django.core.management.base import BaseCommand
-from django.db import close_old_connections
-from django.utils import timezone
 
-from tickets import notify, services
+from tickets.worker import Worker
 
 log = logging.getLogger("diagtrack.worker")
 
@@ -24,23 +22,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         log.info("Worker started. Checking every %s seconds.", opts["interval"])
-        amc_day = None
+        worker = Worker()
         while True:
-            try:
-                close_old_connections()
-                fired = services.run_sla_checks()
-                closed = services.auto_close()
-                if amc_day != timezone.localdate():  # once a day, and at start
-                    amc = services.amc_checks()
-                    amc_day = timezone.localdate()
-                    if amc:
-                        log.info("Sent %s AMC expiry alerts.", amc)
-                sent = notify.send_pending()
-                services.beat("worker", f"{fired} escalations, {closed} auto-closed, {sent} alerts sent")
-                if fired or closed or sent:
-                    log.info("Round done: %s escalations, %s auto-closed, %s alerts sent.", fired, closed, sent)
-            except Exception:  # never let one bad round stop the worker
-                log.exception("Worker round failed; trying again next minute.")
+            worker.safe_round()
             if opts["once"]:
                 break
             time.sleep(opts["interval"])

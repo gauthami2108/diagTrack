@@ -5,7 +5,7 @@
 
 <section class="health" aria-label="System health">
   <div class="health-item {% if health.worker_ok %}ok{% else %}bad{% endif %}">{% icon 'activity' %}<div><b>Background worker</b><span>{% if health.worker_ok %}Running. Last check {{ health.worker.at|timesince }} ago.{% elif health.worker %}Stopped {{ health.worker.at|timesince }} ago. SLA alerts are not going out. See the runbook, section 4.{% else %}Not started yet. See the runbook, section 4.{% endif %}</span></div></div>
-  <div class="health-item {% if health.backup.ok %}ok{% else %}bad{% endif %}">{% icon 'hard-drive' %}<div><b>Backup to NAS</b><span>{{ health.backup.text }}{% if health.backup.when %} Last run {{ health.backup.when|date:"d M, H:i" }}{% if health.backup.size %}, {{ health.backup.size }}{% endif %}.{% endif %}</span></div></div>
+  <div class="health-item {% if health.backup.ok %}ok{% else %}bad{% endif %}">{% icon 'hard-drive' %}<div><b>Backups</b><span>{{ health.backup.text }}{% if health.backup.when %} Last good {{ health.backup.when|date:"d M, H:i" }}{% if health.backup.size %}, {{ health.backup.size }}{% endif %}.{% endif %} <a href="{% url 'backups' %}">Backups page</a></span></div></div>
   <div class="health-item {% if health.failed %}bad{% else %}ok{% endif %}">{% icon 'mail' %}<div><b>Alerts sent out</b><span>{% if health.failed %}{{ health.failed }} failed this week. Last reason: {{ health.last_failed.error }}{% else %}No failures this week.{% endif %} {{ health.pending }} waiting.</span></div></div>
   <div class="health-item ok">{% icon 'server' %}<div><b>In use</b><span>{{ health.tickets }} tickets, {{ health.users }} active users.</span></div></div>
 </section>

@@ -7,7 +7,10 @@ Everything a maintainer may need to change is read from the .env file
 import os
 from pathlib import Path
 
+from . import runtime
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+runtime.load()  # settings file, secrets file, /run/secrets (see config/runtime.py)
 
 
 def env(name, default=""):
@@ -43,11 +46,13 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "tickets.middleware.MaintenanceMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "tickets.middleware.ReadOnlyMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -82,6 +87,7 @@ if env("DB_HOST"):
             "USER": env("DB_USER", "diagtrack"),
             "PASSWORD": env("DB_PASSWORD"),
             "CONN_MAX_AGE": 60,
+            "CONN_HEALTH_CHECKS": True,  # reconnect quietly after a restore or a database restart
         }
     }
 else:
@@ -126,8 +132,12 @@ STORAGES = {
 # Attachments live on local disk. They are served only to logged-in users
 # who are allowed to see the ticket (see tickets.views.attachment).
 MEDIA_ROOT = Path(env("MEDIA_ROOT", str(BASE_DIR / "media")))
-# Folder shared with the backup container; it writes backup.json here.
+# Backup state, job progress, maintenance and read-only flags. Shared by every DiagTrack process.
 STATUS_DIR = Path(env("STATUS_DIR", str(BASE_DIR / "status")))
+# Where pg_dump and pg_restore live (native Windows: C:\Program Files\PostgreSQL\17\bin). Empty = on PATH.
+PG_BIN = env("PG_BIN")
+# Software version, recorded in every backup.
+DIAGTRACK_VERSION = (BASE_DIR / "VERSION").read_text().strip() if (BASE_DIR / "VERSION").exists() else "dev"
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 60 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024

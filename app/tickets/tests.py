@@ -5,6 +5,7 @@ Run with:  python manage.py test
 from datetime import timedelta
 from unittest import mock
 
+from django.conf import settings
 from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
@@ -672,3 +673,247 @@ class TemplateAndActionTests(Base):
         for label in ("Put on hold", "Resolve", "Transfer"):
             self.assertIn(label, second)
         self.assertIn("btn-primary", second.split("Resolve")[0][-200:])
+
+
+# ==========================================================================
+# Backups, runtime settings, maintenance and read-only modes
+# ==========================================================================
+import io as _io
+import os as _os
+import shutil as _shutil
+import tempfile as _tempfile
+from pathlib import Path as _Path
+
+from django.test import TransactionTestCase, override_settings
+
+from . import crypto as _crypto
+from . import state as _state
+from .backup import container as _container
+from .backup import destinations as _dests
+from .backup import engine as _engine
+from .backup.runner import Runner as _Runner
+
+
+class ContainerTests(TestCase):
+    def roundtrip(self, data, pp="pass phrase one"):
+        buf = _io.BytesIO()
+        w = _container.Writer(buf, pp, b"0123456789abcdef", {"kind": "test"})
+        w.write(data)
+        w.close()
+        return buf.getvalue()
+
+    def test_roundtrip_and_summary(self):
+        data = _os.urandom(3 * _container.CHUNK + 123)
+        raw = self.roundtrip(data)
+        r = _container.Reader(_io.BytesIO(raw), "pass phrase one")
+        self.assertEqual(r.read(), data)
+        self.assertEqual(r.summary, {"kind": "test"})
+
+    def test_wrong_passphrase_damage_and_truncation_are_refused(self):
+        raw = self.roundtrip(b"x" * 5000)
+        with self.assertRaises(_container.BadPassphrase):
+            _container.Reader(_io.BytesIO(raw), "wrong").read()
+        bad = bytearray(raw)
+        bad[-5] ^= 1
+        with self.assertRaises((_container.Damaged, _container.BadPassphrase)):
+            _container.Reader(_io.BytesIO(bytes(bad)), "pass phrase one").read()
+        with self.assertRaises(_container.Damaged):
+            _container.Reader(_io.BytesIO(raw[:-10]), "pass phrase one").read()
+
+
+class CryptoAndRuntimeTests(TestCase):
+    def test_field_encryption_and_legacy_plain_text(self):
+        token = _crypto.encrypt("s3cret")
+        self.assertTrue(token.startswith("enc1:"))
+        self.assertEqual(_crypto.decrypt(token), "s3cret")
+        self.assertEqual(_crypto.decrypt("plain old value"), "plain old value")
+        s = SiteSettings.load()
+        s.smtp_password = "mail-pass"
+        s.save()
+        from django.db import connection as _c
+        with _c.cursor() as cur:
+            cur.execute("SELECT smtp_password FROM tickets_sitesettings")
+            self.assertTrue(cur.fetchone()[0].startswith("enc1:"))
+        self.assertEqual(SiteSettings.load().smtp_password, "mail-pass")
+
+    def test_settings_file_and_secrets_file(self):
+        from config import runtime
+        home = _Path(_tempfile.mkdtemp())
+        try:
+            runtime.write_conf(home / "diagtrack.conf", {"DT_TEST_PORT": "8181"})
+            runtime.save_secrets(home / "secrets.dat", {"DT_TEST_SECRET": "abc"})
+            with mock.patch.dict(_os.environ, {"DIAGTRACK_HOME": str(home)}):
+                _os.environ.pop("DT_TEST_PORT", None)
+                runtime.load()
+                self.assertEqual(_os.environ["DT_TEST_PORT"], "8181")
+                self.assertEqual(_os.environ["DT_TEST_SECRET"], "abc")
+                self.assertEqual(_os.environ["MEDIA_ROOT"], str(home / "media"))
+        finally:
+            _shutil.rmtree(home)
+
+
+class ScheduleTests(TestCase):
+    def test_last_slot_and_retention(self):
+        from datetime import datetime as _dt
+        tz = timezone.get_current_timezone()
+        now = timezone.make_aware(_dt(2026, 10, 14, 10, 0), tz)  # a Wednesday
+        d = _dests.default_destination("/x")
+        self.assertEqual(_dests.last_slot(dict(d, frequency="daily", time="01:30"), now).hour, 1)
+        self.assertEqual(_dests.last_slot(dict(d, frequency="daily", time="23:00"), now).day, 13)
+        self.assertEqual(_dests.last_slot(dict(d, frequency="weekly", weekday=6, time="02:00"), now).day, 11)
+        self.assertEqual(_dests.last_slot(dict(d, frequency="monthly", monthday=20, time="02:00"), now).month, 9)
+        self.assertEqual(_dests.last_slot(dict(d, frequency="hours", every_hours=6, time="00:00"), now).hour, 6)
+        entries = [{"name": f"b{i}", "created": now - timedelta(hours=12 * i)} for i in range(60)]
+        keep = _dests.to_keep(entries, dict(d, keep_daily=3, keep_weekly=2, keep_monthly=1))
+        self.assertIn("b0", keep)
+        self.assertLessEqual(len(keep), 6)
+
+
+@override_settings(STATUS_DIR=_Path(_tempfile.gettempdir()) / "dt-test-status")
+class ModesTests(Base):
+    def tearDown(self):
+        _state.clear_maintenance()
+        _state.clear_readonly()
+        from . import middleware
+        middleware._cache["at"] = 0
+
+    def test_maintenance_page_and_readonly_blocks_changes(self):
+        from . import middleware
+        _state.set_maintenance("Restoring.")
+        middleware._cache["at"] = 0
+        r = self.client.get("/login/")
+        self.assertEqual(r.status_code, 503)
+        self.assertContains(r, "back shortly", status_code=503)
+        self.assertEqual(self.client.get("/maintenance/status.json").json()["maintenance"], True)
+        _state.clear_maintenance()
+        _state.set_readonly("Moving.")
+        middleware._cache["at"] = 0
+        t = self.raise_ticket()
+        self.client.force_login(self.ravi)
+        self.client.post(reverse("ticket_action", args=[t.number, "comment"]), {"body": "hello"})
+        self.assertEqual(t.comments.count(), 0)
+        self.assertContains(self.client.get(reverse("home")), "Moving.")
+
+
+class BackupEngineTests(TransactionTestCase):
+    """Real pg_dump / pg_restore against the test database."""
+
+    def setUp(self):
+        if "postgresql" not in settings.DATABASES["default"]["ENGINE"]:
+            self.skipTest("needs PostgreSQL")
+        self.tmp = _Path(_tempfile.mkdtemp())
+        self.media = self.tmp / "media"
+        (self.media / "tickets" / "KKP-000001").mkdir(parents=True)
+        (self.media / "tickets" / "KKP-000001" / "photo.png").write_bytes(b"\x89PNG fake image" * 50)
+        (self.media / "tickets" / "KKP-000001" / "report.pdf").write_bytes(b"%PDF fake" * 70)
+        self.overrides = override_settings(MEDIA_ROOT=self.media, STATUS_DIR=self.tmp / "status")
+        self.overrides.enable()
+        self.env = mock.patch.dict(_os.environ, {"BACKUP_PASSPHRASE": "a long test passphrase"})
+        self.env.start()
+        call_command("setup_initial", verbosity=0)
+        self.kkp = Centre.objects.create(code="KKP", name="Kukatpally")
+        self.req = User.objects.create_user("meena", password="x" * 10, role=User.REQUESTER)
+        self.req.centres.set([self.kkp])
+        for i in range(3):
+            services.create_ticket(self.req, self.kkp, Category.objects.get(name="Computer or printer"), f"T{i}", "d")
+        self.dest = _dests.default_destination(str(self.tmp / "dest"))
+
+    def tearDown(self):
+        self.env.stop()
+        self.overrides.disable()
+        _shutil.rmtree(self.tmp, ignore_errors=True)
+        name = settings.DATABASES["default"]["NAME"]
+        try:
+            with _engine.admin_connection() as conn:
+                for suffix in ("_previous", "_incoming", "_verify"):
+                    conn.execute(f'DROP DATABASE IF EXISTS "{name}{suffix}"')
+        except Exception:
+            pass
+
+    def test_backup_check_test_restore_and_restore(self):
+        root = _dests.prepare(self.dest)
+        out = _engine.create(root, kind="manual")
+        self.assertTrue(out["check"]["ok"])
+        self.assertEqual(out["counts"]["tickets"], 3)
+        entries = _engine.catalog(root)
+        self.assertEqual(entries[0]["summary"]["counts"]["tickets"], 3)
+        self.assertEqual(len(list((root / "attachments").glob("*/*.dta"))), 2)
+        self.assertEqual(_engine.test_restore(out["file"], root)["counts"]["tickets"], 3)
+
+        Ticket.objects.first().delete()
+        (self.media / "tickets" / "KKP-000001" / "photo.png").unlink()
+        res = _engine.restore(out["file"], root)
+        self.assertEqual(Ticket.objects.count(), 3)
+        self.assertTrue((self.media / "tickets" / "KKP-000001" / "photo.png").exists())
+        self.assertEqual(res["attachments_restored"], 1)
+
+    def test_full_copy_restores_alone_and_secrets_follow_the_data(self):
+        s = SiteSettings.load()
+        s.smtp_password = "mail-secret"
+        s.save()
+        with mock.patch.dict(_os.environ, {"FIELD_KEY": _crypto.new_key_text()}):
+            s.smtp_password = "mail-secret"
+            s.save()
+            out = _engine.create(kind="full", full_to=str(self.tmp / "usb"))
+        _shutil.rmtree(self.media)
+        with mock.patch.dict(_os.environ, {"FIELD_KEY": _crypto.new_key_text()}):  # "another server"
+            _engine.restore(out["file"], None)
+            self.assertEqual(SiteSettings.load().smtp_password, "mail-secret")
+        self.assertEqual(len(list(self.media.rglob("*.*"))), 2)
+
+    def test_wrong_passphrase_and_newer_version_are_refused(self):
+        root = _dests.prepare(self.dest)
+        out = _engine.create(root)
+        with mock.patch.dict(_os.environ, {"BACKUP_PASSPHRASE": "not the one"}):
+            with self.assertRaises(_engine.BackupError):
+                _dests.prepare(self.dest) and _engine.store_salt(root)
+            with self.assertRaises(_container.BadPassphrase):
+                _engine.read_meta(out["file"])
+        with self.assertRaises(_engine.BackupError):
+            _engine.check_compatible({"schema": [["tickets", "9999_future"]], "app_version": "9.0"})
+
+    def test_retention_keeps_newest_and_drops_unused_attachments(self):
+        root = _dests.prepare(self.dest)
+        first = _engine.create(root, kind="scheduled")
+        (self.media / "tickets" / "KKP-000001" / "report.pdf").unlink()
+        second = _engine.create(root, kind="scheduled")
+        removed, dropped = _engine.apply_retention(root, dict(self.dest, keep_daily=1, keep_weekly=0, keep_monthly=0))
+        self.assertEqual(removed, [_Path(first["file"]).name])
+        self.assertEqual(dropped, 1)
+        self.assertTrue(_Path(second["file"]).exists())
+
+    def test_page_queues_jobs_and_runner_runs_them(self):
+        admin = User.objects.create_user("boss", password="x" * 10, role=User.ADMIN, email="b@example.com")
+        cfg = _dests.load_config()
+        cfg["destinations"] = [self.dest]
+        _dests.save_config(cfg)
+        self.client.force_login(admin)
+        self.assertEqual(self.client.get(reverse("backups")).status_code, 200)
+        self.client.post(reverse("backups_action"), {"do": "backup"})
+        job = _state.list_jobs(1)[0]
+        self.assertEqual(job["status"], "queued")
+        runner = _Runner()
+        runner.tick()
+        job = _state.get_job(job["id"])
+        self.assertEqual(job["status"], "done", job.get("message"))
+        page = self.client.get(reverse("backups"))
+        self.assertContains(page, "Up to date")
+        self.assertEqual(self.client.get(reverse("backup_job", args=[job["id"]])).json()["status"], "done")
+        # restore needs the typed confirmation
+        self.client.post(reverse("backups_action"), {"do": "restore", "dest": self.dest["id"], "name": "x", "confirm": "no"})
+        self.assertEqual(_state.active_job(), None)
+        # a failing destination alerts administrators once
+        cfg["destinations"] = [dict(self.dest, path=str(self.tmp / "missing"), require_marker=True)]
+        _dests.save_config(cfg)
+        runner.backup_to(cfg["destinations"][0], "scheduled", lambda p, s: None)
+        runner.backup_to(cfg["destinations"][0], "scheduled", lambda p, s: None)
+        self.assertEqual(Notification.objects.filter(user=admin, kind="backupfail").count(), 1)
+
+    def test_case_clash_is_renamed_on_windows(self):
+        files = [{"path": "a/Photo.jpg", "sha256": "1" * 64, "size": 1}, {"path": "a/photo.jpg", "sha256": "2" * 64, "size": 1},
+                 {"path": "../evil", "sha256": "3" * 64, "size": 1}]
+        with mock.patch("tickets.backup.engine.sys.platform", "win32"):
+            planned, renames = _engine.plan_targets(files)
+        self.assertEqual(len(planned), 2)
+        self.assertIn("a/photo.jpg", renames)
+        self.assertEqual(len(_engine.name_clashes(files[:2])), 1)

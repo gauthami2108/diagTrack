@@ -1,0 +1,12 @@
+<div class="field-row">{% include "_field.html" with f=form.name %}{% include "_field.html" with f=form.path %}</div>
+<div class="bk-sched" data-freq-group>
+  <div class="field-row field-row-3">{% include "_field.html" with f=form.frequency %}{% include "_field.html" with f=form.time %}
+    <div data-freq-show="hours">{% include "_field.html" with f=form.every_hours %}</div>
+    <div data-freq-show="weekly">{% include "_field.html" with f=form.weekday %}</div>
+    <div data-freq-show="monthly">{% include "_field.html" with f=form.monthday %}</div>
+  </div>
+</div>
+<div class="field-row bk-keep">{% include "_field.html" with f=form.keep_daily %}{% include "_field.html" with f=form.keep_weekly %}{% include "_field.html" with f=form.keep_monthly %}{% include "_field.html" with f=form.keep_manual_days %}</div>
+<div class="field-row field-row-3">{% include "_field.html" with f=form.alert_after_hours %}{% include "_field.html" with f=form.nas_user %}{% include "_field.html" with f=form.nas_password %}</div>
+<div class="bk-checks"><label class="chip-check"><input type="checkbox" name="enabled" {% if form.enabled.value %}checked{% endif %}><span>Switched on</span></label>
+<label class="chip-check"><input type="checkbox" name="require_marker" {% if form.require_marker.value %}checked{% endif %}><span>{{ form.require_marker.label }}</span></label></div>

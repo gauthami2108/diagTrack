@@ -32,6 +32,8 @@ EVENTS = [
     ("mention", "Mentioned", "Conversation", "Someone is @mentioned in a comment"),
     ("escalation", "Escalation", "Deadlines and equipment", "An escalation rule fires. Goes to the people the rule names"),
     ("amc", "AMC ending", "Deadlines and equipment", "A machine's AMC is about to end. Goes to the equipment head and administrators"),
+    ("backupfail", "Backup failed", "Backups", "A backup, its weekly check or the monthly test restore failed. Goes to administrators and the people chosen on the Backups page"),
+    ("backuplate", "Backup overdue", "Backups", "No good backup for longer than the destination allows. Goes to the same people"),
     ("other", "Anything else", "Deadlines and equipment", "Any other alert"),
 ]
 EVENT_KEYS = [e[0] for e in EVENTS]
@@ -52,7 +54,7 @@ PLACEHOLDERS = [
     ("requester", "Who raised it"),
     ("owner", "Who it is assigned to"),
     ("due", "Resolution deadline"),
-    ("link", "Link to the ticket, or to the machine for AMC alerts"),
+    ("link", "Link to the ticket, to the machine for AMC alerts, or to the Backups page"),
     ("org", "Organisation name"),
 ]
 KEYS = {k for k, _ in PLACEHOLDERS}
@@ -84,6 +86,15 @@ Open the machine: {link}
 
 {org} service desk"""
 
+_PLAIN_EMAIL = """Hello {recipient},
+
+{title}
+{details}
+
+Open DiagTrack: {link}
+
+{org} service desk"""
+
 _SMS = "{org}: {title}. {link}"
 _WHATSAPP = """*{title}*
 {details}
@@ -100,11 +111,12 @@ _AMC_WHATSAPP = """*{title}*
 def default(event, channel):
     """Built-in wording: (send, subject, body)."""
     if channel == EMAIL:
-        return ("always", "[{org}] {title}", _AMC_EMAIL if event == "amc" else _TICKET_EMAIL)
-    send = "always" if event == "escalation" else "urgent"
+        body = _AMC_EMAIL if event == "amc" else _PLAIN_EMAIL if event in ("backupfail", "backuplate") else _TICKET_EMAIL
+        return ("always", "[{org}] {title}", body)
+    send = "always" if event in ("escalation", "backupfail", "backuplate") else "urgent"
     if channel == SMS:
         return (send, "", _SMS)
-    return (send, "", _AMC_WHATSAPP if event == "amc" else _WHATSAPP)
+    return (send, "", _AMC_WHATSAPP if event in ("amc", "backupfail", "backuplate") else _WHATSAPP)
 
 
 def get(event, channel):

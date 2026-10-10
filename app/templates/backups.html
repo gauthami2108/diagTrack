@@ -1,0 +1,137 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Backups{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Backups</h1><p class="sub">Encrypted copies of the database and every attachment, on a schedule and whenever you ask. Each one is checked as it is made.</p></div>
+  <div class="head-actions">
+    <button class="btn" type="button" data-open="dlg-full">{% icon 'download' %}Save a full copy</button>
+    <form method="post" action="{% url 'backups_action' %}">{% csrf_token %}<input type="hidden" name="do" value="backup"><button class="btn btn-primary" {% if active %}disabled{% endif %}>{% icon 'hard-drive' %}Back up now</button></form>
+  </div>
+</div>
+
+{% if not runner_seen %}<p class="tpl-off bk-warn">{% icon 'circle-alert' %}The backup runner has not reported in the last few minutes. On Windows, check that the DiagTrack service is running; in Docker, run <code>docker compose ps</code> and check the backup container. Jobs wait until it is back.</p>{% endif %}
+{% if retired %}<p class="tpl-off bk-warn">{% icon 'circle-alert' %}This server has been retired. It is read-only and runs no scheduled backups.</p>
+{% elif readonly %}<section class="panel bk-move-live"><header><h2>{% icon 'arrow-right-left' %} Moving to a new server</h2></header>
+  <p class="panel-sub">DiagTrack is read-only since {{ readonly_since|date:"d M, H:i" }}: people can look, nobody can change anything. Install the new server with setup's <b>Move in</b> option and the move file shown below.</p>
+  <div class="bk-btns"><form method="post" action="{% url 'backups_action' %}">{% csrf_token %}<input type="hidden" name="do" value="endmove"><button class="btn">{% icon 'rotate-ccw' %}End move: accept changes again</button></form>
+  <button class="btn btn-bad" type="button" data-open="dlg-retire">{% icon 'x' %}Retire this server</button></div>
+</section>{% endif %}
+
+<section class="health" aria-label="Backup status">
+  <div class="health-item {% if last_good %}ok{% else %}bad{% endif %}">{% icon 'hard-drive' %}<div><b>Last good backup</b><span>{% if last_good %}{{ last_good|timesince }} ago, {{ last_good|date:"d M, H:i" }}{% else %}None yet{% endif %}</span></div></div>
+  <div class="health-item ok">{% icon 'clock' %}<div><b>Next backup</b><span>{% if next_backup %}{{ next_backup|date:"D d M, H:i" }}{% else %}Nothing scheduled{% endif %}</span></div></div>
+  <div class="health-item {% if test_stale or not test_ok %}bad{% else %}ok{% endif %}">{% icon 'circle-check' %}<div><b>Last proven restore</b><span>{% if last_test and test_ok %}{{ last_test|date:"d M Y" }}, test restore passed{% elif last_test %}Failed {{ last_test|date:"d M" }}: {{ test_message|truncatechars:80 }}{% else %}Not yet. Runs by itself once a month, or use Test restore below{% endif %}</span></div></div>
+</section>
+
+{% if jobs %}
+<section class="panel bk-jobs" data-jobs>
+  <header><h2>Tasks</h2>{% if catalog_updated %}<small>Folders read {{ catalog_updated|timesince }} ago</small>{% endif %}</header>
+  {% if active %}
+  <div class="bk-job" data-job="{{ active.id }}">
+    <div class="bk-job-top"><b data-job-step>{{ active.step }}</b><span data-job-pct>{{ active.percent }}%</span></div>
+    <div class="bk-bar"><i data-job-bar style="width: {{ active.percent }}%"></i></div>
+    <small class="muted">{{ active.kind|capfirst }} asked by {{ active.by|default:"the schedule" }}. You can leave this page; the task carries on.</small>
+  </div>
+  {% endif %}
+  <ul class="bk-log">
+    {% for j in jobs %}{% if j.status != 'queued' and j.status != 'running' %}
+    <li class="{% if j.status == 'failed' %}is-bad{% endif %}"><span class="bk-dot"></span><div><b>{% if j.kind == 'backup' %}Backup{% elif j.kind == 'full' %}Full copy{% elif j.kind == 'verify' %}Check{% elif j.kind == 'test_restore' %}Test restore{% elif j.kind == 'restore' %}Restore{% elif j.kind == 'test_destination' %}Folder check{% elif j.kind == 'moveout' %}Prepare to move{% else %}{{ j.kind }}{% endif %}</b> <span class="muted">{{ j.finished_at|date:"d M, H:i" }}{% if j.by %}, {{ j.by }}{% endif %}</span><p>{% if j.status == 'failed' %}Failed: {% endif %}{{ j.message|default:j.step }}</p></div></li>
+    {% endif %}{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% for r in rows %}
+<section class="panel bk-dest">
+  <header>
+    <div>
+      <h2>{{ r.d.name }} <span class="bk-st bk-{{ r.status }}">{% if r.status == 'ok' %}Up to date{% elif r.status == 'bad' %}Failing{% elif r.status == 'late' %}Overdue{% elif r.status == 'off' %}Switched off{% else %}No backup yet{% endif %}</span></h2>
+      <p class="panel-sub"><code>{{ r.d.path }}</code></p>
+    </div>
+    <div class="bk-btns">
+      <form method="post" action="{% url 'backups_action' %}">{% csrf_token %}<input type="hidden" name="dest" value="{{ r.d.id }}"><button class="btn btn-s" name="do" value="test_destination">{% icon 'activity' %}Check folder</button><button class="btn btn-s" name="do" value="backup" {% if active %}disabled{% endif %}>{% icon 'hard-drive' %}Back up here now</button></form>
+    </div>
+  </header>
+  {% if r.s.last_status == 'failed' %}<p class="tpl-off">{% icon 'circle-alert' %}Last attempt failed: {{ r.s.last_message }}</p>{% endif %}
+  {% if not r.folder_ok %}<p class="tpl-off">{% icon 'circle-alert' %}{{ r.folder_error }}</p>{% endif %}
+  <dl class="bk-facts">
+    <div><dt>Schedule</dt><dd>{{ r.schedule }}{% if r.next %}<small>Next {{ r.next|date:"D d M, H:i" }}</small>{% endif %}</dd></div>
+    <div><dt>Keeps</dt><dd>{{ r.d.keep_daily }} daily, {{ r.d.keep_weekly }} weekly, {{ r.d.keep_monthly }} monthly<small>Manual backups {{ r.d.keep_manual_days }} days</small></dd></div>
+    <div><dt>Last good</dt><dd>{% if r.last_ok %}{{ r.last_ok|date:"d M, H:i" }}<small>{{ r.s.last_size_text }}</small>{% else %}Never{% endif %}</dd></div>
+    <div><dt>Weekly check</dt><dd>{% if r.last_verify %}{% if r.verify_ok %}Passed {{ r.last_verify|date:"d M" }}{% else %}<span class="bad-text">Failed {{ r.last_verify|date:"d M" }}</span>{% endif %}{% else %}Not yet{% endif %}</dd></div>
+    {% if r.free %}<div><dt>Free space</dt><dd>{{ r.free }}</dd></div>{% endif %}
+  </dl>
+  {% if r.items %}
+  <div class="table-wrap bk-table"><table class="table table-s">
+    <thead><tr><th>Made</th><th>Type</th><th class="num-col">Size</th><th class="num-col">Tickets</th><th>Version</th><th></th></tr></thead>
+    <tbody>{% for it in r.items|slice:":15" %}<tr>
+      <td>{{ it.created_at|date:"d M Y, H:i" }}</td>
+      <td>{% if it.kind == 'scheduled' %}Scheduled{% elif it.kind == 'manual' %}Manual{% else %}{{ it.kind|capfirst }}{% endif %}</td>
+      <td class="num-col">{{ it.size_text }}</td><td class="num-col">{{ it.tickets|default:"" }}</td><td>{{ it.version }}</td>
+      <td class="bk-row-actions"><form method="post" action="{% url 'backups_action' %}">{% csrf_token %}<input type="hidden" name="dest" value="{{ r.d.id }}"><input type="hidden" name="name" value="{{ it.name }}"><button class="link-btn" name="do" value="verify">Check</button><button class="link-btn" name="do" value="test_restore">Test restore</button></form><button class="link-btn bad-text" type="button" data-open="dlg-restore" data-set-dest="{{ r.d.id }}" data-set-name="{{ it.name }}" data-set-when="{{ it.created_at|date:'d M Y, H:i' }}">Restore</button></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% if r.items|length > 15 %}<p class="muted bk-more">{{ r.items|length }} backups in this folder; the newest 15 are shown.</p>{% endif %}
+  {% else %}<p class="empty-s">No backups in this folder yet.</p>{% endif %}
+
+  <details class="bk-edit">
+    <summary>{% icon 'sliders-horizontal' %}Change schedule, retention or folder</summary>
+    <form method="post" action="{% url 'backups_action' %}" class="bk-form">{% csrf_token %}
+      <input type="hidden" name="dest" value="{{ r.d.id }}"><input type="hidden" name="do" value="save_dest">
+      {% include "_dest_fields.html" with form=r.form %}
+      <div class="form-foot"><button class="btn btn-ghost btn-quiet-bad" name="do" value="remove_dest" formnovalidate data-confirm="Remove {{ r.d.name }}? The backups already in the folder are kept.">Remove destination</button><span class="spacer"></span><button class="btn btn-primary">Save</button></div>
+    </form>
+  </details>
+</section>
+{% endfor %}
+
+<details class="panel bk-add">
+  <summary><b>{% icon 'circle-plus' %}Add a backup destination</b><span class="muted">For example another centre's NAS, a second disk or a USB drive</span></summary>
+  <form method="post" action="{% url 'backups_action' %}" class="bk-form">{% csrf_token %}<input type="hidden" name="do" value="save_dest">
+    {% include "_dest_fields.html" with form=form %}
+    <div class="form-foot"><button class="btn btn-primary">Add destination</button></div>
+  </form>
+</details>
+
+<div class="grid-2 bk-lower">
+  <section class="panel">
+    <header><h2>Who is alerted</h2></header>
+    <p class="panel-sub">Administrators are always alerted when a backup fails, is overdue, or a check or test restore fails. Add others here.</p>
+    <form method="post" action="{% url 'backups_action' %}">{% csrf_token %}<input type="hidden" name="do" value="alerts">
+      <div class="bk-people">{% for u in admins %}{% if u.role != 'admin' %}<label class="chip-check"><input type="checkbox" name="alert_users" value="{{ u.pk }}" {% if u.pk in alert_users %}checked{% endif %}><span>{{ u.display_name }}</span></label>{% endif %}{% endfor %}</div>
+      <div class="form-foot"><button class="btn btn-s">Save</button></div>
+    </form>
+  </section>
+  <section class="panel">
+    <header><h2>Move to another server</h2></header>
+    <p class="panel-sub">Makes DiagTrack read-only and saves one full copy for the new server. On the new server, run setup and choose <b>Move in</b>. Until you retire this server, <b>End move</b> puts everything back as it was.</p>
+    <button class="btn" type="button" data-open="dlg-move" {% if readonly %}disabled{% endif %}>{% icon 'arrow-right-left' %}Prepare to move</button>
+  </section>
+</div>
+
+<dialog class="dialog" id="dlg-full"><form method="post" action="{% url 'backups_action' %}">{% csrf_token %}<input type="hidden" name="do" value="full">
+  <h2>Save a full copy</h2><p>One encrypted file with the database and every attachment, for a USB drive or an off-site copy. It opens only with the backup passphrase.</p>
+  <label class="field"><span>Folder on the server</span><input type="text" name="to" required placeholder="E:\DiagTrack-Copies" autocomplete="off"><small>A folder the DiagTrack server can reach. In Docker, use /backups or /backups2.</small></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save full copy</button></div>
+</form></dialog>
+
+<dialog class="dialog" id="dlg-restore"><form method="post" action="{% url 'backups_action' %}">{% csrf_token %}<input type="hidden" name="do" value="restore"><input type="hidden" name="dest"><input type="hidden" name="name">
+  <h2>Restore the backup of <span data-show="when"></span>?</h2>
+  <p>Everything entered after that time is replaced. Staff see a "Back shortly" page for a few minutes and sign in again afterwards. The current database is kept as a fallback until the next restore.</p>
+  <label class="field"><span>Type RESTORE to confirm</span><input type="text" name="confirm" required autocomplete="off" pattern="[Rr][Ee][Ss][Tt][Oo][Rr][Ee]"></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-bad" type="submit">Restore</button></div>
+</form></dialog>
+
+<dialog class="dialog" id="dlg-move"><form method="post" action="{% url 'backups_action' %}">{% csrf_token %}<input type="hidden" name="do" value="moveout">
+  <h2>Prepare to move</h2><p>DiagTrack becomes read-only right away, then saves the move file. Do this outside working hours.</p>
+  <label class="field"><span>Folder for the move file</span><input type="text" name="to" required placeholder="E:\DiagTrack-Move" autocomplete="off"></label>
+  <label class="field"><span>Type MOVE to confirm</span><input type="text" name="confirm" required autocomplete="off"></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Make read-only and save</button></div>
+</form></dialog>
+
+<dialog class="dialog" id="dlg-retire"><form method="post" action="{% url 'backups_action' %}">{% csrf_token %}<input type="hidden" name="do" value="retire">
+  <h2>Retire this server</h2><p>Only once the new server is running and checked. This server stays read-only for good and stops its scheduled backups. Its data stays on disk.</p>
+  <label class="field"><span>Type RETIRE to confirm</span><input type="text" name="confirm" required autocomplete="off"></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-bad" type="submit">Retire</button></div>
+</form></dialog>
+{% endblock %}

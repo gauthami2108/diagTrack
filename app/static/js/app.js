@@ -52,6 +52,12 @@
     closeMenus();
     if (b.dataset.call) { const i = $("[data-call-input]", d); if (i) i.value = b.dataset.call; }
     if (b.dataset.vendor) { const v = $("[data-vendor-name]", d); if (v) v.textContent = b.dataset.vendor; }
+    Object.entries(b.dataset).forEach(([k, v]) => {  // data-set-name="x" fills [name=name] and [data-show=name]
+      if (!k.startsWith("set") || k.length < 4) return;
+      const n = k.charAt(3).toLowerCase() + k.slice(4);
+      const input = d.querySelector(`[name="${n}"]`); if (input) input.value = v;
+      $$(`[data-show="${n}"]`, d).forEach(t => { t.textContent = v; });
+    });
     d.showModal();
     const f = $("textarea, select, input:not([type=hidden])", d); if (f) f.focus();
   }));
@@ -476,7 +482,7 @@
     a.innerHTML = `<span class="k k-${esc(n.kind)}" aria-hidden="true"></span><span>${esc(n.title)}</span><small>now</small>`;
     alertList.prepend(a);
   };
-  const POP_KINDS = ["raised", "closed", "escalation", "assigned", "mention", "reopened", "amc"];
+  const POP_KINDS = ["raised", "closed", "escalation", "assigned", "mention", "reopened", "amc", "backupfail", "backuplate"];
   const poll = () => {
     if (document.visibilityState !== "visible" && !("Notification" in window && Notification.permission === "granted")) return;
     fetch("/api/live/?after=" + last, { credentials: "same-origin", headers: { "X-Requested-With": "fetch" } })
@@ -565,4 +571,27 @@
       update(pane);
     }));
   }
+  // ---- Backups page: follow the running task, show only the schedule fields that apply -------------
+  const jobBox = $("[data-job]");
+  if (jobBox) {
+    const step = $("[data-job-step]", jobBox), pct = $("[data-job-pct]", jobBox), bar = $("[data-job-bar]", jobBox);
+    const follow = () => fetch(`/settings/backups/jobs/${jobBox.dataset.job}.json`, {cache: "no-store"})
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(j => {
+        step.textContent = j.status === "failed" ? `Failed: ${j.message}` : (j.status === "done" ? (j.message || j.step) : j.step);
+        pct.textContent = `${j.percent || 0}%`;
+        bar.style.width = `${Math.max(3, j.percent || 0)}%`;
+        if (j.status === "done" || j.status === "failed") {
+          jobBox.classList.add(j.status === "done" ? "is-done" : "is-bad");
+          setTimeout(() => location.reload(), 2500);
+        } else setTimeout(follow, 1500);
+      })
+      .catch(() => setTimeout(follow, 4000));
+    follow();
+  }
+  $$("[data-freq-group]").forEach(g => {
+    const sel = $("select[name=frequency]", g);
+    const show = () => $$("[data-freq-show]", g).forEach(el => { el.hidden = el.dataset.freqShow !== sel.value; });
+    sel.addEventListener("change", show); show();
+  });
 })();

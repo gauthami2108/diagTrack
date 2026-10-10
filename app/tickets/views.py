@@ -539,11 +539,15 @@ class SettingsForm(forms.ModelForm):
         widgets = {
             "brand_color": forms.TextInput(attrs={"type": "color"}),
             "brand_color_2": forms.TextInput(attrs={"type": "color"}),
-            "smtp_password": forms.PasswordInput(render_value=True),
+            "smtp_password": forms.PasswordInput(render_value=False, attrs={"placeholder": "Saved. Type a new one to change it", "autocomplete": "new-password"}),
             "sms_headers": forms.Textarea(attrs={"rows": 2}), "sms_body": forms.Textarea(attrs={"rows": 2}),
             "whatsapp_headers": forms.Textarea(attrs={"rows": 2}),
             "whatsapp_body": forms.Textarea(attrs={"rows": 2}),
         }
+
+    def clean_smtp_password(self):
+        # The saved password is never sent back to the browser; an empty box keeps it.
+        return self.cleaned_data.get("smtp_password") or self.instance.smtp_password
 
 
 def _health():
