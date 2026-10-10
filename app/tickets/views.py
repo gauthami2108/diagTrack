@@ -690,6 +690,14 @@ class PasswordResetView(auth_views.PasswordResetView):
         return super().form_valid(form)
 
 
+class PasswordResetConfirmView(auth_views.PasswordResetConfirmView):
+    """Setting a new password from the emailed link also lifts a sign-in pause: only the owner has the link."""
+    def form_valid(self, form):
+        from . import signin
+        signin.unlock(username=form.user.username)
+        return super().form_valid(form)
+
+
 def healthz(request):
     Heartbeat.objects.count()  # touches the database
     return JsonResponse({"ok": True})

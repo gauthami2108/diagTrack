@@ -106,6 +106,12 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "home"
+# Sign-in lock-out (tickets/signin.py): wrong passwords per user name and per computer, and the pause.
+LOGIN_MAX_FAILURES = int(env("LOGIN_MAX_FAILURES", "5"))
+LOGIN_MAX_FAILURES_PER_ADDRESS = int(env("LOGIN_MAX_FAILURES_PER_ADDRESS", "20"))
+LOGIN_LOCK_MINUTES = int(env("LOGIN_LOCK_MINUTES", "15"))
+# Docker: the proxy in front of DiagTrack reports the real computer in X-Forwarded-For. Never set on Windows.
+TRUST_X_FORWARDED_FOR = env("TRUST_X_FORWARDED_FOR", "0") == "1"
 LOGOUT_REDIRECT_URL = "login"
 
 # Sessions end after 8 hours without activity.

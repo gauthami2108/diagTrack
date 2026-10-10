@@ -34,6 +34,7 @@ EVENTS = [
     ("amc", "AMC ending", "Deadlines and equipment", "A machine's AMC is about to end. Goes to the equipment head and administrators"),
     ("backupfail", "Backup failed", "Backups", "A backup, its weekly check or the monthly test restore failed. Goes to administrators and the people chosen on the Backups page"),
     ("backuplate", "Backup overdue", "Backups", "No good backup for longer than the destination allows. Goes to the same people"),
+    ("signinlock", "Sign-in paused", "Security", "Too many wrong passwords for a user name or from one computer. Goes to administrators"),
     ("other", "Anything else", "Deadlines and equipment", "Any other alert"),
 ]
 EVENT_KEYS = [e[0] for e in EVENTS]
@@ -111,12 +112,14 @@ _AMC_WHATSAPP = """*{title}*
 def default(event, channel):
     """Built-in wording: (send, subject, body)."""
     if channel == EMAIL:
-        body = _AMC_EMAIL if event == "amc" else _PLAIN_EMAIL if event in ("backupfail", "backuplate") else _TICKET_EMAIL
+        body = _AMC_EMAIL if event == "amc" else _PLAIN_EMAIL if event in ("backupfail", "backuplate", "signinlock") else _TICKET_EMAIL
         return ("always", "[{org}] {title}", body)
     send = "always" if event in ("escalation", "backupfail", "backuplate") else "urgent"
+    if event == "signinlock" and channel != EMAIL:
+        send = "never"  # by email only: a burst of guessing should not become a burst of SMS
     if channel == SMS:
         return (send, "", _SMS)
-    return (send, "", _AMC_WHATSAPP if event in ("amc", "backupfail", "backuplate") else _WHATSAPP)
+    return (send, "", _AMC_WHATSAPP if event in ("amc", "backupfail", "backuplate", "signinlock") else _WHATSAPP)
 
 
 def get(event, channel):

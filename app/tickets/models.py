@@ -554,6 +554,27 @@ class Heartbeat(models.Model):
     detail = models.CharField(max_length=300, blank=True)
 
 
+class SignInLock(models.Model):
+    """Wrong passwords counted per user name and per computer, so repeated guessing pauses sign-in."""
+    key = models.CharField(max_length=200, unique=True)  # "user:<name>" or "ip:<address>"
+    failures = models.PositiveIntegerField(default=0)
+    first_failure = models.DateTimeField(default=timezone.now)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    last_address = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        verbose_name = "sign-in lock"
+        ordering = ["-locked_until", "-first_failure"]
+
+    @property
+    def who(self):
+        kind, _, value = self.key.partition(":")
+        return f"User name {value}" if kind == "user" else f"Computer {value}"
+
+    def __str__(self):
+        return self.who
+
+
 class MessageTemplate(models.Model):
     """The wording of email, SMS and WhatsApp alerts, one row per event and channel.
     A missing row means the built-in wording in tickets/wording.py is used."""

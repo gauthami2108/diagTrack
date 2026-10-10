@@ -3,6 +3,7 @@ from django.contrib.auth import views as auth
 from django.urls import path
 
 from tickets import views, views_backup
+from tickets.signin import SignInForm
 
 handler403 = "tickets.views.error_403"
 handler404 = "tickets.views.error_404"
@@ -41,13 +42,13 @@ urlpatterns = [
     path("api/people/", views.api_people, name="api_people"),
     path("healthz", views.healthz),
 
-    path("login/", auth.LoginView.as_view(redirect_authenticated_user=True), name="login"),
+    path("login/", auth.LoginView.as_view(redirect_authenticated_user=True, authentication_form=SignInForm), name="login"),
     path("logout/", auth.LogoutView.as_view(), name="logout"),
     path("password/", auth.PasswordChangeView.as_view(success_url="/password/done/"), name="password_change"),
     path("password/done/", auth.PasswordChangeDoneView.as_view(), name="password_change_done"),
     path("password/forgot/", views.PasswordResetView.as_view(), name="password_reset"),
     path("password/forgot/sent/", auth.PasswordResetDoneView.as_view(), name="password_reset_done"),
-    path("password/reset/<uidb64>/<token>/", auth.PasswordResetConfirmView.as_view(), name="password_reset_confirm"),
+    path("password/reset/<uidb64>/<token>/", views.PasswordResetConfirmView.as_view(), name="password_reset_confirm"),
     path("password/reset/done/", auth.PasswordResetCompleteView.as_view(), name="password_reset_complete"),
 
     path("admin/", admin.site.urls),

@@ -2,7 +2,7 @@
 {% block card %}
 <h1>Sign in</h1>
 <form method="post" novalidate>{% csrf_token %}
-  {% if form.errors %}<div class="callout callout-bad" role="alert"><div>That user name and password did not match. Check both and try again.</div></div>{% endif %}
+  {% if form.errors %}<div class="callout callout-bad" role="alert"><div>{% for e in form.non_field_errors %}{{ e }} {% empty %}Type both your user name and your password.{% endfor %}</div></div>{% endif %}
   <label class="field"><span>User name</span><input type="text" name="username" autocomplete="username" autofocus required value="{{ form.username.value|default:'' }}"></label>
   <label class="field"><span>Password</span><input type="password" name="password" autocomplete="current-password" required></label>
   <input type="hidden" name="next" value="{{ next }}">

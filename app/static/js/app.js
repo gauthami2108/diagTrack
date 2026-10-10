@@ -482,7 +482,7 @@
     a.innerHTML = `<span class="k k-${esc(n.kind)}" aria-hidden="true"></span><span>${esc(n.title)}</span><small>now</small>`;
     alertList.prepend(a);
   };
-  const POP_KINDS = ["raised", "closed", "escalation", "assigned", "mention", "reopened", "amc", "backupfail", "backuplate"];
+  const POP_KINDS = ["raised", "closed", "escalation", "assigned", "mention", "reopened", "amc", "backupfail", "backuplate", "signinlock"];
   const poll = () => {
     if (document.visibilityState !== "visible" && !("Notification" in window && Notification.permission === "granted")) return;
     fetch("/api/live/?after=" + last, { credentials: "same-origin", headers: { "X-Requested-With": "fetch" } })

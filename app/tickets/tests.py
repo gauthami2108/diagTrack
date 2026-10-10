@@ -956,3 +956,93 @@ class MoveTests(BackupBase):
         self.assertEqual(_state.get_job(job["id"])["status"], "done")
         self.assertEqual(SiteSettings.load().site_url, "http://new-server")
         self.assertIsNone(_state.maintenance())
+
+
+class SignInLockTests(Base):
+    def login(self, name, password, addr="10.0.0.5", url="login"):
+        return self.client.post(reverse(url) if url == "login" else url,
+                                {"username": name, "password": password}, REMOTE_ADDR=addr)
+
+    def setUp(self):
+        super().setUp()
+        self.boss = User.objects.create_user("boss", password="Boss-Pass-2026", role=User.ADMIN, is_superuser=True,
+                                             is_staff=True)
+
+    def test_five_wrong_passwords_pause_the_user_name_and_alert_administrators(self):
+        for _ in range(4):
+            r = self.login("ravi", "wrong")
+            self.assertContains(r, "did not match")
+        r = self.login("ravi", "wrong")
+        self.assertContains(r, "Sign-in is paused until")
+        # even the right password is refused while paused, from any computer
+        r = self.login("ravi", "Demo@12345", addr="10.0.0.99")
+        self.assertContains(r, "Sign-in is paused until")
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertEqual(Notification.objects.filter(user=self.boss, kind="signinlock").count(), 1)
+        # other people are not affected
+        self.login("meena", "Demo@12345")
+        self.assertIn("_auth_user_id", self.client.session)
+
+    def test_pause_ends_by_itself_and_success_clears_the_count(self):
+        from .models import SignInLock
+        for _ in range(5):
+            self.login("ravi", "wrong")
+        SignInLock.objects.filter(key="user:ravi").update(locked_until=timezone.now() - timedelta(seconds=1))
+        self.login("ravi", "Demo@12345")
+        self.assertIn("_auth_user_id", self.client.session)
+        self.assertFalse(SignInLock.objects.filter(key="user:ravi").exists())
+
+    def test_unknown_user_names_are_paused_too_so_names_cannot_be_probed(self):
+        for _ in range(5):
+            r = self.login("nobody-here", "wrong")
+        self.assertContains(r, "Sign-in is paused until")
+
+    def test_one_computer_trying_many_names_is_paused(self):
+        with self.settings(LOGIN_MAX_FAILURES_PER_ADDRESS=6):
+            for i in range(6):
+                r = self.login(f"guess{i}", "wrong", addr="10.9.9.9")
+            self.assertContains(r, "paused")
+            r = self.login("meena", "Demo@12345", addr="10.9.9.9")
+            self.assertContains(r, "from this computer")
+            self.login("meena", "Demo@12345", addr="10.9.9.10")
+            self.assertIn("_auth_user_id", self.client.session)
+
+    def test_masters_and_rules_sign_in_is_protected_and_admin_can_unlock(self):
+        for _ in range(5):
+            r = self.login("boss", "wrong", url="/admin/login/")
+        self.assertContains(r, "Sign-in is paused until")
+        out = _io.StringIO()
+        call_command("unlock", "boss", stdout=out)
+        self.assertIn("unlocked", out.getvalue())
+        self.login("boss", "Boss-Pass-2026", url="/admin/login/")
+        self.assertIn("_auth_user_id", self.client.session)
+
+    def test_unlock_action_on_users(self):
+        for _ in range(5):
+            self.login("ravi", "wrong")
+        self.client.force_login(self.boss)
+        page = self.client.get("/admin/tickets/user/").content.decode()
+        self.assertIn("Paused until", page)
+        self.client.post("/admin/tickets/user/", {"action": "unlock_sign_in", "_selected_action": [self.ravi.pk]})
+        self.assertNotIn("Paused until", self.client.get("/admin/tickets/user/").content.decode())
+
+    def test_address_comes_from_the_proxy_only_when_trusted(self):
+        from django.test import RequestFactory
+        from . import signin
+        req = RequestFactory().get("/", REMOTE_ADDR="172.18.0.5", HTTP_X_FORWARDED_FOR="1.2.3.4, 192.168.1.40")
+        self.assertEqual(signin.client_address(req), "172.18.0.5")
+        with self.settings(TRUST_X_FORWARDED_FOR=True):
+            self.assertEqual(signin.client_address(req), "192.168.1.40")
+
+    def test_password_reset_link_lifts_the_pause(self):
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        for _ in range(5):
+            self.login("ravi", "wrong")
+        uid = urlsafe_base64_encode(force_bytes(self.ravi.pk))
+        url = reverse("password_reset_confirm", args=[uid, default_token_generator.make_token(self.ravi)])
+        r = self.client.get(url, follow=True)
+        self.client.post(r.redirect_chain[-1][0], {"new_password1": "Fresh-Pass-2026x", "new_password2": "Fresh-Pass-2026x"})
+        self.login("ravi", "Fresh-Pass-2026x")
+        self.assertIn("_auth_user_id", self.client.session)

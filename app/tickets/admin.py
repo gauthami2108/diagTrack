@@ -5,15 +5,19 @@ Only administrators can open them.
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group
+from django.utils import timezone
+
+from . import signin
 
 from .models import (Category, CategoryField, Centre, Department, Equipment, EscalationRule,
-                     OutboundMessage, SlaPolicy, TicketHistory, User, Vendor, VendorCall)
+                     OutboundMessage, SignInLock, SlaPolicy, TicketHistory, User, Vendor, VendorCall)
 
 admin.site.site_header = "DiagTrack administration"
 admin.site.site_title = "DiagTrack administration"
 admin.site.index_title = "Masters and rules"
 admin.site.site_url = "/"
 admin.site.unregister(Group)
+admin.site.login_form = signin.AdminSignInForm  # the same wrong-password lock-out as the main sign-in page
 
 
 @admin.register(Centre)
@@ -49,8 +53,9 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ("username", "first_name", "last_name", "role", "is_active")
+    list_display = ("username", "first_name", "last_name", "role", "is_active", "sign_in")
     list_filter = ("role", "is_active", "centres", "departments")
+    actions = ["unlock_sign_in"]
     search_fields = ("username", "first_name", "last_name", "email", "mobile")
     filter_horizontal = ("centres", "departments")
     fieldsets = (
@@ -72,6 +77,44 @@ class UserAdmin(BaseUserAdmin):
         super().save_model(request, obj, form, change)
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="Sign-in")
+    def sign_in(self, user):
+        lock = SignInLock.objects.filter(key=signin.user_key(user.username), locked_until__gt=timezone.now()).first()
+        return f"Paused until {timezone.localtime(lock.locked_until):%H:%M}" if lock else "Open"
+
+    @admin.action(description="Unlock sign-in for the selected people")
+    def unlock_sign_in(self, request, queryset):
+        n = sum(signin.unlock(username=u.username) for u in queryset)
+        self.message_user(request, f"Sign-in unlocked ({n} lock{'s' if n != 1 else ''} lifted)." if n else
+                          "None of them was locked.")
+
+
+@admin.register(SignInLock)
+class SignInLockAdmin(admin.ModelAdmin):
+    """Wrong-password counts. Deleting a row lifts that lock straight away."""
+    list_display = ("who", "failures", "first_failure", "locked_until", "state", "last_address")
+    actions = ["lift"]
+
+    @admin.display(description="State")
+    def state(self, lock):
+        return "Paused" if lock.locked_until and lock.locked_until > timezone.now() else "Counting"
+
+    @admin.action(description="Lift the selected locks")
+    def lift(self, request, queryset):
+        n = queryset.delete()[0]
+        self.message_user(request, f"{n} lock{'s' if n != 1 else ''} lifted.")
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions.pop("delete_selected", None)
+        return actions
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
 

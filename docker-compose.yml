@@ -28,6 +28,7 @@ x-app: &app
     DB_NAME: diagtrack
     DB_USER: diagtrack
     TIME_ZONE: ${TIME_ZONE:-Asia/Kolkata}
+    TRUST_X_FORWARDED_FOR: "1"  # the proxy reports which computer is signing in (for the wrong-password lock-out)
   volumes:
     - ./data/media:/data/media
     - ./data/status:/data/status
