@@ -31,6 +31,9 @@ Python packages are pinned in `app/requirements.txt`.
 
 `config/runtime.py` fills the environment before Django settings load: the settings file and secrets file named by
 `DIAGTRACK_HOME`, then `/run/secrets/<lower-case name>` (or `<NAME>_FILE`). Real environment variables always win.
+When `DIAGTRACK_HOME` is set, both files must be readable: otherwise DiagTrack stops with a message pointing to
+setup's Repair, instead of falling back to development defaults. Setup gives the data folder to SYSTEM,
+Administrators and `NT SERVICE\DiagTrack` (modify) and resets everything inside it to inherit that.
 Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_PASSWORD_HASH` (used once by
 `setup_initial`); Windows also keeps `PG_SUPERPASSWORD`.
 
@@ -39,6 +42,7 @@ Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_P
 | Path | Contents |
 | --- | --- |
 | `config/settings.py` | Settings, all from environment variables |
+| `config/runtime.py` | Loads the settings file, the secrets file and `/run/secrets` into the environment |
 | `config/urls.py` | Every URL |
 | `tickets/models.py` | The data model |
 | `tickets/services.py` | **All business rules**: visibility, permissions, routing, assignment, status changes, SLA clock, escalation, vendor calls, AMC checks, mentions. Views never change a ticket directly |
@@ -57,8 +61,12 @@ Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_P
 | `tickets/templatetags/dt.py` | SLA bar, avatars, icons, the safe comment formatter (`rich`) |
 | `tickets/mail.py` | Email backend that reads the SMTP details from Settings |
 | `tickets/management/commands/` | `serve`, `runworker`, `runbackups`, `backup`, `restore`, `verifybackup`, `setup_initial` (idempotent defaults, admin from a password hash), `setupcheck` and `siteconfig` (used by setup), `seed_demo` |
-| `tickets/tests.py` | Automated tests of the rules and screens |
+| `tickets/tests.py` | Automated tests of the rules, screens and backups |
 | `templates/`, `static/` | Screens, styles, script, fonts, icons, logo |
+
+The setup program lives outside `app/`, in `installer/`: `setup.py` and the `diagtrack_setup` package (`main`, `ui`,
+`checks`, `common`, `windows`, `docker_mode`), `versions.json` (pinned Python and PostgreSQL downloads),
+`windows/bootstrap.ps1` and the WinSW service wrapper, and its own tests in `installer/tests/`.
 
 ## Data model
 
@@ -78,8 +86,11 @@ Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_P
 | Notification | In-app alert with a `kind` (raised, closed, escalation, mention and others) that decides how the pop-up looks |
 | OutboundMessage | Queued email, SMS and WhatsApp with status and error, sent by the worker; carries `provider_template` |
 | MessageTemplate | Wording per event and channel: `send` (always, urgent, never), subject, body, provider template. No row means the built-in wording in `wording.py` |
-| SiteSettings | Single row: alert switches, mail server, gateways, branding, auto-close, reopen and AMC days |
+| SiteSettings | Single row: alert switches, mail server (password encrypted), gateways (headers encrypted), branding, auto-close, reopen and AMC days |
 | Heartbeat | The worker's last run, shown on the health screen |
+
+Backup jobs, schedules and history are deliberately not in the database: they live as JSON files in `STATUS_DIR`, so
+they survive a restore.
 
 ## Rules as implemented
 
@@ -133,6 +144,8 @@ system and updating the rows), and re-encrypts stored secrets for this server's 
 | `/api/live/?after=<id>` | New alerts for the signed-in person since that id, the unread count and the newest id |
 | `/api/search/?q=` | Up to 8 tickets the person can see |
 | `/api/people/?q=` | Up to 8 people, for @mentions |
+| `/settings/backups/jobs/<id>.json` | Progress of a backup, check or restore job (administrators) |
+| `/maintenance/status.json` | Whether a restore is running; used by the maintenance page (no sign-in needed) |
 | `/healthz` | `{"ok": true}` when the web part can reach the database |
 
 ## Reports and exports
@@ -152,12 +165,13 @@ DEBUG=1 python manage.py migrate
 DEBUG=1 python manage.py setup_initial
 DEBUG=1 python manage.py seed_demo        # optional demo data
 DEBUG=1 python manage.py runserver
-DEBUG=1 python manage.py test             # run after every change
+DEBUG=1 python manage.py test --noinput   # run after every change
 ```
 
 Without `DB_HOST` set, it uses a local SQLite file. Set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD` to
-use PostgreSQL; the tests pass on both. After changing `models.py`, run `python manage.py makemigrations` and commit the
-new migration; the web container applies migrations when it starts.
+use PostgreSQL; the tests pass on both, except the backup tests, which need PostgreSQL. After changing `models.py`, run
+`python manage.py makemigrations` and commit the new migration; the web container and the Windows service apply
+migrations when they start.
 
 ## Settings
 
@@ -175,18 +189,22 @@ new migration; the web container applies migrations when it starts.
 | `TIME_ZONE` | Default Asia/Kolkata |
 | `WEB_WORKERS` | Gunicorn processes (Docker), default 3 |
 
+Secrets are not in this table: they come from the secrets file or `/run/secrets`, never from `.env` or `diagtrack.conf`.
+
 ## Testing
 
 `python manage.py test tickets --noinput` against PostgreSQL (the backup tests run real `pg_dump` and `pg_restore`;
 the role needs CREATEDB). `python -m unittest discover -s installer/tests` for the setup program.
 `.github/workflows/ci.yml` runs both, plus a Docker setup with verify and test restore, a native install, update and
 removal on Windows Server 2022, and a move from Docker to native Windows. Unattended runs use `--answers file.json`
-with secrets in `DT_<KEY>` variables (see `ci/`). Windows Server 2016 and Windows 11 are not offered by GitHub and are
+with secrets in `DT_<KEY>` variables (see `ci/`). GitHub's job logs may be unreachable from some networks, so each
+job also reports its failures as annotations on the run. Windows Server 2016 and Windows 11 are not offered by GitHub and are
 first tested on the real machines.
 
 ## Not built yet
 
-HTML (designed) emails, HTTPS on the native Windows install, a graphical Windows installer (.exe), changing the
+HTML (designed) emails, HTTPS on the native Windows install, a cloud backup destination, a graphical Windows installer (.exe)
+and code signing, changing the
 backup passphrase in place, scheduled email reports, saved replies, bulk actions, child tickets, a duplicate warning, a calendar view, saved
 filters, preventive maintenance schedules, knowledge articles, login lock-out and two-step login, bulk import from
 Excel, and archiving of tickets older than one year.
