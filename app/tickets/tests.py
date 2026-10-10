@@ -445,6 +445,12 @@ class Phase2Tests(Base):
         again = self.client.get(reverse("api_live") + f"?after={feed['last']}").json()
         self.assertEqual(again["items"], [])
 
+    def test_alerts_page_draws_dot_text_and_time_in_their_columns(self):
+        services.create_ticket(self.req, self.kkp, self.printer, "x", "y", patient_impact=True)
+        self.client.force_login(self.it_head)
+        html = self.client.get(reverse("notifications")).content.decode()
+        self.assertRegex(html, r'class="alert-row alert-row-l[^"]*"[^>]*><span class="k k-raised"[^>]*></span><span><b>')
+
     def test_search_and_people_feeds_respect_visibility(self):
         t = self.raise_ticket()
         self.client.force_login(self.other)
