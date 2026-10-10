@@ -53,6 +53,8 @@ Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_P
 | `tickets/middleware.py` | Maintenance page during restores (no database access), read-only mode during a move |
 | `tickets/crypto.py` | `EncryptedTextField` (AES-256-GCM) for the mail password and gateway headers |
 | `tickets/views_backup.py` | The Backups page; it only queues jobs and reads state |
+| `tickets/signin.py` | Wrong-password lock-out: counts per user name and per address in `SignInLock`, the sign-in forms for the main and admin login pages, alerts |
+| `tickets/bulk_import.py`, `tickets/views_import.py` | Import from Excel: the workbook with current data, row checks across sheets, one-transaction apply; the upload, preview and import screen |
 | `tickets/wording.py` | Events, placeholders, built-in wording and the template renderer for email, SMS and WhatsApp |
 | `tickets/reports.py` | Home, dashboard, centre matrix, equipment figures |
 | `tickets/exports.py` | The Reports screen and the Excel workbook |
@@ -60,7 +62,7 @@ Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_P
 | `tickets/admin.py` | Masters and rules (Django admin) |
 | `tickets/templatetags/dt.py` | SLA bar, avatars, icons, the safe comment formatter (`rich`) |
 | `tickets/mail.py` | Email backend that reads the SMTP details from Settings |
-| `tickets/management/commands/` | `serve`, `runworker`, `runbackups`, `backup`, `restore`, `verifybackup`, `setup_initial` (idempotent defaults, admin from a password hash), `setupcheck` and `siteconfig` (used by setup), `seed_demo` |
+| `tickets/management/commands/` | `serve`, `runworker`, `runbackups`, `backup`, `restore`, `verifybackup`, `setup_initial` (idempotent defaults, admin from a password hash), `setupcheck` and `siteconfig` (used by setup), `unlock` (lift a sign-in pause), `seed_demo` |
 | `tickets/tests.py` | Automated tests of the rules, screens and backups |
 | `templates/`, `static/` | Screens, styles, script, fonts, icons, logo |
 
@@ -88,6 +90,7 @@ The setup program lives outside `app/`, in `installer/`: `setup.py` and the `dia
 | MessageTemplate | Wording per event and channel: `send` (always, urgent, never), subject, body, provider template. No row means the built-in wording in `wording.py` |
 | SiteSettings | Single row: alert switches, mail server (password encrypted), gateways (headers encrypted), branding, auto-close, reopen and AMC days |
 | Heartbeat | The worker's last run, shown on the health screen |
+| SignInLock | Wrong passwords per `user:<name>` or `ip:<address>`: count, first failure, paused until |
 
 Backup jobs, schedules and history are deliberately not in the database: they live as JSON files in `STATUS_DIR`, so
 they survive a restore.
@@ -133,6 +136,20 @@ check. Restore loads the dump into `<db>_incoming`, migrates it in a subprocess,
 then renames databases (live becomes `<db>_previous`), copies attachments (renaming ones that clash on the target
 system and updating the rows), and re-encrypts stored secrets for this server's field key. Jobs and state live in
 `STATUS_DIR`, not the database, so they survive a restore.
+
+**Sign-in lock-out.** `signin.LockoutMixin.clean()` refuses a sign-in while the user name or the address is paused,
+counts a failure only on Django's `invalid_login`, and clears the user name's count on success. Unknown names are
+counted the same way, so the message never tells a guesser which names exist. The address is `REMOTE_ADDR`, or the
+last `X-Forwarded-For` entry when `TRUST_X_FORWARDED_FOR=1` (set in `docker-compose.yml`, where Caddy is in front;
+never on Windows, where Waitress faces the network). `admin.site.login_form` uses the same mixin. The password reset
+confirm view lifts the pause.
+
+**Import from Excel.** `bulk_import.read()` matches headings loosely (case, `*` and brackets ignored; a `Users`
+sheet is accepted for People), skips empty rows, and checks every row against the database plus the rows of the same
+file, so references across sheets work. Each row becomes new, change, same or error. `apply()` runs only when there
+are no errors, inside one transaction, in the order centres, vendors, departments, people, department heads,
+equipment. Uploads wait in `STATUS_DIR/imports/<token>.xlsx` between the check and the import, are checked again on
+import, and are removed after it or after a day.
 
 **Uploaded files** are served by Django only to people who may see the ticket, with
 `Content-Security-Policy: default-src 'none'` and `nosniff`. Profile photos accept JPG, PNG or WEBP only.
@@ -187,6 +204,8 @@ migrations when they start.
 | `BACKUP_DIR`, `BACKUP_DIR_2` | Docker: host folders mounted at `/backups` and `/backups2` |
 | `SITE_ADDRESS`, `HTTPS_MODE`, `HTTPS_PORT` | Docker proxy |
 | `TIME_ZONE` | Default Asia/Kolkata |
+| `LOGIN_MAX_FAILURES`, `LOGIN_MAX_FAILURES_PER_ADDRESS`, `LOGIN_LOCK_MINUTES` | Sign-in lock-out: 5 per user name, 20 per address, 15 minutes |
+| `TRUST_X_FORWARDED_FOR` | `1` only behind DiagTrack's own proxy (Docker) |
 | `WEB_WORKERS` | Gunicorn processes (Docker), default 3 |
 
 Secrets are not in this table: they come from the secrets file or `/run/secrets`, never from `.env` or `diagtrack.conf`.
@@ -195,7 +214,11 @@ Secrets are not in this table: they come from the secrets file or `/run/secrets`
 
 `python manage.py test tickets --noinput` against PostgreSQL (the backup tests run real `pg_dump` and `pg_restore`;
 the role needs CREATEDB). `python -m unittest discover -s installer/tests` for the setup program.
-`.github/workflows/ci.yml` runs both, plus a Docker setup with verify and test restore, a native install, update and
+`python ci/screencheck.py` opens every screen in Chromium as each kind of user, at desktop and phone width, in light
+and dark mode, on a throwaway SQLite database with the demo data, and fails on sideways scrolling, columns hidden
+behind a sideways scroll on a desktop, text squeezed into a narrow column, JavaScript errors and failed requests
+(it needs `pip install playwright` and `python -m playwright install chromium`).
+`.github/workflows/ci.yml` runs all three, plus a Docker setup with verify and test restore, a native install, update and
 removal on Windows Server 2022, and a move from Docker to native Windows. Unattended runs use `--answers file.json`
 with secrets in `DT_<KEY>` variables (see `ci/`). GitHub's job logs may be unreachable from some networks, so each
 job also reports its failures as annotations on the run. Windows Server 2016 and Windows 11 are not offered by GitHub and are
@@ -206,5 +229,4 @@ first tested on the real machines.
 HTML (designed) emails, HTTPS on the native Windows install, a cloud backup destination, a graphical Windows installer (.exe)
 and code signing, changing the
 backup passphrase in place, scheduled email reports, saved replies, bulk actions, child tickets, a duplicate warning, a calendar view, saved
-filters, preventive maintenance schedules, knowledge articles, login lock-out and two-step login, bulk import from
-Excel, and archiving of tickets older than one year.
+filters, preventive maintenance schedules, knowledge articles, two-step login, and archiving of tickets older than one year.

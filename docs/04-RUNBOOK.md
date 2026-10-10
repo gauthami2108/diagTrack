@@ -113,6 +113,8 @@ restored somewhere else has not been proven.
 | A user forgot their password | Masters and rules, Users, open the person, use the link in the password line |
 | The administrator password is lost | Windows: `diagtrack changepassword admin`. Docker: `./scripts/reset-password.sh admin` |
 | Someone left | Untick Active on their user. Do not delete them |
+| "Sign-in is paused" after wrong passwords | It ends by itself after 15 minutes. Sooner: Masters and rules, Users, tick the person, **Unlock sign-in**. If the administrator is the one paused: Windows `diagtrack unlock admin`; Docker `docker compose exec web python manage.py unlock admin` (`--all` lifts every pause) |
+| Repeated "Sign-in paused" alerts for names nobody uses | Someone is guessing passwords. Note the computer address in the alert and ask the network vendor to find it |
 
 ## 7. Restore from a backup
 

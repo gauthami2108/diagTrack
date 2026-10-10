@@ -3,11 +3,12 @@
 For the person who sets DiagTrack up for the organisation and keeps its lists up to date. Everything here is done on
 screen in the browser; no programming is needed.
 
-Sign in as an administrator. The side menu then shows two extra items:
+Sign in as an administrator. The side menu then shows extra items under **Administer**:
 
 - **Masters and rules**: the lists DiagTrack works from (centres, departments, categories, users, SLA times,
   escalation rules, equipment, vendors). Every list has an **Add** button at the top right. Click a row to change it,
   then press **Save** at the bottom.
+- **Import from Excel**: add or change centres, vendors, departments, people and equipment from one workbook.
 - **Backups**: backup folders, schedules, retention, Back up now, restores and moving to another server.
 - **Message templates**: the wording of email, SMS and WhatsApp alerts, and which alerts go out on each channel.
 - **Settings and health**: alerts, mail server, branding, and a check that the system is healthy.
@@ -15,7 +16,8 @@ Sign in as an administrator. The side menu then shows two extra items:
 ## 1. First-day setup
 
 Do these in order. Departments, categories, SLA times and escalation rules are already filled in with sensible
-starting values, so most of the work is centres, people and equipment.
+starting values, so most of the work is centres, people and equipment. With more than a handful of each, steps 2 to
+5 are quickest with **Import from Excel** (section 14): one workbook for all of them.
 
 1. **Settings and health:** check the organisation name, fill in "address of this system", and save.
 2. **Centres:** add every centre (section 2).
@@ -96,6 +98,11 @@ For each person:
 - **When someone leaves:** untick **Active**. Do not delete people; their name stays on the tickets they handled.
 - **Forgotten password:** open the person and use the link in the password line to set a new one. For the `admin`
   login itself, see the Runbook, section 6.
+- **Too many wrong passwords:** after 5 wrong passwords in 15 minutes, sign-in for that user name pauses for 15
+  minutes, and administrators get an alert. 20 wrong passwords from one computer pause that computer too. The
+  **Sign-in** column on the Users list shows who is paused. To let someone in sooner: tick them, choose **Unlock
+  sign-in for the selected people** and press **Go**. Setting a new password through **Forgot your password** also
+  lifts the pause. **Masters and rules, Sign-in locks** lists every current pause and count.
 
 ## 5. SLA times and escalation
 
@@ -295,13 +302,15 @@ The four boxes at the top of Settings and health. All should be green.
 | Task | How |
 | --- | --- |
 | A new centre opens | Section 2, then tick the centre on its people |
-| A new person joins | Section 4 |
+| A new person joins | Section 4, or Import from Excel for several (section 14) |
 | Someone leaves | Open them under Users, untick Active |
 | Someone moves to another centre | Open them under Users, change the ticked centres |
 | Change a department head | Open the department, choose the new head |
 | Make deadlines longer or shorter | Section 5, SLA times |
 | A new kind of problem | Add a category under the right department |
 | A new machine | Add it under Equipment, print its QR label |
+| Many people, machines or a new centre at once | Import from Excel (section 14) |
+| Someone cannot sign in after wrong passwords | Users, tick them, **Unlock sign-in** (section 4) |
 | Change what an alert says, or send it by WhatsApp too | Message templates (section 8) |
 | An AMC is renewed | Change the AMC expiry date on the machine. Warnings start again for the new date |
 | Add a second backup place, such as another centre's NAS | Backups page, **Add a backup destination** (section 13) |
@@ -346,4 +355,29 @@ Below them, **Tasks** shows what is running and the results of recent backups, c
 failed** and **Backup overdue** wording on the Message templates page, on the channels switched on there.
 
 **Move to another server.** See the Runbook, section 9.
+
+## 14. Import from Excel
+
+*Administer, Import from Excel.* For adding or changing many centres, vendors, departments, people and machines at
+once, for example when setting up all the centres, or when a new centre opens with its staff and equipment.
+
+1. Press **Download the workbook**. It already holds everything in DiagTrack: one sheet each for Centres, Vendors,
+   Departments, People and Equipment, and a **Read me** sheet that explains every column.
+2. In Excel, add new rows at the bottom of a sheet, or change existing rows. Columns marked * must be filled.
+   Drop-down lists offer the roles, the assignment modes and Yes/No.
+3. Save the file and upload it on the same page, then press **Check the file**. DiagTrack lists, for each sheet,
+   what will be added and what will change, and every row that needs fixing, with the reason. Nothing is saved yet.
+4. If rows need fixing, correct them in Excel and upload again. When the page says **Ready to import**, press
+   **Import**. Everything is saved together; if anything went wrong, nothing is saved.
+
+| Rule | Detail |
+| --- | --- |
+| Empty cells | Leave the current value as it is. A new row with an empty cell starts empty |
+| Matching | Centres by code, vendors and departments by name, people by user name, machines by centre and serial number (or centre and name when there is no serial number) |
+| Across sheets | A person may be given a centre or department added in the same file; a department's head may be a person added in the same file |
+| Lists | A person's centres are codes separated by commas, for example `KKP, BJH`, or `All`. Departments likewise, by name |
+| Removing | Rows cannot be deleted by import. Set **Active** to **No** |
+| New people | Use **Initial password**, or leave it empty: DiagTrack makes a password and shows it once, after the import. Print that page or copy the passwords, and ask each person to change theirs under **My profile** |
+| Existing people | Initial password is ignored. Set a new password under Masters and rules, Users |
+| Dates | Day-month-year, for example 31-03-2027, or an Excel date |
 

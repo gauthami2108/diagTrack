@@ -13,6 +13,8 @@ your own server, natively on Windows or in Docker; ticket data never leaves the 
 - Reports by centre, department, category, priority, owner or equipment, as a six-sheet Excel file or a printed PDF.
 - Equipment register with downtime, vendor call log and response times, AMC renewal alerts, repeat faults and QR labels.
 - Board, dashboard, search and jump (Ctrl K), ticket preview, light and dark themes, Pramodini logo and colours.
+- Import from Excel: centres, vendors, departments, people and equipment from one workbook, checked before saving.
+- Sign-in pauses after repeated wrong passwords, with alerts to administrators.
 - Encrypted backups to one or more folders on a schedule, checks and monthly test restores, one-click restore, and
   moving between Windows and Docker servers.
 
