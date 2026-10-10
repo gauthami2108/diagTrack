@@ -1,7 +1,8 @@
 {
   "python": {
     "version": "3.13.16",
-    "url": "https://www.python.org/ftp/python/3.13.16/python-3.13.16-amd64.exe",
+    "url": "https://www.nuget.org/api/v2/package/python/3.13.16",
+    "note": "The NuGet build of Python: a private copy with no registry entries, so it never touches another Python on the server.",
     "signer": "Python Software Foundation"
   },
   "postgresql": {

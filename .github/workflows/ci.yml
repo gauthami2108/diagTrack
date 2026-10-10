@@ -62,7 +62,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: {name: move-file, path: move/move.dtbak}
       - if: failure()
-        run: docker compose logs --tail 200
+        name: Report the logs as annotations
+        run: |
+          for s in web worker backup db; do
+            echo "::warning title=$s::$(docker compose logs --no-color --tail 40 $s 2>&1 | tail -c 3500 | sed ':a;N;$!ba;s/\n/%0A/g')"
+          done
+          [ -f data/status/setup.log ] && echo "::warning title=setup.log::$(tail -n 60 data/status/setup.log | tail -c 3500 | sed ':a;N;$!ba;s/\n/%0A/g')" || true
 
   windows:
     runs-on: windows-2022
@@ -86,10 +91,17 @@ jobs:
         shell: cmd
         run: Setup.cmd --answers ci\answers-windows.json remove
       - if: failure()
+        name: Report the logs as annotations
         shell: pwsh
         run: |
-          Get-Content C:\ProgramData\DiagTrack\setup.log -Tail 200 -ErrorAction SilentlyContinue
-          Get-ChildItem C:\ProgramData\DiagTrack\logs -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 80 }
+          $files = @('C:\ProgramData\DiagTrack\setup-bootstrap.log', 'C:\ProgramData\DiagTrack\setup.log') + (Get-ChildItem C:\ProgramData\DiagTrack\logs -File -ErrorAction SilentlyContinue | ForEach-Object FullName)
+          foreach ($f in $files) {
+            if (Test-Path $f) {
+              $tail = (Get-Content $f -Tail 60) -join '%0A'
+              if ($tail.Length -gt 3500) { $tail = $tail.Substring($tail.Length - 3500) }
+              Write-Output "::warning title=$(Split-Path $f -Leaf)::$tail"
+            }
+          }
 
   windows-move-in:
     runs-on: windows-2022
@@ -105,5 +117,14 @@ jobs:
         shell: pwsh
         run: (Invoke-WebRequest http://localhost:8080/healthz -UseBasicParsing).StatusCode
       - if: failure()
+        name: Report the logs as annotations
         shell: pwsh
-        run: Get-Content C:\ProgramData\DiagTrack\setup.log -Tail 200 -ErrorAction SilentlyContinue
+        run: |
+          $files = @('C:\ProgramData\DiagTrack\setup-bootstrap.log', 'C:\ProgramData\DiagTrack\setup.log') + (Get-ChildItem C:\ProgramData\DiagTrack\logs -File -ErrorAction SilentlyContinue | ForEach-Object FullName)
+          foreach ($f in $files) {
+            if (Test-Path $f) {
+              $tail = (Get-Content $f -Tail 60) -join '%0A'
+              if ($tail.Length -gt 3500) { $tail = $tail.Substring($tail.Length - 3500) }
+              Write-Output "::warning title=$(Split-Path $f -Leaf)::$tail"
+            }
+          }

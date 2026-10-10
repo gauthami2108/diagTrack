@@ -58,7 +58,7 @@ class WindowsPieceTests(unittest.TestCase):
 
     def test_versions_are_pinned_and_signed(self):
         v = windows.versions()
-        self.assertTrue(v["python"]["url"].startswith("https://www.python.org/"))
+        self.assertTrue(v["python"]["url"].startswith("https://www.nuget.org/"))
         self.assertTrue(v["python"]["version"].startswith("3.13."))
         self.assertTrue(v["postgresql"]["version"].startswith("17."))
         self.assertTrue(all(u.startswith("https://") for u in v["postgresql"]["urls"]))

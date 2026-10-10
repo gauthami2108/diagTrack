@@ -469,6 +469,23 @@ def safety_task():
         "Creating the backup safety-net task", "DT-S08")
 
 
+def command_line():
+    """C:\\Program Files\\DiagTrack\\diagtrack.cmd: `diagtrack backup`, `diagtrack restore ...` in an admin prompt."""
+    (PROGRAM / "diagtrack.cmd").write_text("\r\n".join([
+        "@echo off",
+        "rem DiagTrack commands. Open Command Prompt as administrator, then for example:",
+        "rem   diagtrack backup            diagtrack backup --list         diagtrack restore --dest dest1",
+        "rem   diagtrack verifybackup --dest dest1 --test-restore           diagtrack changepassword admin",
+        f'set "DIAGTRACK_HOME={DATA}"',
+        f'"{python_exe()}" "{PROGRAM / "app" / "manage.py"}" %*',
+        ""]), encoding="utf-8")
+    # Put the folder on the system PATH once, so `diagtrack` works in any new administrator prompt.
+    powershell(
+        "$p = [Environment]::GetEnvironmentVariable('Path', 'Machine'); "
+        f"if (($p -split ';') -notcontains '{PROGRAM}') {{ [Environment]::SetEnvironmentVariable('Path', $p + ';{PROGRAM}', 'Machine') }}",
+        "Adding the diagtrack command", "DT-S08", check=False)
+
+
 def shortcuts(site_url):
     desktop = Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "Desktop"
     try:
@@ -593,6 +610,7 @@ def install(source, mode="new"):
     set_permissions()
     firewall(a["port"])
     safety_task()
+    command_line()
     shortcuts(a["site_url"])
     start_service(a["port"])
     steps.ok(f"The DiagTrack service is running and starts with Windows. Port {a['port']} is open in the firewall.")
@@ -662,6 +680,7 @@ def report(a, pg, res):
         f"Backups:             daily at {a['backup_time']} to {a['backup1']['path']}"
         + (f" and {a['backup2']['path']}" if a.get("backup2") else ""),
         f"Safety net:          Task Scheduler '{TASK}', daily 06:15",
+        f"Commands:            {PROGRAM / 'diagtrack.cmd'} (type `diagtrack backup` in an administrator prompt)",
         "",
         "Next steps",
         "  1. Open the address above and sign in.",
@@ -757,6 +776,7 @@ def repair(source):
     set_permissions()
     firewall(st.get("port", 80))
     safety_task()
+    command_line()
     steps.ok()
     steps.start("start")
     manage(["migrate", "--noinput"], "Checking the database", "DT-R03")

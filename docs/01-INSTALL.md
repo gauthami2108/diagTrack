@@ -1,205 +1,204 @@
 # Install guide
 
-For the person who sets up the server. It takes about an hour. You do not need to know programming:
-type each command exactly as shown, one line at a time, and press Enter after each.
+For the person who sets up the server. You do not need to know programming. There are two ways to install
+DiagTrack; choose one:
 
-## What you need
+| | A. Windows, native install | B. Docker |
+| --- | --- | --- |
+| Runs on | Windows Server 2016, 2019, 2022, 2025 or Windows 11 | Any Linux server or Mac with Docker installed |
+| Prerequisites | Installed by setup: Python and PostgreSQL 17 | Docker, installed by you beforehand |
+| Start | Double-click `Setup.cmd` | `docker compose run --rm setup`, then `docker compose up -d` |
+| Pramodini | **The main server (Windows Server 2016)** | Available for a Linux server later |
+
+Both ask every password and setting at the start, then install without stopping, check that everything works, and
+finish with a report and a **recovery sheet**. Backups from one kind of install restore on the other.
+
+## What you need for either way
 
 | Item | Requirement |
 | --- | --- |
-| Server | A PC or server that stays on all the time: 4 CPU cores, 8 GB memory, 200 GB SSD, connected to a UPS |
-| Operating system | Ubuntu Server 24.04 LTS. Other Linux systems that run Docker also work |
+| Server | Stays on all the time, on a UPS. Main server: 4 CPU cores, 8 GB memory, 100 GB SSD. Minimum: 2 cores, 4 GB, 20 GB free |
 | Network | A fixed IP address inside your network, for example 192.168.1.50. Your network vendor sets this |
 | Internet | Needed while installing and updating. Daily use works without internet, except SMS and WhatsApp alerts |
-| NAS | A shared folder on your NAS for the nightly backup |
-| GitHub access | The repository `gauthami2108/diagTrack` is private, so you need a GitHub login that can read it |
+| Backup place | A folder on a NAS (recommended), a second disk or a USB drive. Not only the server's own disk |
+| Passwords to decide | The DiagTrack administrator password (10+ characters, letters and a digit), and the **backup passphrase** (12+ characters; a short sentence is best). Setup creates every other password itself |
 
-## Step 1. Install Docker and git
+---
 
-Docker runs DiagTrack. Git downloads it and its updates. On the server:
+## A. Windows: native install
 
-```
-curl -fsSL https://get.docker.com | sudo sh
-sudo apt install -y git
-sudo usermod -aG docker $USER
-```
+### A1. Before you start
 
-Log out and log in again, then check that both work:
+- **Windows Server 2016.** Microsoft stops security updates on **12 January 2027**. Plan the move to Server 2022 or
+  2025 before then; DiagTrack's move feature (Runbook, section 9) makes that a backup and restore.
+- **First install on a server that GitHub's automatic tests do not cover** (Server 2016, Windows 11): take a full
+  system backup or a VM snapshot of the server first, and run setup in a quiet hour.
+- Sign in to the server as a member of the Administrators group.
+- If the backup folder is on a NAS, have the share address (for example `\\nas01\backups\diagtrack`) and, if it needs
+  one, a NAS user name and password with write access.
+- Port 80: if IIS or another program already uses it, setup suggests 8080 instead.
+
+### A2. Get DiagTrack onto the server
+
+1. On github.com, open the `gauthami2108/diagTrack` repository, press **Code**, then **Download ZIP**.
+2. Copy the zip to the server, right-click it, **Properties**, tick **Unblock** if it is shown, **OK**.
+3. Right-click the zip, **Extract All**, for example to `C:\DiagTrack-Setup`.
+
+### A3. Run setup
+
+1. In the extracted folder, double-click **Setup.cmd**.
+   - If Windows shows "Windows protected your PC", press **More info**, then **Run anyway**. (The file is not
+     code-signed yet.)
+   - Windows asks "Do you want to allow this app to make changes?". Press **Yes**.
+2. Setup installs its own Python (about 2 minutes) and then asks: **New install** or **Move in from another DiagTrack
+   server**. Choose **New install**.
+3. Answer the questions:
+
+   | Question | What to answer |
+   | --- | --- |
+   | Administrator user name and password | Usually `admin`, and a password of your choice, typed twice |
+   | Web port | 80, or the suggested port if 80 is in use |
+   | Address staff will type | For example `http://diagtrack.pramodini.local` or `http://192.168.1.50`. Used in emails and on QR labels |
+   | Backup folder | The NAS share, for example `\\nas01\backups\diagtrack`, or a folder on a second disk |
+   | NAS user name and password | Only if the share needs a login |
+   | Second backup folder | Optional, for example another centre's NAS |
+   | Daily backup time | 01:30 unless you prefer another time |
+   | Backup passphrase | A sentence you will not forget, typed twice. It encrypts every backup |
+
+4. Check the summary and answer **Y**. Setup now works on its own for about 10 to 15 minutes:
+
+   | Step | What happens |
+   | --- | --- |
+   | PostgreSQL 17 | Downloaded from EnterpriseDB, its signature checked, installed as a Windows service |
+   | DiagTrack | Program copied to `C:\Program Files\DiagTrack`, data folder `C:\ProgramData\DiagTrack` created |
+   | Database | Tables created, starting departments and the administrator added |
+   | Service | The **DiagTrack** Windows service is registered to start with Windows and restart if it stops. The web port is opened in Windows Firewall. A daily safety-net backup task is added to Task Scheduler |
+   | Check | The screens answer, the background worker runs, the administrator can sign in, and a first backup is written and checked |
+
+5. At the end setup shows a report (also saved as `C:\ProgramData\DiagTrack\setup-report.txt`) and offers the
+   **recovery sheet**: print it, or write it down. It holds the backup passphrase and the database password. Keep it
+   in a locked drawer; tell two people where it is.
+
+If setup stops, it says what failed, the likely cause, what to do, and an error code such as `DT-S04`. Fix the cause
+and run **Setup.cmd** again: it continues where it stopped.
+
+### A4. Sign in
+
+1. On any computer in the network, open a browser at the address you gave, for example `http://192.168.1.50`.
+2. Sign in with the administrator user name and password from setup.
+3. Continue with the Administrator guide, section 1, "First-day setup".
+
+On the server's desktop setup also leaves **Open DiagTrack** and **DiagTrack Backups** shortcuts.
+
+---
+
+## B. Docker (Linux or Mac)
+
+### B1. Install Docker yourself
+
+Follow Docker's own guide for your system: Docker Engine on Linux, Docker Desktop on a Mac. Then check, in a terminal:
 
 ```
 docker compose version
-git --version
 ```
 
-Each prints a version number.
+It must print version 2.24 or newer. Also install `git` if you will download with it.
 
-## Step 2. Download DiagTrack
+### B2. Download DiagTrack
 
 ```
-cd /opt
-sudo git clone https://github.com/gauthami2108/diagTrack.git diagtrack
+sudo git clone https://github.com/gauthami2108/diagTrack.git /opt/diagtrack
 sudo chown -R $USER /opt/diagtrack
 cd /opt/diagtrack
 ```
 
-Git asks for a user name and password. Use the GitHub user name and, as the password, a **personal access token**:
-on github.com, open your picture, Settings, Developer settings, Personal access tokens, Fine-grained tokens,
-Generate new token, give it read access to the `diagTrack` repository, and copy the token it shows.
+Git asks for a GitHub user name and, as the password, a personal access token with read access to the repository
+(github.com, your picture, Settings, Developer settings, Personal access tokens, Fine-grained tokens).
+Every command from now on is typed inside `/opt/diagtrack`.
 
-Every command from now on is typed inside the `/opt/diagtrack` folder.
+### B3. Attach the NAS (recommended, before setup)
 
-## Step 3. Start
-
-```
-docker compose up -d
-```
-
-The first start downloads and builds everything: 5 to 10 minutes. Nothing has to be set up first; a secret key is
-created automatically. Then check:
-
-```
-docker compose ps
-```
-
-You should see five lines, `proxy`, `web`, `worker`, `db` and `backup`, each saying `Up`, and `web` also saying
-`(healthy)`. If `web` says `(health: starting)`, wait a minute and check again.
-
-From now on DiagTrack starts by itself whenever the server starts, and restarts any part that stops.
-
-## Step 4. Sign in for the first time
-
-1. On any computer in the same network, open a browser and go to `http://<server IP address>`, for example
-   `http://192.168.1.50`.
-2. Sign in with user name `admin` and password `ChangeMe@123`.
-3. Change that password straight away: top right, your name, **Change password**.
-4. Open **Settings and health** and fill in "address of this system" with the same address you typed in the
-   browser. Emails and the equipment QR labels use it.
-5. Continue with the Administrator guide, section 1, "First-day setup".
-
-## Step 5. Connect the NAS for backups
-
-Until you do this, the nightly backup is kept on the server itself, in `data/backups`. That does not protect you if
-the server's disk fails, so do this step on the first day.
-
-1. On the NAS, create a shared folder, for example `diagtrack-backup`, and a NAS user that can write to it.
-2. On the server, create a place to attach it:
+1. Create a shared folder on the NAS and a NAS user that can write to it.
+2. On the server:
 
    ```
    sudo mkdir -p /mnt/nas-diagtrack
    sudo nano /etc/fstab
    ```
 
-3. Add one line at the end of that file. For a Windows-style (SMB) share, replace the NAS address, share name,
-   user and password with yours:
+   Add one line (SMB share; replace address, share, user and password):
 
    ```
-   //192.168.1.20/diagtrack-backup  /mnt/nas-diagtrack  cifs  username=NASUSER,password=NASPASSWORD,uid=0,gid=0,nofail  0  0
+   //192.168.1.20/diagtrack-backup  /mnt/nas-diagtrack  cifs  username=NASUSER,password=NASPASSWORD,uid=1000,gid=1000,nofail  0  0
    ```
 
-   For an NFS share the line is instead:
+   `uid=1000` lets DiagTrack's backup container write there. Save (Ctrl+O, Enter) and close (Ctrl+X), then:
 
    ```
-   192.168.1.20:/volume1/diagtrack-backup  /mnt/nas-diagtrack  nfs  defaults,nofail  0  0
-   ```
-
-   Save with Ctrl+O, Enter, then close with Ctrl+X.
-
-4. Attach it, and leave a marker file that proves the NAS is the one attached:
-
-   ```
-   sudo apt install -y cifs-utils nfs-common
+   sudo apt install -y cifs-utils
    sudo mount -a
-   sudo touch /mnt/nas-diagtrack/.diagtrack-backup-target
    ```
 
-5. Tell DiagTrack to use it. Create the settings file from the example and open it:
+### B4. Run setup
 
-   ```
-   cp .env.example .env
-   nano .env
-   ```
+```
+docker compose run --rm setup
+```
 
-   Change these two lines, then save and close:
+The first time this builds DiagTrack (5 to 10 minutes). Then it asks the same questions as the Windows setup.
+For the backup folder, type the NAS mount, for example `/mnt/nas-diagtrack`. Setup writes:
 
-   ```
-   BACKUP_DIR=/mnt/nas-diagtrack
-   BACKUP_REQUIRE_MARKER=1
-   ```
+- `.env`: settings, no passwords;
+- `secrets/`: one file per password, read only by the DiagTrack containers. **Never delete this folder**; keep it out
+  of reach of other users of this computer;
+- the backup schedule.
 
-6. Apply the change and make a first backup:
+### B5. Start and check
 
-   ```
-   docker compose up -d
-   docker compose exec backup sh /backup.sh now
-   ```
+```
+docker compose up -d
+docker compose run --rm setup verify
+```
 
-   It prints `Backup completed`. In DiagTrack, **Settings and health** now shows the backup box in green.
-   If the NAS is ever disconnected, the next backup is reported in red on that screen.
+`verify` checks the screens, the database, the worker and makes a first backup. It ends with "Everything works".
+From now on DiagTrack starts by itself with the computer.
 
-## Step 6. Let the other centres reach the server
+---
+
+## Let the other centres reach the server (both ways)
 
 The recommended way is a **site-to-site VPN** from each centre's router to the site where the server is. Staff at
-every centre then open the same `http://<server address>`, nothing is installed on their computers, and DiagTrack is
-never exposed to the internet. Your network vendor sets this up on the routers; DiagTrack needs no change.
+every centre then open the same address, nothing is installed on their computers, and DiagTrack is never exposed to
+the internet. Your network vendor sets this up on the routers; DiagTrack needs no change.
 
-If a centre's router cannot do a site-to-site VPN, install a WireGuard-based VPN client on that centre's computers and
-on the server instead.
+## Optional: HTTPS (Docker)
 
-Do not open the server to the internet through the router without HTTPS (step 7) and without agreeing it with your
-network vendor.
+Inside a VPN, plain `http://` is acceptable and is the current choice. For Docker, HTTPS can be switched on later:
 
-## Step 7. Optional: HTTPS
+1. Ask your network vendor to point a name, for example `diagtrack.pramodini.local`, to the server.
+2. In `.env` set `SITE_ADDRESS=https://diagtrack.pramodini.local` and `HTTPS_MODE=tls internal`, then run
+   `docker compose up -d`.
+3. Install DiagTrack's certificate (`data/caddy/caddy/pki/authorities/local/root.crt`) on each computer, and change
+   "address of this system" in Settings.
 
-Inside a VPN, plain `http://` is acceptable. HTTPS encrypts traffic inside your own network too, and lets browsers
-show DiagTrack alerts on the desktop even when the DiagTrack tab is in the background.
-
-1. Choose a name for the server, for example `diagtrack.pramodini.local`, and ask your network vendor to point it
-   to the server's IP address.
-2. In `.env` (create it from `.env.example` if you have not yet) set:
-
-   ```
-   SITE_ADDRESS=https://diagtrack.pramodini.local
-   HTTPS_MODE=tls internal
-   ```
-
-3. Run `docker compose up -d`.
-4. Browsers warn about the certificate until DiagTrack's own certificate is installed on each computer. The file is
-   `data/caddy/caddy/pki/authorities/local/root.crt`; your IT vendor can install it on the computers.
-5. Change "address of this system" in Settings to the new `https://` address.
-
-## Step 8. Optional: try it with demo data first
+## Optional: try it with demo data first
 
 On a new, empty installation you can load three demo centres, about 20 staff logins and 50 tickets:
 
-```
-docker compose exec web python manage.py seed_demo
-```
+- Windows: open **Command Prompt as administrator** and type `diagtrack seed_demo`
+- Docker: `docker compose exec web python manage.py seed_demo`
 
 Every demo login uses the password `Demo@12345`, for example `srinivas` (department head), `ravi` (agent),
-`meena` (requester), `kavitha` (area manager) and `director` (management).
+`meena` (requester), `kavitha` (area manager) and `director` (management). Do not load demo data on the live system.
 
-To go live afterwards with a clean system:
+## Where things are
 
-```
-docker compose down
-sudo rm -rf data/postgres data/media
-docker compose up -d
-```
-
-## The settings file
-
-DiagTrack works without a settings file. Create `.env` from `.env.example` only to change one of these:
-
-| Setting | Default | What it does |
+| | Windows native | Docker |
 | --- | --- | --- |
-| `BACKUP_DIR` | `./data/backups` | Where backups are written: your NAS folder |
-| `BACKUP_REQUIRE_MARKER` | `0` | Set to `1` once the NAS is attached, so a disconnected NAS is reported |
-| `BACKUP_TIME` | `01:30` | Time of the nightly backup, 24-hour clock |
-| `BACKUP_KEEP_DAYS` | `30` | How many days of database copies to keep |
-| `SITE_ADDRESS`, `HTTPS_MODE` | plain http | Address and HTTPS, see step 7 |
-| `HTTP_PORT`, `HTTPS_PORT` | `80`, `443` | Change only if another program on the server uses these ports |
-| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | `admin`, `ChangeMe@123` | The first administrator. Used only on the very first start |
-| `DB_PASSWORD` | `diagtrack` | Database password. Set it before the first start, never change it afterwards |
-| `TIME_ZONE` | `Asia/Kolkata` | Time zone for deadlines and reports |
-
-After changing `.env`, run `docker compose up -d` to apply it.
+| Program | `C:\Program Files\DiagTrack` | the DiagTrack folder |
+| Settings | `C:\ProgramData\DiagTrack\diagtrack.conf` | `.env` |
+| Passwords | `C:\ProgramData\DiagTrack\secrets.dat`, encrypted for this computer | `secrets/` |
+| Attachments | `C:\ProgramData\DiagTrack\media` | `data/media` |
+| Database | PostgreSQL 17 Windows service `postgresql-x64-17` | `data/postgres` |
+| Logs | `C:\ProgramData\DiagTrack\logs` | `docker compose logs` |
+| Setup log and report | `C:\ProgramData\DiagTrack\setup.log`, `setup-report.txt` | `data/status/setup.log` |

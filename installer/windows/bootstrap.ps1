@@ -3,8 +3,8 @@
 #   2. Installs DiagTrack's own copy of Python 3.13 (official installer, signature checked) if it is not there.
 #   3. Installs DiagTrack's Python packages.
 #   4. Hands over to the setup program (installer\setup.py), which asks the questions and does the rest.
-param([Parameter(ValueFromRemainingArguments = $true)] [string[]] $Rest)
-
+# Arguments for setup (for example --answers file.json install) arrive in $args and are passed on unchanged.
+$Rest = @($args)
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 
@@ -62,29 +62,48 @@ $PyDir = Join-Path $env:ProgramFiles 'DiagTrack\python'
 $Py = Join-Path $PyDir 'python.exe'
 $wanted = $versions.python.version
 $have = ''
-if (Test-Path $Py) { $have = (& $Py -c "import platform; print(platform.python_version())" 2>$null) }
+if (Test-Path $Py) { try { $have = (& $Py -c "import platform; print(platform.python_version())") } catch { $have = '' } }
 if ($have -ne $wanted) {
     Say ''
     Say "Installing Python $wanted for DiagTrack (about 2 minutes)..." 'White'
-    $exe = Join-Path $env:TEMP "python-$wanted-amd64.exe"
+    # The NuGet build of Python is a self-contained folder: no registry entries, no effect on any other Python here.
+    $zip = Join-Path $env:TEMP "python-$wanted.zip"
+    $unpack = Join-Path $env:TEMP "python-$wanted"
     try {
-        Invoke-WebRequest -Uri $versions.python.url -OutFile $exe -UseBasicParsing
+        Invoke-WebRequest -Uri $versions.python.url -OutFile $zip -UseBasicParsing
     } catch {
-        Fail "Downloading Python failed: $($_.Exception.Message)" 'Check the internet connection, or allow www.python.org through the proxy.'
+        Fail "Downloading Python failed: $($_.Exception.Message)" 'Check the internet connection, or allow www.nuget.org and globalcdn.nuget.org through the proxy.'
     }
-    $sig = Get-AuthenticodeSignature -FilePath $exe
+    if (Test-Path $unpack) { Remove-Item $unpack -Recurse -Force }
+    Expand-Archive -Path $zip -DestinationPath $unpack -Force
+    $sig = Get-AuthenticodeSignature -FilePath (Join-Path $unpack 'tools\python.exe')
     if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike "*$($versions.python.signer)*") {
-        Remove-Item $exe -Force -ErrorAction SilentlyContinue
-        Fail "The Python download is not signed by $($versions.python.signer) (status $($sig.Status))." 'Run setup again. If it repeats, tell your IT team.'
+        Fail "The downloaded Python is not signed by $($versions.python.signer) (status $($sig.Status))." 'Run setup again. If it repeats, tell your IT team.'
     }
-    $pyArgs = @('/quiet', 'InstallAllUsers=1', "TargetDir=`"$PyDir`"", 'PrependPath=0', 'Include_launcher=0',
-                'InstallLauncherAllUsers=0', 'Include_test=0', 'Include_doc=0', 'Include_tcltk=0', 'Shortcuts=0',
-                'AssociateFiles=0', 'CompileAll=0', '/log', "`"$(Join-Path $Data 'python-install.log')`"")
-    $p = Start-Process -FilePath $exe -ArgumentList $pyArgs -Wait -PassThru
-    Remove-Item $exe -Force -ErrorAction SilentlyContinue
-    if (($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) -or -not (Test-Path $Py)) {
-        Fail "Installing Python failed (code $($p.ExitCode))." "See $(Join-Path $Data 'python-install.log')."
+    if (Test-Path $PyDir) { Remove-Item $PyDir -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $PyDir | Out-Null
+    Copy-Item -Path (Join-Path $unpack 'tools\*') -Destination $PyDir -Recurse -Force
+    Remove-Item $zip, $unpack -Recurse -Force -ErrorAction SilentlyContinue
+    $ErrorActionPreference = 'Continue'
+    # A clean Windows Server 2016 may lack the Microsoft Visual C++ runtime that Python needs.
+    & $Py -c "print(1)" *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Say 'Installing the Microsoft Visual C++ runtime that Python needs...'
+        $vc = Join-Path $env:TEMP 'vc_redist.x64.exe'
+        Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile $vc -UseBasicParsing
+        $vsig = Get-AuthenticodeSignature -FilePath $vc
+        if ($vsig.Status -ne 'Valid' -or $vsig.SignerCertificate.Subject -notlike '*Microsoft Corporation*') {
+            Fail 'The Visual C++ runtime download is not signed by Microsoft.' 'Run setup again.'
+        }
+        Start-Process -FilePath $vc -ArgumentList '/install', '/quiet', '/norestart' -Wait | Out-Null
+        Remove-Item $vc -Force -ErrorAction SilentlyContinue
+        & $Py -c "print(1)" *> $null
+        if ($LASTEXITCODE -ne 0) { Fail 'Python does not start on this computer.' 'Install the latest Windows updates, restart, and run setup again.' }
     }
+    & $Py -m pip --version *> $null
+    if ($LASTEXITCODE -ne 0) { & $Py -m ensurepip --default-pip 2>&1 | Add-Content -Path $Log }
+    $ErrorActionPreference = 'Stop'
+    if (-not (Test-Path $Py)) { Fail 'Installing Python failed.' "See $Log." }
     Say "Python $wanted installed in $PyDir." 'Green'
 } else {
     Say "Python $wanted is already installed for DiagTrack."
@@ -93,6 +112,7 @@ if ($have -ne $wanted) {
 # ---- 3. Python packages --------------------------------------------------------------------
 Say ''
 Say 'Installing DiagTrack''s Python packages (about 1 minute)...' 'White'
+$ErrorActionPreference = 'Continue'  # pip writes notes to the error stream; only its exit code matters
 & $Py -m pip install --disable-pip-version-check --no-warn-script-location -q -r (Join-Path $Root 'app\requirements.txt') 2>&1 | Add-Content -Path $Log
 if ($LASTEXITCODE -ne 0) { Fail 'Installing the Python packages failed.' 'Allow pypi.org and files.pythonhosted.org through the proxy, then run setup again.' }
 Say 'Packages installed.' 'Green'
