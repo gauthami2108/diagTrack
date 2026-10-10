@@ -181,11 +181,14 @@ def centre_matrix(qs, centres, days=30, now=None):
         {"dept": d, "n": counts.get((r["centre"].pk, d.pk), 0),
          "level": 0 if not counts.get((r["centre"].pk, d.pk)) else
          min(4, 1 + int(3 * counts[(r["centre"].pk, d.pk)] / top))} for d in depts]} for r in rows]
+    # the same figures turned round: one row per department, one narrow column per centre code
+    dept_grid = [{"dept": d, "cells": [dict(g["cells"][i], centre=g["centre"]) for g in grid]}
+                 for i, d in enumerate(depts)]
 
     total_done = sum(r["resolved"] for r in rows)
     weighted = sum((r["sla_pct"] or 0) * r["resolved"] for r in rows)
     return {
-        "rows": rows, "depts": depts, "grid": grid, "days": days,
+        "rows": rows, "depts": depts, "grid": grid, "dept_grid": dept_grid, "days": days,
         "totals": {
             "open": sum(r["open"] for r in rows), "p1": sum(r["p1"] for r in rows),
             "late": sum(r["late"] for r in rows), "raised": sum(r["raised"] for r in rows),

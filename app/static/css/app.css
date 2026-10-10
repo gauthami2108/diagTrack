@@ -387,6 +387,9 @@ a.band-cell:hover { background: var(--surface-2); text-decoration: none; }
 .num-col { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .table th.num-col { text-align: right; }
 .cell-title { min-width: 240px; font-weight: 500; }
+.cell-stack { white-space: nowrap; }
+.cell-stack small { display: block; color: var(--ink-3); font-size: 12.5px; margin-top: 2px; }
+.table .person { white-space: nowrap; }
 .cell-title small { display: flex; align-items: center; gap: 4px; font-weight: 400; color: var(--ink-3); font-size: 13px; margin-top: 2px; }
 .cell-title a { color: var(--ink); }
 .table-s th, .table-s td { padding: 7px 8px; font-size: 13.5px; }
@@ -457,6 +460,8 @@ a.band-cell:hover { background: var(--surface-2); text-decoration: none; }
 .health-item div { display: flex; flex-direction: column; gap: 2px; }
 .health-item span { color: var(--ink-2); font-size: 13px; }
 .brand-row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.brand-row > .stack-s { flex: 1 1 300px; min-width: 0; }
+@media (max-width: 820px) { .brand-preview { width: 100%; } }
 .brand-preview { --accent: var(--brand); --accent-ink: #fff; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 24px; border-radius: 14px; background: linear-gradient(135deg, #0b1726, #12233a); }
 .brand-preview .bp-wide { width: 220px; height: auto; background: #fff; border-radius: 12px; padding: 10px 12px; }
 .bp-row { display: flex; align-items: center; gap: 14px; }
@@ -614,7 +619,7 @@ a.band-cell:hover { background: var(--surface-2); text-decoration: none; }
 .rate input:focus-visible + label { outline: 2px solid var(--accent); border-radius: 4px; }
 
 /* ================= board ================= */
-.board { display: grid; grid-template-columns: repeat(4, minmax(250px, 1fr)); gap: 16px; align-items: start; overflow-x: auto; padding-bottom: 8px; }
+.board { display: grid; grid-template-columns: repeat(4, minmax(205px, 1fr)); gap: 16px; align-items: start; overflow-x: auto; padding-bottom: 8px; }
 .col { background: var(--surface-3); border: 1px solid transparent; border-radius: var(--r-l); min-height: 200px; transition: background .15s, border-color .15s; }
 .col > header { display: flex; align-items: baseline; gap: 8px; padding: 13px 15px 9px; }
 .col > header small { color: var(--ink-3); font-size: 12px; margin-left: auto; }
@@ -672,7 +677,7 @@ a.band-cell:hover { background: var(--surface-2); text-decoration: none; }
 .target-key { width: 2px; height: 12px; background: var(--ink); border-radius: 1px; }
 .matrix-wrap { overflow-x: auto; }
 .matrix { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
-.matrix th, .matrix td { padding: calc(var(--row) + 2px) 11px; border-bottom: 1px solid var(--line-2); text-align: left; white-space: nowrap; }
+.matrix th, .matrix td { padding: calc(var(--row) + 2px) 9px; border-bottom: 1px solid var(--line-2); text-align: left; white-space: nowrap; }
 .matrix thead th { font-weight: 500; color: var(--ink-3); font-size: 12.5px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
 .matrix .grp th { background: none; border-bottom: 0; padding-bottom: 0; color: var(--ink-2); font-weight: 600; font-size: 12px; }
 .matrix .grp th + th { border-left: 1px solid var(--line-2); }
@@ -695,16 +700,19 @@ a.band-cell:hover { background: var(--surface-2); text-decoration: none; }
 .meter.lv-fair { --c: var(--warn-fill); }
 .meter.lv-bad { --c: var(--bad); }
 .meter.lv-bad .meter-v { color: var(--bad); }
+.matrix .meter { grid-template-columns: 42px 40px; gap: 6px; }
 .meter.lv-fair .meter-v { color: var(--warn); }
 .hbars { display: flex; flex-direction: column; gap: 2px; }
 .hbar-track { position: relative; height: 14px; border-radius: 0 5px 5px 0; background: var(--surface-2); }
 .hbar-fill { display: block; height: 100%; border-radius: 0 5px 5px 0; transform-origin: left; animation: grow .8s var(--ease) both; }
 .hbar-target { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); border-radius: 1px; opacity: .7; }
 .heat-wrap { overflow-x: auto; }
-.heat { border-collapse: separate; border-spacing: 4px; font-size: 13px; }
-.heat thead th { font-weight: 500; color: var(--ink-3); font-size: 12px; vertical-align: bottom; padding: 0 2px 4px; text-align: center; max-width: 84px; white-space: normal; line-height: 1.2; }
-.heat tbody th { text-align: left; font-weight: 500; padding-right: 10px; white-space: nowrap; }
-.heat td { width: 56px; height: 38px; text-align: center; border-radius: 8px; background: var(--surface-2); padding: 0; }
+.heat { border-collapse: separate; border-spacing: 4px; font-size: 13px; width: 100%; table-layout: fixed; }
+.heat thead th:first-child { width: 40%; max-width: 220px; }
+.panel-wide .heat thead th:first-child { width: 220px; }
+.heat thead th { font-weight: 500; color: var(--ink-3); font-size: 12px; vertical-align: bottom; padding: 0 2px 4px; text-align: center; white-space: nowrap; line-height: 1.2; font-family: "Plex Cond", sans-serif; letter-spacing: .04em; }
+.heat tbody th { text-align: left; font-weight: 500; padding-right: 10px; line-height: 1.25; }
+.heat td { min-width: 34px; height: 38px; text-align: center; border-radius: 8px; background: var(--surface-2); padding: 0; }
 .heat td a, .heat td span { display: grid; place-items: center; width: 100%; height: 100%; font: 600 14px "Plex Cond", sans-serif; color: inherit; border-radius: 8px; }
 .heat td a:hover { text-decoration: none; box-shadow: inset 0 0 0 2px var(--ink); }
 .hl-1 { background: color-mix(in oklab, var(--series-1) 16%, var(--surface)) !important; }
@@ -974,7 +982,8 @@ textarea.mono, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Conso
   .band-n { font-size: 28px; }
   .auth { grid-template-columns: minmax(0, 1fr); }
   .auth-film { display: none; }
-  .save-bar { flex-direction: column; align-items: stretch; }
+  .save-bar { flex-direction: column; align-items: stretch; padding: 8px; }
+  .save-bar > span { display: none; }
   .calls li { grid-template-columns: 34px 1fr; }
   .calls li > .call-time, .calls li > .btn { grid-column: 2; justify-self: start; }
   .tip-key { display: none; }

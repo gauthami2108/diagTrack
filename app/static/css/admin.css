@@ -9,6 +9,10 @@
   --button-bg: #274a99; --button-hover-bg: #1d3a7d; --default-button-bg: #0d1b2e; --default-button-hover-bg: #16283f;
   --selected-row: #e6edfc; --font-family-primary: "Plex", system-ui, sans-serif;
 }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --link-fg: #8fb0ff; --link-hover-color: #c7d6ff; --link-selected-fg: #b3c8ff; --selected-row: #1d2c45; }
+}
+html[data-theme="dark"] { --link-fg: #8fb0ff; --link-hover-color: #c7d6ff; --link-selected-fg: #b3c8ff; --selected-row: #1d2c45; }
 body { font-size: 14px; }
 #site-name a { font-weight: 600; }
 .back-link { margin-left: auto; color: #fff !important; border: 1px solid rgba(255,255,255,.3); padding: 6px 12px; border-radius: 6px; }

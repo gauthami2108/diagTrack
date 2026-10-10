@@ -83,9 +83,13 @@ class VendorAdmin(admin.ModelAdmin):
 
 @admin.register(Equipment)
 class EquipmentAdmin(admin.ModelAdmin):
-    list_display = ("name", "centre", "make", "model", "serial_no", "vendor", "amc_expiry", "active")
+    list_display = ("name", "centre", "make_and_model", "serial_no", "vendor", "amc_expiry", "active")
     list_filter = ("centre", "active")
     search_fields = ("name", "serial_no", "make", "model")
+
+    @admin.display(description="Make and model", ordering="make")
+    def make_and_model(self, e):
+        return f"{e.make} {e.model}".strip()
 
 
 @admin.register(SlaPolicy)
@@ -97,9 +101,15 @@ class SlaPolicyAdmin(admin.ModelAdmin):
 
 @admin.register(EscalationRule)
 class EscalationRuleAdmin(admin.ModelAdmin):
-    list_display = ("name", "basis", "percent", "priorities", "notify_assignee", "notify_dept_head",
-                    "notify_centre_manager", "notify_area_manager", "active")
+    list_display = ("name", "basis", "percent", "priorities", "who_is_alerted", "active")
     list_editable = ("active",)
+
+    @admin.display(description="Who is alerted")
+    def who_is_alerted(self, rule):
+        who = [label for flag, label in ((rule.notify_assignee, "Assigned agent"), (rule.notify_dept_head, "Department head"),
+                                         (rule.notify_centre_manager, "Centre manager"),
+                                         (rule.notify_area_manager, "Area manager")) if flag]
+        return ", ".join(who) or "Nobody"
 
 
 @admin.register(OutboundMessage)

@@ -41,7 +41,10 @@ def sla(ticket, compact=False):
         label = "Missed"
     else:
         left = (ticket.resolution_due - now).total_seconds()
-        label = f"{_span(left)} left" if left >= 0 else f"{_span(left)} overdue"
+        if -60 < left < 60:
+            label = "Due now" if left >= 0 else "Just overdue"
+        else:
+            label = f"{_span(left)} left" if left >= 0 else f"{_span(left)} overdue"
     return {"t": ticket, "state": state, "label": label, "compact": compact, "pct": ticket.sla_percent}
 
 

@@ -26,7 +26,7 @@
   {% endif %}
 </section>
 
-<div class="grid-2">
+{% with is_mgmt=request.user.is_management_only %}<div class="grid-2">
   <div class="stack">
     {% if to_confirm %}
     <section class="panel panel-note">
@@ -51,7 +51,14 @@
     </section>
     {% endif %}
 
-    {% if request.user.role != 'management' or request.user.is_superuser %}
+    {% if is_mgmt %}
+    {% if at_risk %}
+    <section class="panel">
+      <header><h2>Closest to the deadline</h2><a href="{% url 'ticket_list' %}?view=all&sort=due">By deadline</a></header>
+      {% include "_rows.html" with tickets=at_risk show_owner=True %}
+    </section>
+    {% endif %}
+    {% else %}
     <section class="panel">
       <header><h2>Your open tickets</h2><a href="{% url 'ticket_list' %}?view=mine">All yours</a></header>
       {% if mine_open %}{% include "_rows.html" with tickets=mine_open show_owner=True %}
@@ -61,11 +68,13 @@
   </div>
 
   <div class="stack">
+    {% if not is_mgmt %}
     {% if at_risk %}
     <section class="panel">
       <header><h2>Closest to the deadline</h2><a href="{% url 'ticket_list' %}?view=all&sort=due">By deadline</a></header>
       {% include "_rows.html" with tickets=at_risk show_owner=True %}
     </section>
+    {% endif %}
     {% endif %}
     <section class="panel">
       <header><h2>Latest activity</h2></header>
@@ -73,5 +82,5 @@
       {% else %}<div class="empty-mini">{% icon 'inbox' %}<p>No tickets yet.</p></div>{% endif %}
     </section>
   </div>
-</div>
+</div>{% endwith %}
 {% endblock %}

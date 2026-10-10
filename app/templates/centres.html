@@ -72,13 +72,13 @@
     {% else %}<p class="empty">No tickets were resolved in this period.</p>{% endif %}
   </section>
 
-  <section class="panel">
-    <header><h2>Open tickets, centre by department</h2></header>
+  <section class="panel{% if m.rows|length > 5 %} panel-wide{% endif %}">
+    <header><h2>Open tickets, department by centre</h2></header>
     {% if m.grid %}
     <div class="heat-wrap"><table class="heat">
-      <thead><tr><th></th>{% for d in m.depts %}<th><span>{{ d.name }}</span></th>{% endfor %}</tr></thead>
-      <tbody>{% for g in m.grid %}<tr><th scope="row">{{ g.centre.name }}</th>
-        {% for c in g.cells %}<td class="hl-{{ c.level }}">{% if c.n %}<a href="{% url 'ticket_list' %}?view=all&centre={{ g.centre.pk }}&department={{ c.dept.pk }}" title="{{ g.centre.name }}, {{ c.dept.name }}: {{ c.n }} open">{{ c.n }}</a>{% else %}<span aria-label="none"></span>{% endif %}</td>{% endfor %}
+      <thead><tr><th></th>{% for r in m.rows %}<th title="{{ r.centre.name }}">{{ r.centre.code }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for g in m.dept_grid %}<tr><th scope="row">{{ g.dept.name }}</th>
+        {% for c in g.cells %}<td class="hl-{{ c.level }}">{% if c.n %}<a href="{% url 'ticket_list' %}?view=all&centre={{ c.centre.pk }}&department={{ g.dept.pk }}" title="{{ c.centre.name }}, {{ g.dept.name }}: {{ c.n }} open">{{ c.n }}</a>{% else %}<span aria-label="none"></span>{% endif %}</td>{% endfor %}
       </tr>{% endfor %}</tbody>
     </table></div>
     {% endif %}

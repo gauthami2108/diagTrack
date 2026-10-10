@@ -21,12 +21,11 @@
 </form>
 {% if items %}
 <div class="table-wrap"><table class="table">
-  <thead><tr><th>Equipment</th><th>Centre</th><th>Make and model</th><th>State</th><th>Uptime, 30 days</th><th class="num-col">Downtime</th><th class="num-col">Open tickets</th><th>AMC until</th></tr></thead>
+  <thead><tr><th>Equipment</th><th>Centre</th><th>State</th><th>Uptime, 30 days</th><th class="num-col">Downtime</th><th class="num-col">Open tickets</th><th>AMC until</th></tr></thead>
   <tbody>{% for e in items %}
   <tr data-href="{% url 'equipment_detail' e.pk %}">
-    <td class="cell-title"><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a>{% if e.pk in fault_ids %}<small class="warn-text">{% icon 'triangle-alert' %} Repeat faults</small>{% else %}<small>{{ e.serial_no }}</small>{% endif %}</td>
+    <td class="cell-title"><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a>{% if e.pk in fault_ids %}<small class="warn-text">{% icon 'triangle-alert' %} Repeat faults</small>{% else %}<small>{{ e.make }} {{ e.model }}{% if e.serial_no %}, {{ e.serial_no }}{% endif %}</small>{% endif %}</td>
     <td data-l="Centre">{{ e.centre.name }}</td>
-    <td data-l="Make and model">{{ e.make }} {{ e.model }}</td>
     <td data-l="State">{% if e.stats.is_down %}<span class="status status-down">Down</span>{% else %}<span class="status status-up">Working</span>{% endif %}</td>
     <td data-l="Uptime">{% if e.stats.uptime_pct >= 98 %}{% include "_meter.html" with pct=e.stats.uptime_pct band="good" %}{% elif e.stats.uptime_pct >= 95 %}{% include "_meter.html" with pct=e.stats.uptime_pct band="fair" %}{% else %}{% include "_meter.html" with pct=e.stats.uptime_pct band="bad" %}{% endif %}</td>
     <td data-l="Downtime" class="num-col">{% if e.stats.down_seconds %}{{ e.stats.down_seconds|span }}{% else %}<span class="muted">None</span>{% endif %}</td>

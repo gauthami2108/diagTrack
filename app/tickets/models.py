@@ -160,6 +160,11 @@ class User(AbstractUser):
         return self.is_admin or self.role == self.MANAGEMENT
 
     @property
+    def is_management_only(self):
+        """Management that does not also administer: oversees, does not work or raise tickets day to day."""
+        return self.role == self.MANAGEMENT and not self.is_superuser
+
+    @property
     def is_resolver(self):
         return self.role in (self.AGENT, self.DEPT_HEAD) or self.is_admin
 

@@ -1,5 +1,6 @@
 # Checks every change on real machines:
 #   tests            the test suite on PostgreSQL 17, and the setup program's own tests
+#   screens          every screen opened in a browser as each kind of user; layout faults fail the run
 #   docker           setup -> up -> verify -> test restore, and a move file for the next job
 #   windows          native install on Windows Server 2022: install, check, update, test restore, remove
 #   windows-move-in  native Windows install that moves in from the Docker move file
@@ -59,6 +60,20 @@ jobs:
               print(f"::error title=test failure::{msg}")
           PY
       - run: python -m unittest discover -s installer/tests -v
+
+  screens:
+    # Opens every screen as each kind of user, desktop and phone, light and dark; fails on layout faults.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.13"}
+      - run: pip install -r app/requirements.txt playwright==1.56.0
+      - run: python -m playwright install --with-deps chromium
+      - run: python ci/screencheck.py screencheck-output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: screenshots, path: screencheck-output, retention-days: 14}
 
   docker:
     runs-on: ubuntu-24.04
