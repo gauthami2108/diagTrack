@@ -7,3 +7,4 @@ app/staticfiles/
 app/status/
 data/
 secrets/
+.DS_Store
