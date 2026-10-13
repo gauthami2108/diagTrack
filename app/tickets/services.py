@@ -28,8 +28,10 @@ class NotAllowed(Exception):
 # --------------------------------------------------------------------------
 # Who can see and do what
 # --------------------------------------------------------------------------
-def visible_tickets(user):
+def visible_tickets(user, include_archived=False):
     qs = Ticket.objects.select_related("centre", "category", "department", "requester", "assignee", "equipment")
+    if not include_archived:
+        qs = qs.filter(is_archived=False)
     if user.sees_everything:
         return qs
     q = Q(requester=user) | Q(assignee=user) | Q(department__head=user)
@@ -588,34 +590,55 @@ def _escalation_targets(rule, t):
 
 
 def run_sla_checks(now=None):
-    """Mark breaches, hand unaccepted tickets back to the head, and fire escalation rules."""
+    """Mark breaches, hand unaccepted tickets back to the head, and fire escalation rules via database queries."""
     now = now or timezone.now()
-    rules = list(EscalationRule.objects.filter(active=True))
     fired = 0
-    tickets = (Ticket.objects.filter(status__in=RUNNING_STATUSES)
-               .select_related("department__head", "assignee", "centre", "category", "requester"))
-    for t in tickets:
-        changed = False
-        if t.first_response_at is None and not t.response_breached and now > t.response_due:
-            t.response_breached = changed = True
-            log(t, None, "Response time missed")
-            head = t.department.head
-            if t.status in (Status.NEW, Status.ASSIGNED) and head and t.assignee_id != head.pk:
-                old = t.assignee.display_name if t.assignee else "Unassigned"
-                t.assignee, t.status = head, Status.ASSIGNED
-                log(t, None, f"Not accepted in time. Returned to {head.display_name}", "assignee", old,
-                    head.display_name)
-        if not t.resolution_breached and now > t.resolution_due:
-            t.resolution_breached = changed = True
-            log(t, None, "Resolution time missed")
-        if changed:
-            t.save()
-        done = set(EscalationLog.objects.filter(ticket=t).values_list("rule_id", flat=True))
-        for rule in rules:
-            if rule.pk in done or not rule.applies_to(t.priority):
-                continue
-            if rule.basis == EscalationRule.RESPONSE and t.first_response_at is not None:
-                continue
+
+    # 1. Database-level response breach identification
+    resp_missed = (Ticket.objects.filter(
+        status__in=RUNNING_STATUSES,
+        first_response_at__isnull=True,
+        response_breached=False,
+        response_due__lt=now
+    ).select_related("department__head", "assignee"))
+
+    for t in resp_missed:
+        t.response_breached = True
+        log(t, None, "Response time missed")
+        head = t.department.head
+        if t.status in (Status.NEW, Status.ASSIGNED) and head and t.assignee_id != head.pk:
+            old = t.assignee.display_name if t.assignee else "Unassigned"
+            t.assignee, t.status = head, Status.ASSIGNED
+            log(t, None, f"Not accepted in time. Returned to {head.display_name}", "assignee", old,
+                head.display_name)
+        t.save()
+
+    # 2. Database-level resolution breach identification
+    resol_missed = (Ticket.objects.filter(
+        status__in=RUNNING_STATUSES,
+        resolution_breached=False,
+        resolution_due__lt=now
+    ))
+    for t in resol_missed:
+        t.resolution_breached = True
+        log(t, None, "Resolution time missed")
+        t.save()
+
+    # 3. Database-filtered escalation evaluation
+    rules = list(EscalationRule.objects.filter(active=True))
+    for rule in rules:
+        candidates = (Ticket.objects.filter(status__in=RUNNING_STATUSES)
+                      .exclude(escalations__rule=rule)
+                      .select_related("department__head", "assignee", "centre"))
+
+        if rule.basis == EscalationRule.RESPONSE:
+            candidates = candidates.filter(first_response_at__isnull=True)
+
+        priorities = [p.strip().upper() for p in rule.priorities.split(",") if p.strip()]
+        if priorities:
+            candidates = candidates.filter(priority__in=priorities)
+
+        for t in candidates:
             if t.percent_used(rule.basis, now) < rule.percent:
                 continue
             EscalationLog.objects.create(ticket=t, rule=rule)
@@ -626,6 +649,7 @@ def run_sla_checks(now=None):
                       kind="escalation")
             log(t, None, f"Escalated: {rule.name}")
             fired += 1
+
     return fired
 
 

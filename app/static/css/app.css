@@ -1081,3 +1081,25 @@ textarea.mono, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Conso
   .print-page .matrix tr { break-inside: avoid; }
   .print-page * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---------- Live Duplicates Warning Callout ---------- */
+.duplicates-box { margin-bottom: 16px; border-left: 4px solid #f59e0b; background: color-mix(in oklab, #f59e0b 12%, var(--surface)); padding: 12px 14px; border-radius: 8px; display: flex; gap: 12px; }
+.duplicates-box strong { color: var(--ink); font-size: 14px; }
+.dup-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dup-item { font-size: 13px; line-height: 1.4; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.dup-item a.num { font-weight: 600; color: var(--accent); }
+.dup-item a.num:hover { text-decoration: underline; }
+
+/* ---------- Bulk Selection & Floating Action Bar ---------- */
+.th-cb, .td-cb { width: 36px; text-align: center; vertical-align: middle; padding: 8px 6px !important; }
+.th-cb input, .td-cb input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--brand); }
+.bulk-bar { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 1000; width: min(calc(100% - 32px), 740px); animation: bulkSlideUp .2s ease-out; }
+@keyframes bulkSlideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+.bulk-bar-in { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: #0f1c2e; color: #fff; padding: 10px 18px; border-radius: 99px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.18); }
+.bulk-info { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.bulk-badge { background: var(--brand, #274a99); color: #fff; font-weight: 700; padding: 2px 8px; border-radius: 99px; font-size: 12px; }
+.btn-xs { padding: 3px 8px; font-size: 12px; color: #cbd5e1; }
+.btn-xs:hover { color: #fff; }
+.bulk-form { display: flex; align-items: center; margin: 0; }
+.bulk-actions-group { display: flex; align-items: center; gap: 8px; }
+.bulk-actions-group select { background: #1e293b; color: #f8fafc; border: 1px solid #334155; padding: 6px 12px; border-radius: 99px; font-size: 13px; }

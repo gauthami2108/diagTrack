@@ -1,10 +1,25 @@
 {
-  "name": "DiagTrack",
+  "name": "DiagTrack Service Desk",
   "short_name": "DiagTrack",
-  "description": "Internal ticketing for diagnostic centres",
+  "description": "Internal service desk and equipment tracker for diagnostic centres",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#0b1726",
-  "theme_color": "#0d1b2e",
-  "icons": [{"src": "/static/img/brand-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+  "theme_color": "#0b1726",
+  "icons": [
+    {
+      "src": "/static/img/brand-mark.svg",
+      "sizes": "192x192 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/img/brand-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
 }

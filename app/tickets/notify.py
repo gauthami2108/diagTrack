@@ -31,7 +31,8 @@ def notify(users, ticket, title, body="", urgent=False, exclude=None, kind="othe
     s = SiteSettings.load()
     seen = set()
     tpl = {}
-    for ch, on in ((wording.EMAIL, s.email_enabled), (wording.SMS, s.sms_enabled), (wording.WHATSAPP, s.whatsapp_enabled)):
+    for ch, on in ((wording.EMAIL, s.email_enabled), (wording.SMS, s.sms_enabled),
+                   (wording.WHATSAPP, s.whatsapp_enabled), (wording.TELEGRAM, s.telegram_enabled)):
         if on:
             t = wording.get(kind, ch)
             if wording.should_send(t["send"], urgent):
@@ -48,14 +49,20 @@ def notify(users, ticket, title, body="", urgent=False, exclude=None, kind="othe
         if not tpl:
             continue
         ctx = wording.context(ticket, title, body, s, user, link)
-        queue(tpl, ctx, email=user.email, mobile=user.mobile)
+        tg_id = getattr(user, "telegram_chat_id", "") or (s.telegram_default_chat_id if urgent else "")
+        queue(tpl, ctx, email=user.email, mobile=user.mobile, telegram_id=tg_id)
 
 
-def queue(tpl, ctx, email="", mobile=""):
+def queue(tpl, ctx, email="", mobile="", telegram_id=""):
     """Queue one message per channel in tpl (channel -> template dict) for one person."""
     made = []
     for ch, t in tpl.items():
-        to = email if ch == wording.EMAIL else mobile
+        if ch == wording.EMAIL:
+            to = email
+        elif ch == wording.TELEGRAM:
+            to = telegram_id
+        else:
+            to = mobile
         if not to:
             continue
         text = wording.render(t["body"], ctx)
@@ -96,6 +103,30 @@ def _http_send(url, headers_text, body_template, to, message, template=""):
             raise ValueError(f"Gateway answered {resp.status}")
 
 
+def _telegram_send(bot_token, chat_id, message):
+    """Sends an alert via Telegram Bot API."""
+    if not bot_token:
+        raise ValueError("Telegram bot token is empty. Fill it in on the Settings screen.")
+    if not chat_id:
+        raise ValueError("Telegram chat ID is empty.")
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = json.dumps({"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            if resp.status >= 300:
+                raise ValueError(f"Telegram API answered {resp.status}")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 400:
+            payload_plain = json.dumps({"chat_id": chat_id, "text": message}).encode("utf-8")
+            req_plain = urllib.request.Request(url, data=payload_plain, headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req_plain, timeout=20) as resp2:
+                if resp2.status >= 300:
+                    raise ValueError(f"Telegram API answered {resp2.status}")
+        else:
+            raise
+
+
 def send_one(msg, settings=None):
     s = settings or SiteSettings.load()
     if msg.channel == OutboundMessage.EMAIL:
@@ -104,6 +135,8 @@ def send_one(msg, settings=None):
         EmailMessage(msg.subject, msg.body, s.from_email or s.smtp_user, [msg.to]).send()
     elif msg.channel == OutboundMessage.SMS:
         _http_send(s.sms_url, s.sms_headers, s.sms_body, msg.to, msg.body, msg.provider_template)
+    elif msg.channel == OutboundMessage.TELEGRAM:
+        _telegram_send(s.telegram_bot_token, msg.to, msg.body)
     else:
         _http_send(s.whatsapp_url, s.whatsapp_headers, s.whatsapp_body, msg.to, msg.body, msg.provider_template)
 

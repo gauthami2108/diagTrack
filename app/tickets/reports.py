@@ -1,5 +1,5 @@
 """Numbers for the home page and the dashboard. All counts respect what the person may see."""
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -247,3 +247,165 @@ def amc_due(centres=None, days=60, today=None):
         e.days_left = (e.amc_expiry - today).days
         out.append(e)
     return out
+
+
+# --------------------------------------------------------------------------
+# Weekly Management Summary Report
+# --------------------------------------------------------------------------
+def generate_weekly_management_summary(start_date=None, end_date=None):
+    from .models import Ticket, DowntimeLog, Centre, Priority, OPEN_STATUSES
+    now = timezone.now()
+    if not end_date:
+        end_date = timezone.localdate(now)
+    if not start_date:
+        start_date = end_date - timedelta(days=7)
+
+    start_dt = timezone.make_aware(datetime.combine(start_date, datetime.min.time())) if timezone.is_naive(datetime.combine(start_date, datetime.min.time())) else datetime.combine(start_date, datetime.min.time())
+    end_dt = timezone.make_aware(datetime.combine(end_date, datetime.max.time())) if timezone.is_naive(datetime.combine(end_date, datetime.max.time())) else datetime.combine(end_date, datetime.max.time())
+
+    # 1. Missed Deadlines
+    breached_tickets = Ticket.objects.filter(
+        created_at__gte=start_dt,
+        created_at__lte=end_dt
+    ).filter(
+        Q(response_breached=True) | Q(resolution_breached=True)
+    ).select_related("centre", "department", "assignee", "equipment").order_by("-priority", "-created_at")
+
+    # 2. Machine Downtime
+    downtimes = DowntimeLog.objects.filter(
+        start__gte=start_dt,
+        start__lte=end_dt
+    ).select_related("equipment__centre", "equipment__vendor", "ticket")
+
+    downtime_summary = []
+    total_downtime_seconds = 0
+    for d in downtimes:
+        secs = d.seconds()
+        total_downtime_seconds += secs
+        hours = round(secs / 3600.0, 1)
+        downtime_summary.append({
+            "equipment": d.equipment.name,
+            "centre": d.equipment.centre.name,
+            "hours": hours,
+            "ticket": d.ticket.number,
+            "active": d.end is None,
+        })
+
+    # 3. Open tickets by Centre
+    centres = Centre.objects.filter(active=True).order_by("name")
+    open_by_centre = []
+    for cent in centres:
+        c_open = Ticket.objects.filter(centre=cent, status__in=OPEN_STATUSES, is_archived=False)
+        count = c_open.count()
+        p1_count = c_open.filter(priority=Priority.P1).count()
+        if count > 0:
+            open_by_centre.append({
+                "centre": cent.name,
+                "code": cent.code,
+                "total": count,
+                "p1": p1_count,
+            })
+
+    lines = [
+        "DiagTrack Weekly Management Summary",
+        "Period: " + start_date.strftime("%d %b %Y") + " to " + end_date.strftime("%d %b %Y"),
+        "=" * 48,
+        "",
+        "1. MISSED DEADLINES (SLAs)",
+        "-" * 26,
+    ]
+    if breached_tickets.exists():
+        lines.append("Total SLA breaches: " + str(breached_tickets.count()))
+        for t in breached_tickets[:15]:
+            reasons = []
+            if t.response_breached:
+                reasons.append("Response missed")
+            if t.resolution_breached:
+                reasons.append("Resolution missed")
+            reason_str = ", ".join(reasons)
+            lines.append(f"• {t.number} [{t.priority}] at {t.centre.name}: {t.subject} ({reason_str})")
+        if breached_tickets.count() > 15:
+            lines.append(f"... and {breached_tickets.count() - 15} more.")
+    else:
+        lines.append("No SLA deadlines were missed during this period. All tickets on target!")
+
+    lines.extend([
+        "",
+        "2. EQUIPMENT DOWNTIME",
+        "-" * 26,
+    ])
+    if downtime_summary:
+        lines.append("Total downtime logged: " + str(round(total_downtime_seconds / 3600.0, 1)) + " hours across " + str(len(downtime_summary)) + " incident(s).")
+        for dt in downtime_summary[:10]:
+            status_tag = "STILL DOWN" if dt["active"] else "Resolved"
+            lines.append(f"• {dt['equipment']} ({dt['centre']}): {dt['hours']}h [{status_tag}] (Ticket {dt['ticket']})")
+        if len(downtime_summary) > 10:
+            lines.append(f"... and {len(downtime_summary) - 10} more.")
+    else:
+        lines.append("No machine downtime was logged this week.")
+
+    lines.extend([
+        "",
+        "3. CURRENT OPEN BACKLOG BY CENTRE",
+        "-" * 26,
+    ])
+    if open_by_centre:
+        for ob in open_by_centre:
+            p1_str = f" (including {ob['p1']} P1 Critical)" if ob["p1"] else ""
+            lines.append(f"• {ob['centre']}: {ob['total']} open tickets{p1_str}")
+    else:
+        lines.append("No open tickets across any centre.")
+
+    lines.extend([
+        "",
+        "=" * 48,
+        "DiagTrack Internal Service Desk · Pramodini Medicare Limited"
+    ])
+
+    subject = "Weekly Management Summary (" + start_date.strftime("%d %b") + " - " + end_date.strftime("%d %b") + ")"
+    return {
+        "subject": subject,
+        "body": "\n".join(lines),
+        "breached_count": breached_tickets.count(),
+        "downtime_hours": round(total_downtime_seconds / 3600.0, 1),
+        "open_by_centre": open_by_centre,
+    }
+
+
+def send_weekly_management_report(force=False):
+    from .models import SiteSettings, User, OutboundMessage
+    s = SiteSettings.load()
+    today = timezone.localdate()
+
+    if not s.weekly_report_enabled and not force:
+        return 0
+
+    if s.last_weekly_report_at == today and not force:
+        return 0
+
+    recipients = list(User.objects.filter(
+        role__in=[User.MANAGEMENT, User.ADMIN],
+        is_active=True
+    ).exclude(email=""))
+
+    superusers = list(User.objects.filter(is_superuser=True, is_active=True).exclude(email=""))
+    recipients = list({u.pk: u for u in (recipients + superusers)}.values())
+
+    if not recipients:
+        return 0
+
+    report = generate_weekly_management_summary()
+    sent_count = 0
+    for u in recipients:
+        OutboundMessage.objects.create(
+            channel=OutboundMessage.EMAIL,
+            to=u.email,
+            subject=report["subject"],
+            body=f"Hello {u.display_name},\n\n" + report["body"],
+            status=OutboundMessage.PENDING
+        )
+        sent_count += 1
+
+    s.last_weekly_report_at = today
+    s.save(update_fields=["last_weekly_report_at"])
+    return sent_count

@@ -11,8 +11,22 @@
   </div>
   <div class="field-row">{% include "_field.html" with f=form.first_name %}{% include "_field.html" with f=form.last_name %}</div>
   <div class="field-row">{% include "_field.html" with f=form.email %}{% include "_field.html" with f=form.mobile %}</div>
+  <div class="field-row">{% include "_field.html" with f=form.telegram_chat_id %}</div>
   <dl class="fields fields-quiet"><div><dt>User name</dt><dd>{{ request.user.username }}</dd></div><div><dt>Role</dt><dd>{{ request.user.role_label }}</dd></div>
     <div><dt>Centres</dt><dd>{{ request.user.centres.all|join:", "|default:"All" }}</dd></div>{% if request.user.departments.exists %}<div><dt>Departments</dt><dd>{{ request.user.departments.all|join:", " }}</dd></div>{% endif %}</dl>
   <div class="form-foot"><a class="btn" href="{% url 'password_change' %}">Change password</a><button class="btn btn-primary" type="submit">Save profile</button></div>
 </form>
+
+<div class="form-card narrow" style="margin-top: 16px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
+    <div>
+      <strong>Active Sessions & Devices</strong>
+      <p class="sub" style="margin:2px 0 0">Logged into other browsers or phones? Terminate all other sessions immediately.</p>
+    </div>
+    <form method="post" action="{% url 'invalidate_sessions' %}">
+      {% csrf_token %}
+      <button class="btn btn-ghost" type="submit">{% icon 'log-out' %} Sign out other devices</button>
+    </form>
+  </div>
+</div>
 {% endblock %}

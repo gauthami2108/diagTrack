@@ -1,0 +1,11 @@
+# DiagTrack Windows Native Reverse Proxy (Caddy)
+# Provides automated local HTTPS termination (port 443) forwarding to DiagTrack Waitress.
+
+{$SITE_ADDRESS:https://localhost} {
+	tls internal
+	encode gzip
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy 127.0.0.1:{$HTTP_PORT:8080}
+}

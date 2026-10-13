@@ -11,9 +11,9 @@ import re
 
 from django.utils import timezone
 
-EMAIL, SMS, WHATSAPP = "email", "sms", "whatsapp"
-CHANNELS = [(EMAIL, "Email"), (SMS, "SMS"), (WHATSAPP, "WhatsApp")]
-LIMITS = {SMS: 480, WHATSAPP: 1000}
+EMAIL, SMS, WHATSAPP, TELEGRAM = "email", "sms", "whatsapp", "telegram"
+CHANNELS = [(EMAIL, "Email"), (SMS, "SMS"), (WHATSAPP, "WhatsApp"), (TELEGRAM, "Telegram")]
+LIMITS = {SMS: 480, WHATSAPP: 1000, TELEGRAM: 4096}
 
 # (key, label, group, what it is)
 EVENTS = [
@@ -108,6 +108,18 @@ _AMC_WHATSAPP = """*{title}*
 {details}
 {link}"""
 
+_TELEGRAM = """*{title}*
+{details}
+
+Centre: {centre}
+Department: {department}
+Owner: {owner}
+Due: {due}
+{link}"""
+_AMC_TELEGRAM = """*{title}*
+{details}
+{link}"""
+
 
 def default(event, channel):
     """Built-in wording: (send, subject, body)."""
@@ -119,6 +131,8 @@ def default(event, channel):
         send = "never"  # by email only: a burst of guessing should not become a burst of SMS
     if channel == SMS:
         return (send, "", _SMS)
+    if channel == TELEGRAM:
+        return (send, "", _AMC_TELEGRAM if event in ("amc", "backupfail", "backuplate", "signinlock") else _TELEGRAM)
     return (send, "", _AMC_WHATSAPP if event in ("amc", "backupfail", "backuplate", "signinlock") else _WHATSAPP)
 
 

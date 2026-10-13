@@ -119,6 +119,8 @@ class User(AbstractUser):
     role = models.CharField(max_length=20, choices=ROLES, default=REQUESTER)
     mobile = models.CharField(max_length=15, blank=True,
                               help_text="With country code, for SMS and WhatsApp alerts. Example: 919876543210")
+    telegram_chat_id = models.CharField("Telegram chat ID", max_length=60, blank=True,
+                                        help_text="Chat ID for Telegram alerts (send /start to the bot to find it).")
     centres = models.ManyToManyField(
         Centre, blank=True, related_name="users",
         help_text="Centres this person works at or looks after. An agent with none ticked covers every centre.",
@@ -312,6 +314,8 @@ class Ticket(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -464,10 +468,10 @@ class Notification(models.Model):
 
 
 class OutboundMessage(models.Model):
-    EMAIL, SMS, WHATSAPP = "email", "sms", "whatsapp"
-    CHANNELS = [(EMAIL, "Email"), (SMS, "SMS"), (WHATSAPP, "WhatsApp")]
+    EMAIL, SMS, WHATSAPP, TELEGRAM = "email", "sms", "whatsapp", "telegram"
+    CHANNELS = [(EMAIL, "Email"), (SMS, "SMS"), (WHATSAPP, "WhatsApp"), (TELEGRAM, "Telegram")]
     PENDING, SENT, FAILED = "pending", "sent", "failed"
-    channel = models.CharField(max_length=10, choices=CHANNELS)
+    channel = models.CharField(max_length=12, choices=CHANNELS)
     to = models.CharField(max_length=200)
     subject = models.CharField(max_length=200, blank=True)
     body = models.TextField()
@@ -507,10 +511,13 @@ class SiteSettings(models.Model):
     email_enabled = models.BooleanField("Email alerts", default=False)
     sms_enabled = models.BooleanField("SMS alerts", default=False)
     whatsapp_enabled = models.BooleanField("WhatsApp alerts", default=False)
+    telegram_enabled = models.BooleanField("Telegram alerts", default=False)
     area_manager_all = models.BooleanField("Alert the area manager on every new ticket", default=True)
     managers_on_close = models.BooleanField("Alert centre and area managers when a ticket is closed", default=True)
     popups_enabled = models.BooleanField("Pop-up messages on screen", default=True)
     amc_alert_days = models.PositiveSmallIntegerField("warn about AMC expiry (days before)", default=60)
+    weekly_report_enabled = models.BooleanField("Weekly management email on Monday", default=True)
+    last_weekly_report_at = models.DateField(null=True, blank=True, editable=False)
 
     auto_close_days = models.PositiveSmallIntegerField("close resolved tickets after (days)", default=3)
     reopen_days = models.PositiveSmallIntegerField("allow reopening for (days)", default=7)
@@ -534,6 +541,11 @@ class SiteSettings(models.Model):
     whatsapp_headers = EncryptedTextField("WhatsApp headers", blank=True)
     whatsapp_body = models.TextField("WhatsApp message format", blank=True,
                                      help_text="What your provider expects. Use {to}, {message} and {template} as placeholders.")
+
+    telegram_bot_token = EncryptedTextField("Telegram bot token", blank=True,
+                                            help_text="From @BotFather, e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
+    telegram_default_chat_id = models.CharField("Default Telegram group/channel chat ID", max_length=60, blank=True,
+                                                help_text="Optional. Group or channel ID (e.g. -100123456789) to receive urgent alerts.")
 
     class Meta:
         verbose_name_plural = "site settings"

@@ -583,7 +583,7 @@ class ReportTests(Base):
         self.assertContains(self.get(self.am, "reports", group="priority"), "By priority")
         resp = self.get(self.am, "report_print", group="centre")
         self.assertContains(resp, "Tickets by centre")
-        self.assertContains(resp, "brand-logo.png")
+        self.assertContains(resp, "brand-logo")
         self.assertEqual(self.get(self.req, "reports").status_code, 403)
         self.assertEqual(self.get(self.req, "report_excel").status_code, 403)
 
@@ -1030,7 +1030,8 @@ class SignInLockTests(Base):
         from django.test import RequestFactory
         from . import signin
         req = RequestFactory().get("/", REMOTE_ADDR="172.18.0.5", HTTP_X_FORWARDED_FOR="1.2.3.4, 192.168.1.40")
-        self.assertEqual(signin.client_address(req), "172.18.0.5")
+        with self.settings(TRUST_X_FORWARDED_FOR=False):
+            self.assertEqual(signin.client_address(req), "172.18.0.5")
         with self.settings(TRUST_X_FORWARDED_FOR=True):
             self.assertEqual(signin.client_address(req), "192.168.1.40")
 
@@ -1178,3 +1179,151 @@ class BulkImportTests(Base):
         r = self.client.post(reverse("import_page"), {"step": "check", "file": SimpleUploadedFile("x.xlsx", b"not excel")},
                              follow=True)
         self.assertContains(r, "not an Excel workbook")
+
+
+class Phase1Tests(Base):
+    """Checks for Phase 1 enhancements: duplicates, bulk actions, PWA, and session invalidation."""
+
+    def test_duplicate_detection_finds_open_tickets(self):
+        t1 = services.create_ticket(self.req, self.kkp, self.mri_cat, "MRI chiller warm", "Chiller temperature high", equipment=self.mri)
+        self.client.force_login(self.req)
+        # Search by equipment
+        res = self.client.get(reverse("api_duplicates") + f"?centre={self.kkp.pk}&equipment={self.mri.pk}").json()
+        self.assertEqual(len(res["duplicates"]), 1)
+        self.assertEqual(res["duplicates"][0]["number"], t1.number)
+
+        # Search by title words
+        res2 = self.client.get(reverse("api_duplicates") + f"?centre={self.kkp.pk}&q=chiller").json()
+        self.assertEqual(len(res2["duplicates"]), 1)
+        self.assertEqual(res2["duplicates"][0]["number"], t1.number)
+
+    def test_bulk_operations(self):
+        t1 = self.raise_ticket()
+        t2 = self.raise_ticket()
+        self.client.force_login(self.it_head)
+        # Bulk assign to me
+        resp = self.client.post(reverse("ticket_bulk"), {
+            "ticket_numbers": f"{t1.number},{t2.number}",
+            "bulk_action": "assign_me"
+        }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["ok"])
+        t1.refresh_from_db()
+        t2.refresh_from_db()
+        self.assertEqual(t1.assignee, self.it_head)
+        self.assertEqual(t2.assignee, self.it_head)
+
+        # Bulk change priority
+        resp = self.client.post(reverse("ticket_bulk"), {
+            "ticket_numbers": f"{t1.number},{t2.number}",
+            "bulk_action": "priority_p2"
+        }, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(resp.status_code, 200)
+        t1.refresh_from_db()
+        self.assertEqual(t1.priority, "P2")
+
+    def test_service_worker_and_pwa_routes(self):
+        resp = self.client.get(reverse("service_worker"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/javascript")
+        self.assertEqual(resp["Service-Worker-Allowed"], "/")
+
+    def test_session_invalidation(self):
+        from . import signin
+        s = self.client.session
+        s["_auth_user_id"] = str(self.req.pk)
+        s.save()
+        count = signin.invalidate_user_sessions(self.req)
+        self.assertGreaterEqual(count, 1)
+
+
+class Phase2EnhancementTests(Base):
+    """Checks for Phase 2 enhancements: SLA evaluation, weekly reports, and ticket archiving."""
+
+    def test_database_level_sla_breach_detection(self):
+        t0 = timezone.now()
+        with at(t0):
+            t = self.raise_ticket()
+        with at(t0 + timedelta(minutes=125)):
+            services.run_sla_checks()
+        t.refresh_from_db()
+        self.assertTrue(t.response_breached)
+        self.assertEqual(t.assignee, self.it_head)
+
+    def test_weekly_management_summary_and_dispatch(self):
+        from . import reports
+        from .models import DowntimeLog
+        t1 = self.raise_ticket(patient_impact=True)
+        t1.response_breached = True
+        t1.save()
+        DowntimeLog.objects.create(equipment=self.mri, ticket=t1, start=timezone.now() - timedelta(hours=5), end=timezone.now())
+
+        summary = reports.generate_weekly_management_summary()
+        self.assertIn("MISSED DEADLINES", summary["body"])
+        self.assertIn("EQUIPMENT DOWNTIME", summary["body"])
+        self.assertIn("CURRENT OPEN BACKLOG BY CENTRE", summary["body"])
+        self.assertGreaterEqual(summary["breached_count"], 1)
+
+        self.director.email = "director@example.com"
+        self.director.save()
+        sent = reports.send_weekly_management_report(force=True)
+        self.assertGreaterEqual(sent, 1)
+        self.assertTrue(OutboundMessage.objects.filter(channel="email", to="director@example.com").exists())
+
+    def test_ticket_archiving_command(self):
+        from django.core.management import call_command
+        t = self.raise_ticket()
+        services.start_work(t, t.assignee)
+        services.resolve(t, t.assignee, "Done")
+        services.close(t, self.req)
+        t.closed_at = timezone.now() - timedelta(days=400)
+        t.save()
+
+        self.assertIn(t.number, services.visible_tickets(self.req).values_list("number", flat=True))
+
+        call_command("archive_tickets", months=12)
+        t.refresh_from_db()
+        self.assertTrue(t.is_archived)
+        self.assertIsNotNone(t.archived_at)
+
+        self.assertNotIn(t.number, services.visible_tickets(self.req).values_list("number", flat=True))
+        self.assertIn(t.number, services.visible_tickets(self.req, include_archived=True).values_list("number", flat=True))
+
+
+class Phase3Tests(Base):
+    """Checks for Phase 3 enhancements: SSE stream and Prometheus metrics."""
+
+    def test_sse_live_stream_endpoint(self):
+        self.client.force_login(self.req)
+        Notification.objects.create(user=self.req, title="Test Alert", body="Alert body", urgent=True)
+        resp = self.client.get(reverse("api_live_stream") + "?test=1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "text/event-stream")
+        content = b"".join(resp.streaming_content).decode()
+        self.assertIn("event: alert", content)
+        self.assertIn("Test Alert", content)
+
+    def test_prometheus_metrics_endpoint(self):
+        resp = self.client.get(reverse("metrics"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("text/plain", resp["Content-Type"])
+        body = resp.content.decode()
+        self.assertIn("diagtrack_tickets_by_status", body)
+        self.assertIn("diagtrack_sla_breaches_total", body)
+        self.assertIn("diagtrack_equipment_down_active", body)
+        self.assertIn("diagtrack_worker_heartbeat_age_seconds", body)
+
+    def test_telegram_alert_queue_and_delivery(self):
+        s = SiteSettings.load()
+        s.telegram_enabled = True
+        s.telegram_bot_token = "123456:TEST_TOKEN"
+        s.save()
+
+        # Alert the area manager who watches all tickets
+        self.am.telegram_chat_id = "987654321"
+        self.am.save()
+
+        t = self.raise_ticket(patient_impact=True)
+        msg = OutboundMessage.objects.filter(channel="telegram", to="987654321").first()
+        self.assertIsNotNone(msg)
+        self.assertIn(t.number, msg.body)

@@ -143,3 +143,33 @@ class SignInForm(LockoutMixin, AuthenticationForm):
 
 class AdminSignInForm(LockoutMixin, AdminAuthenticationForm):
     pass
+
+
+# --------------------------------------------------------------------------
+# Session management and invalidation
+# --------------------------------------------------------------------------
+def invalidate_user_sessions(user, keep_session_key=None):
+    """
+    Terminates active database sessions for the given user.
+    If keep_session_key is provided, preserves that specific session
+    (e.g., the current session when a user changes their password).
+    Returns the number of sessions terminated.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return 0
+    from django.contrib.sessions.models import Session
+    now = timezone.now()
+    active_sessions = Session.objects.filter(expire_date__gte=now)
+    count = 0
+    user_id_str = str(user.pk)
+    for s in active_sessions:
+        if keep_session_key and s.session_key == keep_session_key:
+            continue
+        try:
+            data = s.get_decoded()
+            if str(data.get("_auth_user_id")) == user_id_str:
+                s.delete()
+                count += 1
+        except Exception:
+            pass
+    return count

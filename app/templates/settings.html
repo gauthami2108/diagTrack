@@ -20,9 +20,11 @@
       {% include "_switch.html" with f=form.email_enabled note="Needs the mail server below." %}
       {% include "_switch.html" with f=form.sms_enabled note="Needs an SMS provider account and internet." %}
       {% include "_switch.html" with f=form.whatsapp_enabled note="Needs a WhatsApp Business provider and internet." %}
+      {% include "_switch.html" with f=form.telegram_enabled note="Needs a Telegram bot token and internet." %}
       {% include "_switch.html" with f=form.area_manager_all note="When off, area managers are alerted only for P1 tickets and escalations." %}
       {% include "_switch.html" with f=form.managers_on_close note="Centre and area managers see a pop-up when a ticket at their centre is closed." %}
       {% include "_switch.html" with f=form.popups_enabled note="New tickets, closures and escalations slide in on screen as they happen." %}
+      {% include "_switch.html" with f=form.weekly_report_enabled note="Weekly executive summary (missed deadlines, machine downtime, and open backlog by centre) emailed to management on Monday morning." %}
     </div>
   </section>
 
@@ -68,6 +70,12 @@
     <header><h2>WhatsApp gateway</h2><button class="btn btn-s" name="test" value="whatsapp" formnovalidate>Send me a test WhatsApp</button></header>
     {% include "_field.html" with f=form.whatsapp_url %}
     <div class="field-row">{% include "_field.html" with f=form.whatsapp_headers %}{% include "_field.html" with f=form.whatsapp_body %}</div>
+  </section>
+
+  <section class="panel">
+    <header><h2>Telegram gateway</h2></header>
+    <p class="panel-sub">Send alerts through a Telegram bot. Create a bot using @BotFather on Telegram, paste its token here, and staff can add their Telegram chat ID in their profile.</p>
+    <div class="field-row">{% include "_field.html" with f=form.telegram_bot_token %}{% include "_field.html" with f=form.telegram_default_chat_id %}</div>
   </section>
 
   <div class="save-bar"><span>Departments, categories, users, SLA times and escalation rules are under <a href="{% url 'admin:index' %}">Masters and rules</a>.</span><button class="btn btn-primary" type="submit">Save settings</button></div>

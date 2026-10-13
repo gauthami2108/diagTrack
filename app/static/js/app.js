@@ -262,7 +262,55 @@
         label.appendChild(input); extra.appendChild(label);
       });
     };
-    cat.addEventListener("change", refresh); centre.addEventListener("change", refresh); refresh();
+    // Live duplicate detection
+    const dupBox = $("[data-duplicates-box]", raise);
+    const dupList = $("[data-duplicates-list]", raise);
+    const subjInput = $("[data-subject]", raise) || $("input[name=subject]", raise);
+    let dupTimer = null;
+
+    const checkDuplicates = () => {
+      if (!dupBox || !dupList) return;
+      const cVal = centre.value;
+      const eVal = eq.value;
+      const qVal = (subjInput ? subjInput.value : "").trim();
+      if (!cVal && !eVal && qVal.length < 3) {
+        dupBox.hidden = true;
+        dupList.innerHTML = "";
+        return;
+      }
+      clearTimeout(dupTimer);
+      dupTimer = setTimeout(() => {
+        const params = new URLSearchParams();
+        if (cVal) params.set("centre", cVal);
+        if (eVal) params.set("equipment", eVal);
+        if (qVal.length >= 3) params.set("q", qVal);
+        fetch("/api/duplicates/?" + params.toString())
+          .then(r => r.json())
+          .then(data => {
+            const dups = data.duplicates || [];
+            if (!dups.length) {
+              dupBox.hidden = true;
+              dupList.innerHTML = "";
+              return;
+            }
+            dupList.innerHTML = "";
+            dups.forEach(d => {
+              const li = document.createElement("li");
+              li.className = "dup-item";
+              li.innerHTML = `<a href="${d.url}" target="_blank" class="num"><b>${d.number}</b></a>: <span>${d.subject}</span> <span class="loz st-${d.status.toLowerCase().replace(/\s+/g, "-")}">${d.status}</span> <small class="muted">(${d.centre}${d.equipment ? " · " + d.equipment : ""} · ${d.assignee})</small>`;
+              dupList.appendChild(li);
+            });
+            dupBox.hidden = false;
+          })
+          .catch(() => {});
+      }, 350);
+    };
+
+    cat.addEventListener("change", refresh);
+    centre.addEventListener("change", () => { refresh(); checkDuplicates(); });
+    eq.addEventListener("change", checkDuplicates);
+    if (subjInput) subjInput.addEventListener("input", checkDuplicates);
+    refresh();
   }
 
   /* ---------- ticket page: activity, composer, formatting, @mentions ---------- */
@@ -515,7 +563,40 @@
     }, 300000);
   }
   if (body.dataset.lastAlert !== undefined && $("#popups")) {
-    setInterval(poll, 15000);
+    let sseRunning = false;
+    const connectSSE = () => {
+      if (!window.EventSource) return false;
+      try {
+        const es = new EventSource("/api/live/stream/?after=" + last);
+        es.addEventListener("alert", e => {
+          try {
+            const d = JSON.parse(e.data);
+            if (liveDot) liveDot.classList.remove("is-off");
+            if (dot) { dot.textContent = d.unread; dot.hidden = !d.unread; }
+            let sound = false, urgent = false;
+            (d.items || []).forEach(n => {
+              if (n.id > last) {
+                popup(n); desktop(n);
+                if (n.kind === "raised" || n.urgent) { sound = true; urgent = urgent || n.urgent; }
+              }
+            });
+            last = Math.max(last, d.last || 0);
+            if (sound) chime(urgent);
+          } catch (_) {}
+        });
+        es.onerror = () => {
+          es.close();
+          setTimeout(connectSSE, 3500);
+        };
+        sseRunning = true;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    };
+    if (!connectSSE()) {
+      setInterval(poll, 15000);
+    }
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") poll(); });
   }
   // ---- Message templates: channel tabs, placeholder chips, live preview -------------
@@ -594,4 +675,48 @@
     const show = () => $$("[data-freq-show]", g).forEach(el => { el.hidden = el.dataset.freqShow !== sel.value; });
     sel.addEventListener("change", show); show();
   });
+
+  /* ---------- bulk selection & operations in ticket lists ---------- */
+  const bulkBar = $("[data-bulk-bar]");
+  if (bulkBar) {
+    const selectAll = $("[data-bulk-select-all]");
+    const checkboxes = $$("[data-bulk-ticket]");
+    const countEl = $("[data-bulk-count]", bulkBar);
+    const clearBtn = $("[data-bulk-clear]", bulkBar);
+    const ticketsInput = $("[data-bulk-tickets-input]", bulkBar);
+
+    const updateBulkBar = () => {
+      const selected = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+      if (countEl) countEl.textContent = selected.length;
+      if (ticketsInput) ticketsInput.value = selected.join(",");
+      bulkBar.hidden = selected.length === 0;
+      if (selectAll) {
+        selectAll.checked = checkboxes.length > 0 && selected.length === checkboxes.length;
+        selectAll.indeterminate = selected.length > 0 && selected.length < checkboxes.length;
+      }
+    };
+
+    if (selectAll) {
+      selectAll.addEventListener("change", () => {
+        checkboxes.forEach(cb => { cb.checked = selectAll.checked; });
+        updateBulkBar();
+      });
+    }
+
+    checkboxes.forEach(cb => cb.addEventListener("change", updateBulkBar));
+
+    if (clearBtn) {
+      clearBtn.addEventListener("click", () => {
+        checkboxes.forEach(cb => { cb.checked = false; });
+        updateBulkBar();
+      });
+    }
+  }
+
+  /* ---------- PWA Service Worker registration ---------- */
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
 })();

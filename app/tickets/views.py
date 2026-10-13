@@ -1,3 +1,4 @@
+import re
 import csv
 import json
 from datetime import datetime, timedelta
@@ -11,7 +12,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import FileResponse, Http404, HttpResponse, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -543,7 +544,11 @@ class SettingsForm(forms.ModelForm):
             "sms_headers": forms.Textarea(attrs={"rows": 2}), "sms_body": forms.Textarea(attrs={"rows": 2}),
             "whatsapp_headers": forms.Textarea(attrs={"rows": 2}),
             "whatsapp_body": forms.Textarea(attrs={"rows": 2}),
+            "telegram_bot_token": forms.PasswordInput(render_value=False, attrs={"placeholder": "Saved. Type a new token to change it", "autocomplete": "new-password"}),
         }
+
+    def clean_telegram_bot_token(self):
+        return self.cleaned_data.get("telegram_bot_token") or self.instance.telegram_bot_token
 
     def clean_smtp_password(self):
         # The saved password is never sent back to the browser; an empty box keeps it.
@@ -646,8 +651,9 @@ def message_templates(request):
             ctx = wording.sample(s)
             ctx["recipient"] = request.user.display_name
             tpl = {ch: wording.get(event, ch) for ch, on in
-                   (("email", s.email_enabled), ("sms", s.sms_enabled), ("whatsapp", s.whatsapp_enabled)) if on}
-            made = notify.queue(tpl, ctx, email=request.user.email, mobile=request.user.mobile)
+                   (("email", s.email_enabled), ("sms", s.sms_enabled), ("whatsapp", s.whatsapp_enabled), ("telegram", s.telegram_enabled)) if on}
+            tg_id = getattr(request.user, "telegram_chat_id", "") or s.telegram_default_chat_id
+            made = notify.queue(tpl, ctx, email=request.user.email, mobile=request.user.mobile, telegram_id=tg_id)
             if made:
                 messages.success(request, "Test queued: " + ", ".join(f"{m.get_channel_display()} to {m.to}" for m in made) +
                                  ". It is sent within a minute; the result shows under Masters and rules, Sent alerts.")
@@ -671,7 +677,7 @@ def message_templates(request):
     for ch, label in wording.CHANNELS:
         t = wording.get(event, ch)
         current.append({"ch": ch, "label": label, **t,
-                        "on": {"email": s.email_enabled, "sms": s.sms_enabled, "whatsapp": s.whatsapp_enabled}[ch],
+                        "on": {"email": s.email_enabled, "sms": s.sms_enabled, "whatsapp": s.whatsapp_enabled, "telegram": s.telegram_enabled}[ch],
                         "limit": wording.LIMITS.get(ch, 0)})
     return render(request, "message_templates.html", {
         "event": event, "event_label": wording.EVENT_LABELS[event],
@@ -690,12 +696,31 @@ class PasswordResetView(auth_views.PasswordResetView):
         return super().form_valid(form)
 
 
+class PasswordChangeView(auth_views.PasswordChangeView):
+    """Changing password terminates all other active sessions across devices."""
+    def form_valid(self, form):
+        resp = super().form_valid(form)
+        from . import signin
+        signin.invalidate_user_sessions(self.request.user, keep_session_key=self.request.session.session_key)
+        return resp
+
+
 class PasswordResetConfirmView(auth_views.PasswordResetConfirmView):
     """Setting a new password from the emailed link also lifts a sign-in pause: only the owner has the link."""
     def form_valid(self, form):
         from . import signin
         signin.unlock(username=form.user.username)
+        signin.invalidate_user_sessions(form.user)
         return super().form_valid(form)
+
+
+@login_required
+@require_POST
+def invalidate_sessions_view(request):
+    from . import signin
+    count = signin.invalidate_user_sessions(request.user, keep_session_key=request.session.session_key)
+    messages.success(request, f"Terminated {count} other active session(s). Your current session remains active.")
+    return redirect("profile")
 
 
 def healthz(request):
@@ -857,7 +882,7 @@ def person_photo(request, pk):
 class ProfileForm(forms.ModelForm):
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "email", "mobile", "photo"]
+        fields = ["first_name", "last_name", "email", "mobile", "telegram_chat_id", "photo"]
 
 
 @login_required
@@ -913,3 +938,212 @@ def report_excel(request):
 @not_requester
 def report_print(request):
     return render(request, "report_print.html", _report_context(request))
+
+
+@login_required
+def api_duplicates(request):
+    centre_id = request.GET.get("centre", "").strip()
+    equipment_id = request.GET.get("equipment", "").strip()
+    q = request.GET.get("q", "").strip()
+
+    qs = services.visible_tickets(request.user).filter(status__in=OPEN_STATUSES)
+    matched = Ticket.objects.none()
+
+    if equipment_id:
+        try:
+            matched = matched | qs.filter(equipment_id=int(equipment_id))
+        except (ValueError, TypeError):
+            pass
+
+    if centre_id and len(q) >= 3:
+        try:
+            cid = int(centre_id)
+            words = [w for w in re.split(r"\s+", q) if len(w) >= 3]
+            if words:
+                word_q = Q()
+                for w in words[:4]:
+                    word_q |= Q(subject__icontains=w)
+                matched = matched | qs.filter(centre_id=cid).filter(word_q)
+        except (ValueError, TypeError):
+            pass
+
+    out = []
+    seen = set()
+    for t in matched.select_related("centre", "department", "assignee", "equipment").order_by("-created_at")[:5]:
+        if t.pk in seen:
+            continue
+        seen.add(t.pk)
+        out.append({
+            "number": t.number,
+            "subject": t.subject,
+            "status": t.get_status_display(),
+            "priority": t.priority,
+            "centre": t.centre.name,
+            "department": t.department.name,
+            "assignee": t.assignee.display_name if t.assignee else "Unassigned",
+            "equipment": t.equipment.name if t.equipment else "",
+            "url": f"/tickets/{t.number}/",
+        })
+    return JsonResponse({"duplicates": out})
+
+
+@login_required
+@require_POST
+def ticket_bulk(request):
+    numbers_raw = request.POST.get("ticket_numbers", "")
+    action = request.POST.get("bulk_action", "").strip()
+    numbers = [n.strip() for n in numbers_raw.split(",") if n.strip()]
+    if not numbers:
+        numbers = [n.strip() for n in request.POST.getlist("bulk_ticket") if n.strip()]
+
+    if not numbers or not action:
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({"ok": False, "error": "No tickets or action selected."}, status=400)
+        messages.error(request, "Please select at least one ticket and an action.")
+        return redirect(request.META.get("HTTP_REFERER") or "ticket_list")
+
+    tickets = list(services.visible_tickets(request.user).filter(number__in=numbers))
+    count = 0
+    errors = 0
+
+    for t in tickets:
+        allowed = services.allowed_actions(request.user, t)
+        try:
+            if action == "assign_me":
+                if "assign_me" in allowed or "assign" in allowed:
+                    services.assign(t, request.user, request.user, check=False)
+                    count += 1
+                else:
+                    errors += 1
+            elif action.startswith("priority_"):
+                prio = action.split("_", 1)[1].upper()
+                if prio in Priority.values:
+                    if "set_priority" in allowed:
+                        services.change_priority(t, request.user, prio, "Bulk priority update")
+                        count += 1
+                    elif "raise_priority" in allowed and prio < t.priority:
+                        services.change_priority(t, request.user, prio, "Bulk priority update")
+                        count += 1
+                    else:
+                        errors += 1
+            elif action == "start":
+                if "start" in allowed:
+                    services.start_work(t, request.user)
+                    count += 1
+                else:
+                    errors += 1
+            elif action == "close":
+                if "close" in allowed:
+                    services.close(t, request.user)
+                    count += 1
+                else:
+                    errors += 1
+            elif action == "cancel":
+                if "cancel" in allowed:
+                    services.cancel(t, request.user, "Bulk cancellation")
+                    count += 1
+                else:
+                    errors += 1
+        except Exception:
+            errors += 1
+
+    action_label = action.replace("_", " ")
+    msg = f"Applied \x27{action_label}\x27 to {count} ticket(s)."
+    if errors:
+        msg += f" ({errors} ticket(s) skipped due to permissions or status restrictions)."
+
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JsonResponse({"ok": True, "count": count, "message": msg})
+    messages.success(request, msg)
+    return redirect(request.META.get("HTTP_REFERER") or "ticket_list")
+
+
+def service_worker(request):
+    sw_path = dj_settings.BASE_DIR / "static" / "sw.js"
+    content = sw_path.read_text(encoding="utf-8") if sw_path.exists() else ""
+    response = HttpResponse(content, content_type="application/javascript")
+    response["Service-Worker-Allowed"] = "/"
+    response["Cache-Control"] = "no-cache"
+    return response
+
+
+@login_required
+def api_live_stream(request):
+    """Server-Sent Events (SSE) stream for real-time alerts without polling overhead."""
+    def event_stream():
+        last = int(request.GET.get("after") or 0)
+        yield ": connected\n\n"
+        max_loops = 1 if request.GET.get("test") else 25
+        for _ in range(max_loops):
+            new_alerts = list(Notification.objects.filter(user=request.user, pk__gt=last).select_related("ticket").order_by("pk")[:10])
+            if new_alerts:
+                items = [{"id": n.pk, "kind": n.kind, "title": n.title, "body": n.body, "urgent": n.urgent,
+                          "url": f"/alerts/{n.pk}/", "number": n.ticket.number if n.ticket else "",
+                          "priority": n.ticket.priority if n.ticket else ""} for n in new_alerts]
+                unread = Notification.objects.filter(user=request.user, read=False).count()
+                last = new_alerts[-1].pk
+                payload = json.dumps({"unread": unread, "items": items, "last": last})
+                yield f"event: alert\ndata: {payload}\n\n"
+            else:
+                yield ": keep-alive\n\n"
+            if max_loops > 1:
+                time.sleep(2)
+
+    resp = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+    resp["Cache-Control"] = "no-cache"
+    resp["X-Accel-Buffering"] = "no"
+    return resp
+
+
+def metrics_view(request):
+    """Prometheus-compatible metrics endpoint for system observability."""
+    now = timezone.now()
+
+    lines = []
+    def add_metric(name, help_text, m_type, samples):
+        lines.append(f"# HELP {name} {help_text}")
+        lines.append(f"# TYPE {name} {m_type}")
+        for labels, val in samples:
+            if labels:
+                lbls = ",".join(f"{k}=\"{v}\"" for k, v in labels.items())
+                lines.append(f"{name}{{{lbls}}} {val}")
+            else:
+                lines.append(f"{name} {val}")
+        lines.append("")
+
+    # Tickets by status
+    status_samples = [({"status": s}, Ticket.objects.filter(status=s, is_archived=False).count()) for s, _ in Status.choices]
+    add_metric("diagtrack_tickets_by_status", "Current tickets by status", "gauge", status_samples)
+
+    # Open tickets by priority
+    prio_samples = [({"priority": p}, Ticket.objects.filter(priority=p, status__in=OPEN_STATUSES, is_archived=False).count()) for p, _ in Priority.choices]
+    add_metric("diagtrack_tickets_open_by_priority", "Current open tickets by priority", "gauge", prio_samples)
+
+    # SLA breaches
+    resp_b = Ticket.objects.filter(response_breached=True, is_archived=False).count()
+    resol_b = Ticket.objects.filter(resolution_breached=True, is_archived=False).count()
+    add_metric("diagtrack_sla_breaches_total", "Tickets that breached SLA deadlines", "gauge", [
+        ({"type": "response"}, resp_b),
+        ({"type": "resolution"}, resol_b),
+    ])
+
+    # Active equipment downtime
+    down_count = DowntimeLog.objects.filter(end__isnull=True).count()
+    add_metric("diagtrack_equipment_down_active", "Number of equipment units currently in downtime", "gauge", [({}, down_count)])
+
+    # Outbound queue
+    pending_m = OutboundMessage.objects.filter(status=OutboundMessage.PENDING).count()
+    failed_m = OutboundMessage.objects.filter(status=OutboundMessage.FAILED).count()
+    add_metric("diagtrack_outbound_messages", "Outbound notification messages queue", "gauge", [
+        ({"status": "pending"}, pending_m),
+        ({"status": "failed"}, failed_m),
+    ])
+
+    # Worker heartbeat age
+    hb = Heartbeat.objects.filter(name="worker").first()
+    hb_age = (now - hb.at).total_seconds() if hb else -1
+    add_metric("diagtrack_worker_heartbeat_age_seconds", "Seconds since worker last executed", "gauge", [({}, round(hb_age, 1))])
+
+    resp = HttpResponse("\n".join(lines), content_type="text/plain; version=0.0.4; charset=utf-8")
+    resp["Cache-Control"] = "no-cache"
+    return resp

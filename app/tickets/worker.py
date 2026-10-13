@@ -27,11 +27,22 @@ class Worker:
             return "read-only"
         fired = services.run_sla_checks()
         closed = services.auto_close()
-        if self.amc_day != timezone.localdate():  # once a day, and at start
+        today = timezone.localdate()
+        if self.amc_day != today:  # once a day, and at start
             amc = services.amc_checks()
-            self.amc_day = timezone.localdate()
+            self.amc_day = today
             if amc:
                 log.info("Sent %s AMC expiry alerts.", amc)
+
+        if today.weekday() == 0:  # Monday: executive summary to management
+            try:
+                from . import reports
+                wr_sent = reports.send_weekly_management_report()
+                if wr_sent:
+                    log.info("Sent %s weekly management summary emails.", wr_sent)
+            except Exception:
+                log.exception("Failed to send weekly management report.")
+
         sent = notify.send_pending()
         services.beat("worker", f"{fired} escalations, {closed} auto-closed, {sent} alerts sent")
         if fired or closed or sent:
