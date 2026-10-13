@@ -7,13 +7,14 @@ who oversee them. Print the sections that apply to each person.
 
 1. Open DiagTrack in the browser at the address your administrator gives you.
 2. Type your user name and password, then press **Sign in**.
-3. On a phone, use the browser's **Add to Home screen** to open DiagTrack with one tap.
+3. On a phone or desktop browser, use **Install app** or **Add to Home screen** to install DiagTrack as a standalone app (PWA) with quick access and offline asset caching.
 
 Under your name at the top right:
 
-- **My profile:** add your photo, email and mobile number. Alerts use the email and mobile.
+- **My profile:** add your photo, email, mobile number, and **Telegram Chat ID** (to receive alerts directly in Telegram).
+- **Sign out other sessions:** invalidates all other active logins across other devices or browsers if you suspect your account is open elsewhere.
 - **Compact rows:** fits more tickets on the screen.
-- **Change password** and **Sign out**.
+- **Change password** (which also securely invalidates other sessions) and **Sign out**.
 
 Forgot your password? Use **Forgot your password?** on the sign-in page if email has been set up, or ask your
 administrator.
@@ -28,9 +29,7 @@ administrator.
 | Switch between light and dark | The moon or sun button at the top |
 | Get the side menu on a phone | The three lines at the top left |
 
-**Pop-ups.** When a ticket that concerns you is raised, closed or escalated, or someone mentions you, a message slides
-in at the bottom right within about 15 seconds, with a short sound for new tickets. Click **Open** to go to the
-ticket. Turn the sound off in the bell menu. The green **Live** dot at the top means updates are arriving.
+**Live updates & Pop-ups.** DiagTrack connects to a real-time Server-Sent Events stream (`/api/live/stream/`) with automatic fallback to polling. When a ticket that concerns you is raised, closed or escalated, or someone mentions you, a message slides in at the bottom right immediately, with a short sound for new tickets. Click **Open** to go to the ticket. Turn the sound off in the bell menu. The green **Live** dot at the top indicates an active live connection.
 
 ## 3. Raising a ticket
 
@@ -40,6 +39,7 @@ ticket. Turn the sound off in the bell menu. The green **Live** dot at the top m
    records the downtime.
 4. Answer any extra questions that appear, such as an error code.
 5. Write a short title and what happened: what you saw, when it started, what you already tried.
+   - **Duplicate ticket detection:** As you type the title or select the equipment, DiagTrack checks in the background for active tickets with matching details. If similar open tickets exist, an amber banner appears showing the ticket numbers, titles, and owners so you can review existing tickets before submitting.
 6. Tick **Patient services are stopped because of this** only when patients cannot be served. The ticket becomes P1
    Critical and the managers are alerted at once.
 7. Add photos or files if they help. On a phone, the camera opens.
@@ -119,6 +119,12 @@ it shows with an amber edge.
 5. **Transfer** if it belongs to another department, with a reason. That department gets a fresh deadline.
 6. **Resolve** with a short note of what was done. For a machine that was down, enter when it started working again.
 
+**Bulk actions on queue lists:**
+On list screens (**Assigned to me**, **Team queue**, **All tickets**), tick the checkboxes next to tickets to open the **Bulk actions** bar. You can:
+- **Assign to:** assign multiple tickets to an agent at once.
+- **Change status:** set multiple tickets to In progress, On hold, or Resolved.
+- **Change priority:** update the priority of multiple tickets in one action.
+
 **Equipment tickets:** press **Log vendor call** when you call the service company (vendor, time, their complaint
 number), and **Engineer arrived** when the engineer comes. This measures the vendor's response time.
 
@@ -132,6 +138,7 @@ column to start, hold or resolve it. The coloured edge shows the priority.
 - **Home** shows tickets that need assigning and those closest to the deadline.
 - On a ticket: **Assign** or **Reassign** to an agent, **Change priority** (with a reason), **Cancel ticket** (with a
   reason). You can also take any ticket with **Assign to me**.
+- **Bulk assignments:** Select several tickets in the queue and reassign or update them together.
 - You are alerted when a deadline is close, when one is missed, for every P1, and when an agent does not start in
   time.
 
@@ -139,7 +146,7 @@ column to start, hold or resolve it. The coloured edge shows the priority.
 
 | Screen | Use it to |
 | --- | --- |
-| All tickets | Find any ticket at your centres. Filter by status, priority, centre, department or deadline. **Export to Excel** saves the current list |
+| All tickets | Find any ticket at your centres. Filter by status, priority, centre, department or deadline. Use bulk actions or **Export to Excel** |
 | Dashboard | Open tickets by centre, department, status, priority and age; raised and resolved each day; share resolved in time |
 | Centres | Every centre side by side: open, P1, late, machines down, raised, resolved, resolved in time, responded in time, average time to resolve, rating and uptime. Green is on target (90% or more), amber is watch (75 to 89%), red is below 75%. Click a number to open those tickets. **Excel** downloads the same figures |
 | Reports | Figures by centre, department and more, as Excel or PDF. Section 9 |
@@ -148,7 +155,7 @@ column to start, hold or resolve it. The coloured edge shows the priority.
 Area managers are alerted on every new ticket at their centres. Management logins can see everything but cannot change
 tickets.
 
-## 9. Reports
+## 9. Reports and scheduled email summaries
 
 1. Open **Reports** in the side menu.
 2. Choose the **period**: last 7, 30 or 90 days, this month, last month, or **Choose dates**.
@@ -161,10 +168,10 @@ The screen shows the totals, a row for each group, a centre by department grid, 
 deadline. Then:
 
 - **Download Excel:** a workbook with six sheets: Summary, Centre x Department, Tickets (every ticket), Missed
-  deadlines, Equipment downtime and Vendor calls. Headers stay in place when scrolling, every column can be filtered,
-  and the "in time" columns are coloured green, amber or red.
-- **Print or save as PDF:** a page with the Pramodini logo, laid out for A4 landscape. In the print window, choose
-  your printer, or "Save as PDF" to make a PDF.
+  deadlines, Equipment downtime and Vendor calls.
+- **Print or save as PDF:** a page with the Pramodini logo, laid out for A4 landscape.
+
+**Weekly management email:** When enabled by the administrator in Settings, an automated summary report is emailed every Monday morning at 07:00 AM to designated management recipients covering weekly ticket numbers, SLA performance, downtime, and centre summaries.
 
 All report figures are about tickets **raised** in the chosen period, and you only see centres and departments you
 cover.

@@ -45,6 +45,8 @@ into five containers: proxy, web, worker, db and backup.
 | Test restore | Backups page, **Test restore**, or `diagtrack verifybackup --dest dest1 --test-restore` | Backups page |
 | Restore | Backups page, **Restore** (section 7) | Backups page (section 7) |
 | New password for a login | `diagtrack changepassword admin` | `./scripts/reset-password.sh admin` |
+| Archive old tickets | `diagtrack archive_tickets --days 365` | `docker compose exec web python manage.py archive_tickets --days 365` |
+| Test weekly email report | `diagtrack send_weekly_report --force` | `docker compose exec web python manage.py send_weekly_report --force` |
 | Install a new version | section 8 | section 8 |
 | Check the whole install | Run **Setup.cmd**, choose **Repair** | `docker compose run --rm setup verify` |
 
@@ -138,7 +140,7 @@ The restore asks you to type `YES`.
 
 | Windows native | Docker |
 | --- | --- |
-| 1. Download the new zip from GitHub and extract it, as in the Install guide, A2. | `./scripts/update.sh` |
+| 1. Download the new zip or installer from GitHub, as in the Install guide, A2. | `./scripts/update.sh` |
 | 2. Double-click **Setup.cmd** in the new folder and choose **Update**. | It backs up, downloads the new version with git, rebuilds and restarts |
 | Setup backs up first, installs the new version beside the old, updates the database and starts DiagTrack. If the new version does not start, it puts the old version and the backup back by itself. | Check afterwards with `docker compose run --rm setup verify` |
 
@@ -178,3 +180,24 @@ continues there as before. Nothing on the old server was changed.
 | When staff join or leave | Add the user, or untick Active |
 | When an AMC is renewed | Change the AMC expiry date on the machine |
 | **Before 12 January 2027** | Windows Server 2016 loses security updates: move to Server 2022 or 2025 (section 9) |
+
+## 11. Centralized Observability & Prometheus Metrics
+
+DiagTrack provides a Prometheus-compatible metrics endpoint at `/metrics`.
+- **Authentication**: Accessible to authenticated staff or monitoring scrapers configured with session/admin credentials.
+- **Metrics exported**:
+  - `diagtrack_tickets_total{status="..."}`: Total tickets categorized by status.
+  - `diagtrack_tickets_sla_breached_total`: Count of tickets with breached response or resolution SLA.
+  - `diagtrack_users_active_total`: Number of active system users.
+  - `diagtrack_worker_heartbeat_timestamp`: UNIX timestamp of the latest worker execution.
+  - `diagtrack_backup_status_healthy`: Status indicator for backup jobs.
+
+To scrape with Prometheus, add a scrape job pointing to `http://<server-ip>:<port>/metrics`.
+
+## 12. Native Windows HTTPS Setup
+
+To terminate TLS directly on Windows with Caddy:
+1. Open PowerShell as Administrator in the DiagTrack installation directory.
+2. Run `powershell -ExecutionPolicy Bypass -File installer\windows\setup-https.ps1`.
+3. This sets up `Caddyfile.windows` in `C:\ProgramData\DiagTrack\Caddyfile` and opens port 443 in Windows Firewall.
+4. Ensure your DNS points to the Windows server host, and Caddy will manage local or ACME certificates automatically.

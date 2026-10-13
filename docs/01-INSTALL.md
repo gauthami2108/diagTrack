@@ -7,7 +7,7 @@ DiagTrack; choose one:
 | --- | --- | --- |
 | Runs on | Windows Server 2016, 2019, 2022, 2025 or Windows 11 | Any Linux server or Mac with Docker installed |
 | Prerequisites | Installed by setup: Python and PostgreSQL 17 | Docker, installed by you beforehand |
-| Start | Double-click `Setup.cmd` | `docker compose run --rm setup`, then `docker compose up -d` |
+| Start | Double-click `Setup.cmd` or run `DiagTrack-Setup-2.0.0.exe` | `docker compose run --rm setup`, then `docker compose up -d` |
 | Pramodini | **The main server (Windows Server 2016)** | Available for a Linux server later |
 
 Both ask every password and setting at the start, then install without stopping, check that everything works, and
@@ -19,7 +19,7 @@ finish with a report and a **recovery sheet**. Backups from one kind of install 
 | --- | --- |
 | Server | Stays on all the time, on a UPS. Main server: 4 CPU cores, 8 GB memory, 100 GB SSD. Minimum: 2 cores, 4 GB, 20 GB free |
 | Network | A fixed IP address inside your network, for example 192.168.1.50. Your network vendor sets this |
-| Internet | Needed while installing and updating. Daily use works without internet, except SMS and WhatsApp alerts |
+| Internet | Needed while installing and updating. Daily use works without internet, except SMS, WhatsApp and Telegram alerts |
 | Backup place | A folder on a NAS (recommended), a second disk or a USB drive. Not only the server's own disk |
 | Passwords to decide | The DiagTrack administrator password (10+ characters, letters and a digit), and the **backup passphrase** (12+ characters; a short sentence is best). Setup creates every other password itself |
 
@@ -40,15 +40,18 @@ finish with a report and a **recovery sheet**. Backups from one kind of install 
 
 ### A2. Get DiagTrack onto the server
 
-1. On github.com, open the `gauthami2108/diagTrack` repository, press **Code**, then **Download ZIP**.
-2. Copy the zip to the server, right-click it, **Properties**, tick **Unblock** if it is shown, **OK**.
-3. Right-click the zip, **Extract All**, for example to `C:\DiagTrack-Setup`.
+You can install either via the single-click installer or the repository zip:
+
+- **Single-Click Installer (.exe):** Download `DiagTrack-Setup-2.0.0.exe` (built via Inno Setup from `installer/windows/diagtrack_installer.iss`), right-click and run as administrator. It extracts the files and launches the setup wizard automatically.
+- **ZIP archive:**
+  1. On github.com, open the repository, press **Code**, then **Download ZIP**.
+  2. Copy the zip to the server, right-click it, **Properties**, tick **Unblock** if it is shown, **OK**.
+  3. Right-click the zip, **Extract All**, for example to `C:\DiagTrack-Setup`.
 
 ### A3. Run setup
 
-1. In the extracted folder, double-click **Setup.cmd**.
-   - If Windows shows "Windows protected your PC", press **More info**, then **Run anyway**. (The file is not
-     code-signed yet.)
+1. In the extracted folder, double-click **Setup.cmd** (or let the .exe installer launch it).
+   - If Windows shows "Windows protected your PC", press **More info**, then **Run anyway**.
    - Windows asks "Do you want to allow this app to make changes?". Press **Yes**.
 2. Setup installs its own Python (about 2 minutes) and then asks: **New install** or **Move in from another DiagTrack
    server**. Choose **New install**.
@@ -187,15 +190,21 @@ The recommended way is a **site-to-site VPN** from each centre's router to the s
 every centre then open the same address, nothing is installed on their computers, and DiagTrack is never exposed to
 the internet. Your network vendor sets this up on the routers; DiagTrack needs no change.
 
-## Optional: HTTPS (Docker)
+## Optional: HTTPS
 
-Inside a VPN, plain `http://` is acceptable and is the current choice. For Docker, HTTPS can be switched on later:
-
+### On Docker
+Inside a VPN, plain `http://` is acceptable. For Docker, HTTPS can be switched on:
 1. Ask your network vendor to point a name, for example `diagtrack.pramodini.local`, to the server.
 2. In `.env` set `SITE_ADDRESS=https://diagtrack.pramodini.local` and `HTTPS_MODE=tls internal`, then run
    `docker compose up -d`.
 3. Install DiagTrack's certificate (`data/caddy/caddy/pki/authorities/local/root.crt`) on each computer, and change
    "address of this system" in Settings.
+
+### On Native Windows
+To configure TLS/HTTPS automatically on Windows using Caddy as a reverse proxy:
+1. Run PowerShell as Administrator.
+2. Run `powershell -ExecutionPolicy Bypass -File installer\windows\setup-https.ps1`. This installs `Caddyfile.windows` into `C:\ProgramData\DiagTrack\Caddyfile` and opens port 443 in Windows Firewall.
+3. Update "Address of this system" in Settings to `https://...`.
 
 ## Optional: try it with demo data first
 

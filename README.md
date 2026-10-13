@@ -8,13 +8,19 @@ your own server, natively on Windows or in Docker; ticket data never leaves the 
 
 - Raise, route, assign, transfer, hold, resolve and close tickets, with SLA deadlines and escalation.
 - A Jira-style ticket page: status menu, activity with comments and history, formatting, @mentions, edits.
-- Live pop-ups when tickets are raised, closed or escalated; in-app, email, SMS and WhatsApp alerts with on/off switches.
+- Live duplicate ticket detection when creating tickets, with direct links to existing open issues.
+- Bulk ticket operations in queue and list views (assign to me, start work, priority changes, close, cancel).
+- Phone home-screen app (PWA) with offline shell caching and service worker (`/sw.js`).
+- Live updates via Server-Sent Events (SSE) and pop-ups; in-app, email, SMS, WhatsApp, and Telegram alerts with on/off switches.
+- Scheduled Monday management email summaries (missed deadlines, equipment downtime, and centre backlogs).
+- Centralized system observability via Prometheus `/metrics` exporter.
 - Centres page: load, service levels and equipment uptime for every centre side by side.
 - Reports by centre, department, category, priority, owner or equipment, as a six-sheet Excel file or a printed PDF.
 - Equipment register with downtime, vendor call log and response times, AMC renewal alerts, repeat faults and QR labels.
 - Board, dashboard, search and jump (Ctrl K), ticket preview, light and dark themes, Pramodini logo and colours.
 - Import from Excel: centres, vendors, departments, people and equipment from one workbook, checked before saving.
-- Sign-in pauses after repeated wrong passwords, with alerts to administrators.
+- Sign-in pauses after repeated wrong passwords, and active session termination across other devices on password change or from profile.
+- Historical ticket archiving (`manage.py archive_tickets`) for long-term data retention.
 - Encrypted backups to one or more folders on a schedule, checks and monthly test restores, one-click restore, and
   moving between Windows and Docker servers.
 

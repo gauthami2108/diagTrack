@@ -10,8 +10,8 @@ Sign in as an administrator. The side menu then shows extra items under **Admini
   then press **Save** at the bottom.
 - **Import from Excel**: add or change centres, vendors, departments, people and equipment from one workbook.
 - **Backups**: backup folders, schedules, retention, Back up now, restores and moving to another server.
-- **Message templates**: the wording of email, SMS and WhatsApp alerts, and which alerts go out on each channel.
-- **Settings and health**: alerts, mail server, branding, and a check that the system is healthy.
+- **Message templates**: the wording of email, SMS, WhatsApp and Telegram alerts, and which alerts go out on each channel.
+- **Settings and health**: alerts, mail server, Telegram bot, scheduled reports, branding, and a check that the system is healthy.
 
 ## 1. First-day setup
 
@@ -81,8 +81,8 @@ photo themselves, under their name at the top right.
 | Role | Can do | Sees |
 | --- | --- | --- |
 | Requester | Raise tickets, reply, raise the priority once, confirm a fix or reopen, cancel before work starts | Own tickets |
-| Agent | Everything a requester can, plus start work, hold, resolve, transfer, log vendor calls, write internal notes | Tickets of their departments at their centres |
-| Department head | Everything an agent can, plus assign and reassign, change priority, cancel | All tickets of their departments |
+| Agent | Everything a requester can, plus start work, hold, resolve, transfer, log vendor calls, write internal notes, bulk ticket actions | Tickets of their departments at their centres |
+| Department head | Everything an agent can, plus assign and reassign, change priority, cancel, bulk reassign/status | All tickets of their departments |
 | Centre manager | Raise, reply, internal notes, dashboards, centres, reports, equipment | All tickets of their centres |
 | Area manager | Same as centre manager, plus transfer tickets between departments | All tickets of their centres |
 | Management | View only: dashboards, centres, reports, equipment, every ticket | Everything |
@@ -93,11 +93,10 @@ For each person:
 - **Centres:** where they work (requesters, managers) or which centres they cover (agents). An agent with no centre
   ticked covers every centre.
 - **Departments:** only for agents and department heads.
-- **Email and mobile:** needed for email, SMS and WhatsApp alerts. Write the mobile number with the country code,
-  for example 919876543210.
+- **Email, mobile, and Telegram Chat ID:** needed for email, SMS, WhatsApp and Telegram alerts. Write the mobile number with the country code (e.g. 919876543210).
 - **When someone leaves:** untick **Active**. Do not delete people; their name stays on the tickets they handled.
-- **Forgotten password:** open the person and use the link in the password line to set a new one. For the `admin`
-  login itself, see the Runbook, section 6.
+- **Forgotten password:** open the person and use the link in the password line to set a new one. Changing a password automatically invalidates all existing active sessions on other devices.
+- **Sign out other sessions:** users can click "Sign out other sessions" on My Profile to revoke all other active sign-in sessions immediately.
 - **Too many wrong passwords:** after 5 wrong passwords in 15 minutes, sign-in for that user name pauses for 15
   minutes, and administrators get an alert. 20 wrong passwords from one computer pause that computer too. The
   **Sign-in** column on the Users list shows who is paused. To let someone in sooner: tick them, choose **Unlock
@@ -123,6 +122,7 @@ How the clock behaves:
 
 - It runs day and night, and pauses while a ticket is on hold.
 - A transfer to another department starts a new clock for that department.
+- The background worker evaluates SLA response and resolution deadlines at the database level on every round.
 - If nobody starts work within the response time, the ticket moves to the department head.
 - A ticket marked "Patient services are stopped" becomes P1 and alerts the department head, centre manager and area
   manager at once.
@@ -164,7 +164,7 @@ printer.
 
 ## 7. Alerts
 
-*Settings and health, Alert channels.* One switch for each:
+*Settings and health, Alert channels.* Switches for each:
 
 | Switch | What it does |
 | --- | --- |
@@ -172,6 +172,7 @@ printer.
 | Email alerts | Emails for every alert. Needs the mail server below |
 | SMS alerts | Out of the box, only for urgent alerts. Needs an SMS provider and internet |
 | WhatsApp alerts | Out of the box, only for urgent alerts. Needs a WhatsApp Business provider and internet |
+| Telegram alerts | Instant messages sent via Telegram bot to individual users or default group |
 
 These switches turn a whole channel on or off. Which events use each channel, and what the messages say, are set
 under Message templates (section 8).
@@ -208,17 +209,20 @@ things:
 
 Save, then press **Send me a test SMS** or **Send me a test WhatsApp**. If it fails, the provider's reason is shown.
 In India, SMS needs a registered sender ID and approved templates (DLT), and WhatsApp needs an approved Business
-account; the provider guides you through both. DiagTrack has not yet been tried with a specific provider, so allow
-time for this.
+account; the provider guides you through both.
 
-If the provider gives you a template name (WhatsApp) or a DLT template ID (SMS), put `{template}` in the message
-format here, and type the name or ID on the matching event under Message templates.
+**Telegram.** DiagTrack sends alerts via a Telegram bot:
+1. Message `@BotFather` on Telegram to create a bot and copy the bot token.
+2. In Settings, enter the **Telegram bot token**.
+3. Enter the **Default Chat ID** (the group chat ID or default recipient chat ID; for groups this typically begins with `-100`).
+4. Turn on the **Telegram alerts** switch, save, and press **Send me a test Telegram**.
+5. Individual users can also specify their personal Telegram Chat ID in **My profile** to receive alerts directly on Telegram.
 
 ## 8. Message templates
 
 *Side menu, Message templates.* One page per event: New ticket, Assigned, Work started, On hold, Resolved, Closed,
 Reopened, Cancelled, Transferred, Priority changed, New reply, Internal note, Mentioned, Escalation, AMC ending, and
-Anything else. The list on the left shows for each event whether email, SMS and WhatsApp go out: dark blue is
+Anything else. The list on the left shows for each event whether email, SMS, WhatsApp and Telegram go out: dark blue is
 **Always**, amber is **Only urgent**, outline is **Never**. A blue dot after a name means its wording was changed.
 
 On an event's page there is a tab for each channel:
@@ -256,11 +260,9 @@ Buttons at the bottom:
 - **Save**.
 - **Save and send me a test**: sends this event's messages, filled with the sample ticket, to your own email and
   mobile, on every channel that is switched on. The result shows under *Masters and rules, Sent alerts*.
-- **Back to built-in wording**: undoes your changes for this event, on all three channels.
+- **Back to built-in wording**: undoes your changes for this event.
 
-The bell and the pop-ups always use the headline and detail; templates change only email, SMS and WhatsApp.
-
-## 9. General settings and branding
+## 9. General settings and scheduled reports
 
 *Settings and health*
 
@@ -272,6 +274,8 @@ The bell and the pop-ups always use the headline and detail; templates change on
 | Allow reopening for | 7 days | After the ticket was resolved |
 | Largest attachment | 10 MB | Per file |
 | Warn about AMC expiry | 60 days before | The first AMC warning |
+| Weekly management email summary | Off | Automatically sends a performance summary every Monday morning at 07:00 |
+| Weekly report recipients | empty | Comma-separated email addresses of leadership and managers |
 
 **Brand.** The Pramodini logo and colours are built in: the P mark in the menu and browser tab, the full logo on the
 sign-in page and on printed reports, navy `#274a99` for buttons and sky blue `#24aee8` for highlights. To change them,
@@ -289,12 +293,14 @@ The four boxes at the top of Settings and health. All should be green.
 | Alerts sent out | Some emails or messages failed. The reason is shown, usually a wrong mail server detail |
 | In use | Always green: the number of tickets and active users |
 
+For centralized system monitoring via Prometheus, DiagTrack exposes an authenticated `/metrics` endpoint (see Runbook, section 11).
+
 ## 11. Records you can look up
 
 | What | Where |
 | --- | --- |
 | Every change to every ticket: who, what, when | The ticket page, Activity, History. Also *Masters and rules, Ticket history*, which cannot be edited or deleted |
-| Every email, SMS and WhatsApp sent, and any failure | *Masters and rules, Sent alerts* |
+| Every email, SMS, WhatsApp and Telegram sent, and any failure | *Masters and rules, Sent alerts* |
 | Every vendor call | *Masters and rules, Vendor calls* |
 
 ## 12. Common tasks
@@ -311,14 +317,18 @@ The four boxes at the top of Settings and health. All should be green.
 | A new machine | Add it under Equipment, print its QR label |
 | Many people, machines or a new centre at once | Import from Excel (section 14) |
 | Someone cannot sign in after wrong passwords | Users, tick them, **Unlock sign-in** (section 4) |
-| Change what an alert says, or send it by WhatsApp too | Message templates (section 8) |
+| Change what an alert says, or send it by WhatsApp or Telegram | Message templates (section 8) |
+| Configure Telegram alerts | Section 7, Telegram alerts in Settings |
+| Schedule weekly management report | Section 9, Settings -> Scheduled reports |
+| Archive old closed tickets | Run `python manage.py archive_tickets --days 365` (section 13) |
+| Perform bulk actions on tickets | Select checkboxes on ticket list, use bulk action bar (Assign, Status, Priority) |
 | An AMC is renewed | Change the AMC expiry date on the machine. Warnings start again for the new date |
 | Add a second backup place, such as another centre's NAS | Backups page, **Add a backup destination** (section 13) |
 | Copy everything to a USB drive | Backups page, **Save a full copy** |
 | Go back to how things were yesterday | Backups page, **Restore** (Runbook, section 7) |
 | Move DiagTrack to another server | Backups page, **Prepare to move** (Runbook, section 9) |
 
-## 13. Backups
+## 13. Backups and archiving
 
 *Side menu, Backups.* Everything about backups is on this page. The runner that does the work is part of the
 DiagTrack service on Windows, and the backup container in Docker; the page asks it to act and shows the progress.
@@ -338,23 +348,9 @@ Below them, **Tasks** shows what is running and the results of recent backups, c
 | Test restore | Restores a backup into a scratch database, compares it, then removes it. Live data is not touched |
 | Restore | Replaces all current data with that backup, after you type RESTORE (Runbook, section 7) |
 
-**Each backup folder** has its own settings, under **Change schedule, retention or folder**:
-
-| Setting | Meaning |
-| --- | --- |
-| Name, Folder | For example "Main NAS" and `\\nas01\backups\diagtrack`. In Docker: `/backups` or `/backups2` |
-| Frequency, Time | Every few hours, daily, weekly (choose the day) or monthly (choose the date), at the time given |
-| Daily, weekly and monthly copies to keep | For example 14, 8 and 12: the newest backup of each of the last 14 days, the last 8 weeks and the last 12 months |
-| Keep manual backups for | Days to keep backups made with Back up now |
-| Alert if no backup for | Hours without a good backup before an overdue alert |
-| NAS user name and password | Windows network shares only, when the share needs a login |
-| Treat a missing marker file as "NAS not connected" | Put an empty file named `.diagtrack-backup-target` in the NAS folder first. Then a disconnected NAS is reported instead of filling the local disk |
-| Switched on | Untick to pause a folder without removing it |
-
-**Who is alerted.** Administrators always are. Tick others, for example the IT head. Alerts use the **Backup
-failed** and **Backup overdue** wording on the Message templates page, on the channels switched on there.
-
-**Move to another server.** See the Runbook, section 9.
+**Archiving historical tickets:** Tickets closed or resolved more than 365 days ago can be archived to keep daily ticket queues fast and uncluttered while retaining all records in database backups and reports:
+- Run `python manage.py archive_tickets --days 365` (or `--dry-run` to preview).
+- Archived tickets are excluded from default active list queries (`visible_tickets(include_archived=False)`) but remain searchable when requested.
 
 ## 14. Import from Excel
 
@@ -380,4 +376,3 @@ once, for example when setting up all the centres, or when a new centre opens wi
 | New people | Use **Initial password**, or leave it empty: DiagTrack makes a password and shows it once, after the import. Print that page or copy the passwords, and ask each person to change theirs under **My profile** |
 | Existing people | Initial password is ignored. Set a new password under Masters and rules, Users |
 | Dates | Day-month-year, for example 31-03-2027, or an Excel date |
-
