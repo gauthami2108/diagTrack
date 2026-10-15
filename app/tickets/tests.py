@@ -1327,3 +1327,22 @@ class Phase3Tests(Base):
         msg = OutboundMessage.objects.filter(channel="telegram", to="987654321").first()
         self.assertIsNotNone(msg)
         self.assertIn(t.number, msg.body)
+
+    @mock.patch("tickets.notify._telegram_send")
+    def test_profile_test_telegram_action(self, mock_send):
+        s = SiteSettings.load()
+        s.telegram_bot_token = "123456:TEST_TOKEN"
+        s.save()
+
+        self.client.force_login(self.req)
+        resp = self.client.post(reverse("profile"), {
+            "first_name": "Meena",
+            "last_name": "R",
+            "telegram_chat_id": "11223344",
+            "test_telegram": "1",
+        }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.req.refresh_from_db()
+        self.assertEqual(self.req.telegram_chat_id, "11223344")
+        mock_send.assert_called_once()
+        self.assertEqual(mock_send.call_args[0][1], "11223344")

@@ -11,7 +11,7 @@ who oversee them. Print the sections that apply to each person.
 
 Under your name at the top right:
 
-- **My profile:** add your photo, email, mobile number, and **Telegram Chat ID** (to receive alerts directly in Telegram).
+- **My profile:** add your photo, email, mobile number, and **Telegram Chat ID** (to receive alerts directly in Telegram). Click **Test Telegram alert** right next to the Chat ID box to verify delivery immediately. *(Note: You must start a chat with the bot in Telegram and send `/start` before it can message you).*
 - **Sign out other sessions:** invalidates all other active logins across other devices or browsers if you suspect your account is open elsewhere.
 - **Compact rows:** fits more tickets on the screen.
 - **Change password** (which also securely invalidates other sessions) and **Sign out**.

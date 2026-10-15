@@ -544,11 +544,16 @@ class SettingsForm(forms.ModelForm):
             "sms_headers": forms.Textarea(attrs={"rows": 2}), "sms_body": forms.Textarea(attrs={"rows": 2}),
             "whatsapp_headers": forms.Textarea(attrs={"rows": 2}),
             "whatsapp_body": forms.Textarea(attrs={"rows": 2}),
-            "telegram_bot_token": forms.PasswordInput(render_value=False, attrs={"placeholder": "Saved. Type a new token to change it", "autocomplete": "new-password"}),
+            "telegram_bot_token": forms.TextInput(attrs={"placeholder": "From @BotFather, e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11", "autocomplete": "off", "spellcheck": "false"}),
         }
 
     def clean_telegram_bot_token(self):
-        return self.cleaned_data.get("telegram_bot_token") or self.instance.telegram_bot_token
+        token = self.cleaned_data.get("telegram_bot_token") or ""
+        return token.strip()
+
+    def clean_telegram_default_chat_id(self):
+        chat_id = self.cleaned_data.get("telegram_default_chat_id") or ""
+        return chat_id.strip()
 
     def clean_smtp_password(self):
         # The saved password is never sent back to the browser; an empty box keeps it.
@@ -593,9 +598,17 @@ def settings_view(request):
     if request.method == "POST":
         if "test" in request.POST:
             channel = request.POST["test"]
-            to = request.user.email if channel == "email" else request.user.mobile
+            if channel == "email":
+                to = request.user.email
+                missing_msg = "Add your own email address to your user record first."
+            elif channel == "telegram":
+                to = getattr(request.user, "telegram_chat_id", "") or s.telegram_default_chat_id
+                missing_msg = "Add your Telegram Chat ID in My Profile or set a Default Telegram group/channel chat ID below first."
+            else:
+                to = request.user.mobile
+                missing_msg = "Add your mobile number to your user record first."
             if not to:
-                messages.error(request, "Add your own email address and mobile number to your user record first.")
+                messages.error(request, missing_msg)
             else:
                 msg = OutboundMessage(channel=channel, to=to, subject=f"[{s.org_name}] Test alert",
                                       body="This is a test alert from DiagTrack. If you can read it, alerts work.")
@@ -893,6 +906,32 @@ def profile(request):
             request.user.photo = ""
             request.user.save(update_fields=["photo"])
             messages.success(request, "Photo removed.")
+            return redirect("profile")
+        if request.POST.get("test_telegram"):
+            chat_id = (request.POST.get("telegram_chat_id") or request.user.telegram_chat_id or "").strip()
+            if not chat_id:
+                messages.error(request, "Enter your Telegram Chat ID first.")
+            else:
+                if form.is_valid():
+                    form.save()
+                else:
+                    request.user.telegram_chat_id = chat_id
+                    request.user.save(update_fields=["telegram_chat_id"])
+                s = SiteSettings.load()
+                if not s.telegram_bot_token:
+                    messages.error(request, "Telegram bot is not configured yet. Ask an administrator to set the bot token in Settings.")
+                else:
+                    msg = OutboundMessage(
+                        channel=OutboundMessage.TELEGRAM,
+                        to=chat_id,
+                        subject=f"[{s.org_name}] Test alert",
+                        body=f"Hello {request.user.display_name}! This is a test alert from {s.org_name} DiagTrack. Your Telegram notifications are working."
+                    )
+                    try:
+                        notify.send_one(msg, s)
+                        messages.success(request, f"Test alert sent to Telegram chat ID {chat_id}. Check your Telegram app!")
+                    except Exception as exc:
+                        messages.error(request, f"The test could not be sent: {exc}")
             return redirect("profile")
         if form.is_valid():
             f = request.FILES.get("photo")

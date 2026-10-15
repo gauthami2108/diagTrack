@@ -11,7 +11,12 @@
   </div>
   <div class="field-row">{% include "_field.html" with f=form.first_name %}{% include "_field.html" with f=form.last_name %}</div>
   <div class="field-row">{% include "_field.html" with f=form.email %}{% include "_field.html" with f=form.mobile %}</div>
-  <div class="field-row">{% include "_field.html" with f=form.telegram_chat_id %}</div>
+  <div class="field-row" style="align-items: flex-end;">
+    {% include "_field.html" with f=form.telegram_chat_id %}
+    <div style="padding-bottom: 12px;">
+      <button class="btn" type="submit" name="test_telegram" value="1" formnovalidate>{% icon 'send' %} Test Telegram alert</button>
+    </div>
+  </div>
   <dl class="fields fields-quiet"><div><dt>User name</dt><dd>{{ request.user.username }}</dd></div><div><dt>Role</dt><dd>{{ request.user.role_label }}</dd></div>
     <div><dt>Centres</dt><dd>{{ request.user.centres.all|join:", "|default:"All" }}</dd></div>{% if request.user.departments.exists %}<div><dt>Departments</dt><dd>{{ request.user.departments.all|join:", " }}</dd></div>{% endif %}</dl>
   <div class="form-foot"><a class="btn" href="{% url 'password_change' %}">Change password</a><button class="btn btn-primary" type="submit">Save profile</button></div>

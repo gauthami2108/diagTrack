@@ -49,7 +49,7 @@ def notify(users, ticket, title, body="", urgent=False, exclude=None, kind="othe
         if not tpl:
             continue
         ctx = wording.context(ticket, title, body, s, user, link)
-        tg_id = getattr(user, "telegram_chat_id", "") or (s.telegram_default_chat_id if urgent else "")
+        tg_id = getattr(user, "telegram_chat_id", "") or s.telegram_default_chat_id
         queue(tpl, ctx, email=user.email, mobile=user.mobile, telegram_id=tg_id)
 
 
@@ -110,21 +110,43 @@ def _telegram_send(bot_token, chat_id, message):
     if not chat_id:
         raise ValueError("Telegram chat ID is empty.")
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = json.dumps({"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}).encode("utf-8")
-    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+
+    def _post(payload_dict):
+        data = json.dumps(payload_dict).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+        return urllib.request.urlopen(req, timeout=20)
+
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with _post({"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}) as resp:
             if resp.status >= 300:
                 raise ValueError(f"Telegram API answered {resp.status}")
     except urllib.error.HTTPError as exc:
-        if exc.code == 400:
-            payload_plain = json.dumps({"chat_id": chat_id, "text": message}).encode("utf-8")
-            req_plain = urllib.request.Request(url, data=payload_plain, headers={"Content-Type": "application/json"}, method="POST")
-            with urllib.request.urlopen(req_plain, timeout=20) as resp2:
-                if resp2.status >= 300:
-                    raise ValueError(f"Telegram API answered {resp2.status}")
-        else:
-            raise
+        err_body = ""
+        try:
+            err_body = exc.read().decode("utf-8")
+            err_desc = json.loads(err_body).get("description", "")
+        except Exception:
+            err_desc = ""
+
+        # If Markdown entity parsing failed, retry as plain text
+        if "can't parse entities" in err_desc.lower():
+            try:
+                with _post({"chat_id": chat_id, "text": message}) as resp2:
+                    if resp2.status >= 300:
+                        raise ValueError(f"Telegram API answered {resp2.status}")
+                    return
+            except urllib.error.HTTPError as exc2:
+                try:
+                    err_desc = json.loads(exc2.read().decode("utf-8")).get("description", "")
+                except Exception:
+                    pass
+
+        msg = err_desc or f"HTTP Error {exc.code}: {exc.reason}"
+        if "chat not found" in msg.lower():
+            msg += ". Make sure you have opened a chat with the bot in Telegram and clicked 'Start' (or sent /start)."
+        elif "bot can't initiate" in msg.lower():
+            msg += ". You must message the bot first (search its username and click 'Start')."
+        raise ValueError(f"Telegram error: {msg}")
 
 
 def send_one(msg, settings=None):

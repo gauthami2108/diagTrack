@@ -73,7 +73,7 @@
   </section>
 
   <section class="panel">
-    <header><h2>Telegram gateway</h2></header>
+    <header><h2>Telegram gateway</h2><button class="btn btn-s" name="test" value="telegram" formnovalidate>Send me a test Telegram</button></header>
     <p class="panel-sub">Send alerts through a Telegram bot. Create a bot using @BotFather on Telegram, paste its token here, and staff can add their Telegram chat ID in their profile.</p>
     <div class="field-row">{% include "_field.html" with f=form.telegram_bot_token %}{% include "_field.html" with f=form.telegram_default_chat_id %}</div>
   </section>

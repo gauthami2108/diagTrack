@@ -170,12 +170,11 @@ printer.
 | --- | --- |
 | In-app alerts (bell) | The bell at the top of every screen |
 | Email alerts | Emails for every alert. Needs the mail server below |
-| SMS alerts | Out of the box, only for urgent alerts. Needs an SMS provider and internet |
-| WhatsApp alerts | Out of the box, only for urgent alerts. Needs a WhatsApp Business provider and internet |
+| SMS alerts | Instant SMS text alerts. Needs an SMS provider and internet |
+| WhatsApp alerts | Instant WhatsApp alerts. Needs a WhatsApp Business provider and internet |
 | Telegram alerts | Instant messages sent via Telegram bot to individual users or default group |
 
-These switches turn a whole channel on or off. Which events use each channel, and what the messages say, are set
-under Message templates (section 8).
+These switches turn a whole channel on or off. By default, all enabled communication channels send alerts for every ticket update (configured under Message templates in section 8).
 | Alert the area manager on every new ticket | When off, area managers hear only about P1 tickets and escalations |
 | Alert centre and area managers when a ticket is closed | Managers see each closure at their centres |
 | Pop-up messages on screen | New tickets, closures, escalations, mentions and AMC warnings slide in at the bottom right of the screen |
@@ -185,12 +184,19 @@ Who gets which alert:
 | Event | Who is alerted |
 | --- | --- |
 | New ticket | The owner, or the department head if nobody is assigned yet; the area manager. For P1 also the department head and centre manager |
-| Assigned to someone | The new owner |
-| Reply | The requester, the owner (or the head if unassigned) |
-| Internal note | The owner (or the head if unassigned) |
+| Assigned / Reassigned | The newly assigned owner and the ticket requester |
+| Work started / resumed | The ticket requester |
+| On hold | The ticket requester |
+| Reply (public comment) | The requester, the owner (or the head if unassigned) |
+| Internal note | The owner and the department head |
 | @mention | The person mentioned, if they can see the ticket |
-| Resolved | The requester, asked to confirm |
-| Closed | The owner, department head, and centre and area managers |
+| Resolved | The requester (asked to confirm) and the owner |
+| Closed | The owner, department head, requester, and centre and area managers |
+| Reopened | The owner, department head, and requester |
+| Cancelled | The owner and requester |
+| Transferred | The new department head / new owner, and the requester |
+| Priority changed | The owner, department head, and requester |
+| Vendor call / visit | The owner and department head |
 | Escalation | As set in the escalation rules |
 | AMC ending | Equipment department head and administrators |
 
@@ -213,17 +219,17 @@ account; the provider guides you through both.
 
 **Telegram.** DiagTrack sends alerts via a Telegram bot:
 1. Message `@BotFather` on Telegram to create a bot and copy the bot token.
-2. In Settings, enter the **Telegram bot token**.
-3. Enter the **Default Chat ID** (the group chat ID or default recipient chat ID; for groups this typically begins with `-100`).
+2. In Settings, paste the **Telegram bot token** (saved visibly so you can verify it anytime).
+3. Enter the **Default Chat ID** (the group chat ID or default recipient chat ID; for groups this typically begins with `-100`). If an individual user doesn't have a personal Chat ID in their profile, alerts route directly to this group/channel.
 4. Turn on the **Telegram alerts** switch, save, and press **Send me a test Telegram**.
-5. Individual users can also specify their personal Telegram Chat ID in **My profile** to receive alerts directly on Telegram.
+5. *Note on Telegram anti-spam policy:* A Telegram bot cannot message a user or group until the user opens the bot in Telegram and clicks **Start** (or sends `/start`). For group chats, add the bot as a group member first.
+6. Individual users can also specify their personal Telegram Chat ID in **My profile** and test delivery using the **Test Telegram alert** button.
 
 ## 8. Message templates
 
 *Side menu, Message templates.* One page per event: New ticket, Assigned, Work started, On hold, Resolved, Closed,
 Reopened, Cancelled, Transferred, Priority changed, New reply, Internal note, Mentioned, Escalation, AMC ending, and
-Anything else. The list on the left shows for each event whether email, SMS, WhatsApp and Telegram go out: dark blue is
-**Always**, amber is **Only urgent**, outline is **Never**. A blue dot after a name means its wording was changed.
+Anything else. By default, every active channel (Email, Telegram, SMS, WhatsApp) is set to **Always** send for ticket events so no updates are missed.
 
 On an event's page there is a tab for each channel:
 

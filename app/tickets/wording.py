@@ -123,17 +123,17 @@ _AMC_TELEGRAM = """*{title}*
 
 def default(event, channel):
     """Built-in wording: (send, subject, body)."""
+    if event == "signinlock" and channel != EMAIL:
+        return ("never", "", "")
     if channel == EMAIL:
         body = _AMC_EMAIL if event == "amc" else _PLAIN_EMAIL if event in ("backupfail", "backuplate", "signinlock") else _TICKET_EMAIL
         return ("always", "[{org}] {title}", body)
-    send = "always" if event in ("escalation", "backupfail", "backuplate") else "urgent"
-    if event == "signinlock" and channel != EMAIL:
-        send = "never"  # by email only: a burst of guessing should not become a burst of SMS
-    if channel == SMS:
-        return (send, "", _SMS)
     if channel == TELEGRAM:
-        return (send, "", _AMC_TELEGRAM if event in ("amc", "backupfail", "backuplate", "signinlock") else _TELEGRAM)
-    return (send, "", _AMC_WHATSAPP if event in ("amc", "backupfail", "backuplate", "signinlock") else _WHATSAPP)
+        body = _AMC_TELEGRAM if event in ("amc", "backupfail", "backuplate", "signinlock") else _TELEGRAM
+        return ("always", "", body)
+    if channel == SMS:
+        return ("always", "", _SMS)
+    return ("always", "", _AMC_WHATSAPP if event in ("amc", "backupfail", "backuplate", "signinlock") else _WHATSAPP)
 
 
 def get(event, channel):

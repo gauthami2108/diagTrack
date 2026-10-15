@@ -267,6 +267,9 @@ def assign(t, actor, assignee, check=True):
     log(t, actor, f"Assigned to {assignee.display_name}", "assignee", old, assignee.display_name)
     nt.notify([assignee], t, f"Ticket assigned to you: {t.number} {t.priority}: {t.subject}",
               f"{t.centre.name}, {t.category.name}.", t.priority == Priority.P1, exclude=actor, kind="assigned")
+    if actor.pk != t.requester_id and assignee.pk != t.requester_id:
+        nt.notify([t.requester], t, f"{t.number} assigned to {assignee.display_name}",
+                  f"Your ticket has been assigned to {assignee.display_name}.", t.priority == Priority.P1, exclude=actor, kind="assigned")
 
 
 @transaction.atomic
@@ -304,6 +307,9 @@ def resume(t, actor):
     t.status, t.hold_reason = Status.IN_PROGRESS, ""
     t.save()
     log(t, actor, "Resumed work", "status", "On hold", "In progress")
+    nt.notify([t.requester], t, f"Work resumed on {t.number}",
+              f"{(t.assignee or actor).display_name} has resumed work on: {t.subject}",
+              urgent=t.priority == Priority.P1, exclude=actor, kind="started")
 
 
 def _resume_clock(t, now=None):
@@ -333,7 +339,10 @@ def resolve(t, actor, note, downtime_end=None):
     t.save()
     log(t, actor, "Resolved the ticket", "status", "In progress", "Resolved", note.strip())
     s = SiteSettings.load()
-    nt.notify([t.requester], t, f"{t.number} is resolved. Please confirm.",
+    who = [t.requester]
+    if t.assignee and actor.pk != t.assignee_id:
+        who.append(t.assignee)
+    nt.notify(who, t, f"{t.number} is resolved. Please confirm.",
               f"{note.strip()[:200]} It closes by itself in {s.auto_close_days} days.", exclude=actor,
               kind="resolved")
 
@@ -352,7 +361,9 @@ def close(t, actor, rating=None, auto=False):
     people = [t.assignee, t.department.head]
     if s.managers_on_close:
         people += nt.users_with_role(User.CENTRE_MANAGER, t.centre) + nt.users_with_role(User.AREA_MANAGER, t.centre)
-    if auto:
+    if not auto and actor.pk != t.requester_id:
+        people.append(t.requester)
+    elif auto:
         people.append(t.requester)
     how = "closed automatically" if auto else "confirmed and closed"
     detail = f"{t.centre.name}, {t.department.name}. " + (f"Rated {t.rating} of 5." if t.rating else "")
@@ -374,7 +385,10 @@ def reopen(t, actor, reason):
     t.reopen_count += 1
     t.save()
     log(t, actor, "Reopened the ticket", "status", old, t.get_status_display(), reason.strip())
-    nt.notify([t.assignee, t.department.head], t, f"{t.number} was reopened", reason.strip()[:300],
+    who = [t.assignee, t.department.head]
+    if actor.pk != t.requester_id:
+        who.append(t.requester)
+    nt.notify([u for u in who if u], t, f"{t.number} was reopened", reason.strip()[:300],
               t.priority == Priority.P1, exclude=actor, kind="reopened")
 
 
@@ -436,8 +450,11 @@ def change_priority(t, actor, priority, reason):
     t.save()
     EscalationLog.objects.filter(ticket=t).delete()
     log(t, actor, f"Changed priority from {old} to {priority}", "priority", old, priority, reason.strip())
-    nt.notify([t.assignee, t.department.head], t, f"{t.number} priority is now {priority}", reason.strip()[:300],
-              priority == Priority.P1, exclude=actor, kind="priority")
+    who = [t.assignee, t.department.head]
+    if actor.pk != t.requester_id:
+        who.append(t.requester)
+    nt.notify([u for u in who if u], t, f"{t.number} priority is now {priority}", reason.strip()[:300],
+              urgent=priority == Priority.P1, exclude=actor, kind="priority")
 
 
 @transaction.atomic
@@ -457,10 +474,11 @@ def add_comment(t, actor, body, internal=False, files=()):
         who.append(t.requester)
     label = "Internal note" if internal else "New reply"
     mentioned = mentioned_users(body, t, internal)
+    urgent = t.priority == Priority.P1
     nt.notify([u for u in who if u and u not in mentioned], t, f"{label} on {t.number} from {actor.display_name}",
-              plain(body)[:300], exclude=actor, kind="note" if internal else "reply")
+              plain(body)[:300], urgent=urgent, exclude=actor, kind="note" if internal else "reply")
     nt.notify(mentioned, t, f"{actor.display_name} mentioned you on {t.number}", plain(body)[:300],
-              exclude=actor, kind="mention")
+              urgent=urgent, exclude=actor, kind="mention")
     return c, skipped
 
 
@@ -525,6 +543,9 @@ def log_vendor_call(t, actor, vendor, reference="", called_at=None, notes=""):
     log(t, actor, f"Called {vendor.name}" + (f", complaint number {call.reference}" if call.reference else ""),
         "vendor", "", vendor.name, notes.strip())
     t.save()
+    targets = [u for u in (t.assignee, t.department.head) if u]
+    nt.notify(targets, t, f"Vendor call logged for {t.number}: {vendor.name}",
+              notes.strip() or f"Complaint number: {call.reference}", urgent=t.priority == Priority.P1, exclude=actor, kind="other")
     return call
 
 
@@ -545,6 +566,9 @@ def vendor_attended(call, actor, engineer="", attended_at=None, notes=""):
     log(t, actor, f"{call.vendor.name} engineer attended after {_span(call.response_seconds())}",
         "vendor", "", call.engineer, notes.strip())
     t.save()
+    targets = [u for u in (t.assignee, t.department.head) if u]
+    nt.notify(targets, t, f"Engineer attended {t.number}: {call.vendor.name}",
+              notes.strip() or f"Attended by {call.engineer}", urgent=t.priority == Priority.P1, exclude=actor, kind="other")
 
 
 def amc_checks(today=None):

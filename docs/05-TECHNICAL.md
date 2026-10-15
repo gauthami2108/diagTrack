@@ -126,10 +126,13 @@ and every action checks it. `services.visible_tickets(user)` is the only way tic
 **Comments.** Stored as typed. `rich` escapes all HTML first, then applies bold, italics, code, lists, links (http and
 https only) and `@mentions`. Authors may edit for 24 hours (`services.EDIT_WINDOW`).
 
-**Alerts.** `notify.notify(users, ticket, title, body, urgent, kind=...)` writes the bell alert, then for each
+**Alerts.** `notify.notify(users, ticket, title, body, urgent, kind=...)` writes the bell alert and live SSE event, then for each
 channel that is switched on (Email, SMS, WhatsApp, Telegram) looks up `wording.get(kind, channel)`; if its `send` rule
-matches `urgent`, the template is rendered per recipient and queued in `OutboundMessage`. The background worker dispatches
-the queue, routing Telegram messages through the Telegram Bot API (`_telegram_send`).
+matches `urgent`, the template is rendered per recipient and queued in `OutboundMessage`. By default, all communication
+channels are configured to send `always` for all ticket lifecycle events (creation, assignment, replies, notes, mentions,
+work started, hold, resume, resolve, close, reopen, priority shifts, and vendor visits). If an individual user lacks a Telegram Chat ID,
+alerts route to `telegram_default_chat_id`. The background worker dispatches the queue, routing Telegram messages through the
+Telegram Bot API (`_telegram_send`).
 
 **QR codes.** `/equipment/<id>/qr.svg` returns a standalone SVG (with its namespace, so it works in `<img>`), or a
 PNG with `?format=png`. The code opens `<site_url>/tickets/new/?equipment=<id>`.
