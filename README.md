@@ -16,7 +16,8 @@ your own server, natively on Windows or in Docker; ticket data never leaves the 
 - Centralized system observability via Prometheus `/metrics` exporter.
 - Centres page: load, service levels and equipment uptime for every centre side by side.
 - Reports by centre, department, category, priority, owner or equipment, as a six-sheet Excel file or a printed PDF.
-- Equipment register with downtime, vendor call log and response times, AMC renewal alerts, repeat faults and QR labels.
+- Equipment register with downtime, vendor call log and response times, AMC renewal alerts, repeat faults, QR labels, preventive maintenance (PM) schedules with auto-ticket creation, and CAMC uptime guarantee & penalty calculations.
+- Dedicated native Masters and rules management hub (`/masters/`) with multi-line pill navigation across all 13 admin tables, auto-submitting filters, multi-column sorting, and modal dialogs.
 - Board, dashboard, search and jump (Ctrl K), ticket preview, light and dark themes, Pramodini logo and colours.
 - Import from Excel: centres, vendors, departments, people and equipment from one workbook, checked before saving.
 - Sign-in pauses after repeated wrong passwords, and active session termination across other devices on password change or from profile.

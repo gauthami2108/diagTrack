@@ -199,6 +199,19 @@ class Equipment(models.Model):
     active = models.BooleanField(default=True)
     amc_alert_for = models.DateField(null=True, blank=True, editable=False)
     amc_alert_stage = models.PositiveSmallIntegerField(default=0, editable=False)
+    contract_start = models.DateField("contract start date", null=True, blank=True)
+    uptime_guarantee_percent = models.DecimalField(
+        "uptime guarantee %", max_digits=5, decimal_places=2, default=95.0,
+        help_text="Contractual uptime guarantee (e.g. 95.00% or 98.00%).",
+    )
+    penalty_rate_per_day = models.DecimalField(
+        "penalty per day (₹)", max_digits=10, decimal_places=2, default=0.00,
+        help_text="Fixed deduction per day of excess downtime beyond allowable limits.",
+    )
+    annual_camc_cost = models.DecimalField(
+        "annual CAMC cost (₹)", max_digits=12, decimal_places=2, default=0.00,
+        help_text="Annual contract value for pro-rata penalty calculation if daily penalty is not set.",
+    )
 
     class Meta:
         ordering = ["centre__name", "name"]
@@ -206,6 +219,49 @@ class Equipment(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.centre.code})"
+
+
+class PreventiveMaintenance(models.Model):
+    FREQUENCY_CHOICES = [
+        (1, "Monthly (every month)"),
+        (3, "Quarterly (every 3 months)"),
+        (6, "Half-yearly (every 6 months)"),
+        (12, "Annual (every 12 months)"),
+    ]
+    equipment = models.ForeignKey(Equipment, on_delete=models.CASCADE, related_name="pm_schedules")
+    title = models.CharField(max_length=160, help_text="For example: Quarterly Calibration & Quality Assurance")
+    frequency_months = models.PositiveSmallIntegerField("frequency", choices=FREQUENCY_CHOICES, default=3)
+    last_performed_at = models.DateField("last completed", null=True, blank=True)
+    next_due_date = models.DateField("next due date", help_text="Target date for next maintenance check.")
+    advance_notice_days = models.PositiveSmallIntegerField(
+        "advance notice (days)", default=7, help_text="Auto-raise a maintenance ticket this many days prior to due date."
+    )
+    assigned_to = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="pm_schedules",
+        help_text="Optional designated engineer/agent."
+    )
+    last_ticket = models.ForeignKey(
+        "Ticket", null=True, blank=True, on_delete=models.SET_NULL, related_name="pm_source",
+        help_text="The latest ticket generated or linked to this PM schedule."
+    )
+    active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True, help_text="SOP checklist, service points, or guidelines.")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["next_due_date", "equipment__name"]
+        verbose_name = "preventive maintenance schedule"
+
+    def __str__(self):
+        return f"{self.equipment.name} - {self.title} (Due: {self.next_due_date})"
+
+    @property
+    def is_overdue(self):
+        return self.next_due_date < timezone.localdate()
+
+    @property
+    def days_until_due(self):
+        return (self.next_due_date - timezone.localdate()).days
 
 
 class SlaPolicy(models.Model):
@@ -289,6 +345,7 @@ class Ticket(models.Model):
     subject = models.CharField(max_length=160)
     description = models.TextField()
     equipment = models.ForeignKey(Equipment, null=True, blank=True, on_delete=models.SET_NULL, related_name="tickets")
+    pm_schedule = models.ForeignKey("PreventiveMaintenance", null=True, blank=True, on_delete=models.SET_NULL, related_name="tickets")
     patient_impact = models.BooleanField(default=False)
     extra = models.JSONField(default=dict, blank=True)
 

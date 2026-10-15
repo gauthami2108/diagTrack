@@ -1,0 +1,1070 @@
+{% extends "base.html" %}{% load dt static %}
+{% block title %}Masters and rules{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Masters and rules</h1>
+    <p class="sub">Hospital departments, ticket categories, SLA response times, escalation rules, equipment, and access control.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="{% url 'import_page' %}">{% icon 'upload' %}Import from Excel</a>
+  </div>
+</div>
+
+<div class="tabs tabs-pills" role="tablist">
+  <a role="tab" href="?tab=centres" {% if tab == 'centres' %}aria-selected="true"{% endif %}>Centres</a>
+  <a role="tab" href="?tab=departments" {% if tab == 'departments' %}aria-selected="true"{% endif %}>Departments</a>
+  <a role="tab" href="?tab=categories" {% if tab == 'categories' %}aria-selected="true"{% endif %}>Categories &amp; questions</a>
+  <a role="tab" href="?tab=sla" {% if tab == 'sla' %}aria-selected="true"{% endif %}>SLA policies</a>
+  <a role="tab" href="?tab=escalation" {% if tab == 'escalation' %}aria-selected="true"{% endif %}>Escalation rules</a>
+  <a role="tab" href="?tab=users" {% if tab == 'users' %}aria-selected="true"{% endif %}>Users &amp; access</a>
+  <a role="tab" href="?tab=locks" {% if tab == 'locks' %}aria-selected="true"{% endif %}>Sign-in locks</a>
+  <a role="tab" href="?tab=vendors" {% if tab == 'vendors' %}aria-selected="true"{% endif %}>Vendors</a>
+  <a role="tab" href="?tab=equipment" {% if tab == 'equipment' %}aria-selected="true"{% endif %}>Equipment</a>
+  <a role="tab" href="?tab=pm" {% if tab == 'pm' %}aria-selected="true"{% endif %}>Preventive maintenance</a>
+  <a role="tab" href="?tab=alerts" {% if tab == 'alerts' %}aria-selected="true"{% endif %}>Sent alerts</a>
+  <a role="tab" href="?tab=history" {% if tab == 'history' %}aria-selected="true"{% endif %}>Ticket history</a>
+  <a role="tab" href="?tab=vendor_calls" {% if tab == 'vendor_calls' %}aria-selected="true"{% endif %}>Vendor calls</a>
+</div>
+
+{% if tab == 'centres' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="centres">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search centres..." aria-label="Search centres">
+    <select name="status" aria-label="Status">
+      <option value="">All statuses</option>
+      <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active only</option>
+      <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Closed / Inactive</option>
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Name (A-Z)</option>
+      <option value="name_desc" {% if sort == 'name_desc' %}selected{% endif %}>Sort: Name (Z-A)</option>
+      <option value="code" {% if sort == 'code' %}selected{% endif %}>Sort: Short code</option>
+      <option value="tickets" {% if sort == 'tickets' %}selected{% endif %}>Sort: Most tickets</option>
+      <option value="equipment" {% if sort == 'equipment' %}selected{% endif %}>Sort: Most equipment</option>
+      <option value="city" {% if sort == 'city' %}selected{% endif %}>Sort: City</option>
+    </select>
+    {% if q or status_filter or sort %}<a class="link-quiet" href="?tab=centres">Clear</a>{% endif %}
+  </form>
+  <button type="button" class="btn btn-primary" data-open="dlg-add-centre">{% icon 'plus' %}Add centre</button>
+</div>
+
+{% if centres %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Short Code</th><th>Centre Name</th><th>City</th><th class="num-col">Tickets Raised</th><th class="num-col">Equipment</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for c in centres %}
+  <tr>
+    <td data-l="Code"><span class="loz loz-strong" style="font-family:var(--font-mono); font-size:0.95rem;">{{ c.code }}</span></td>
+    <td class="cell-title"><b>{{ c.name }}</b></td>
+    <td data-l="City">{{ c.city|default:"-" }}</td>
+    <td data-l="Tickets" class="num-col"><b>{{ c.ticket_count }}</b></td>
+    <td data-l="Equipment" class="num-col"><b>{{ c.equipment_count }}</b></td>
+    <td data-l="Status">{% if c.active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Closed / Inactive</span>{% endif %}</td>
+    <td style="text-align:right;">
+      <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-centre"
+              data-set-id="{{ c.pk }}" data-set-name="{{ c.name }}" data-set-code="{{ c.code }}"
+              data-set-city="{{ c.city }}" data-set-has_tickets="{% if c.ticket_count %}1{% endif %}"
+              data-set-active="{% if c.active %}on{% endif %}">Edit</button>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'building' %}<h2>No centres match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% elif tab == 'departments' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="departments">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search departments..." aria-label="Search departments">
+    <select name="status" aria-label="Status">
+      <option value="">All statuses</option>
+      <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active only</option>
+      <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+    </select>
+    <select name="mode" aria-label="Assignment mode">
+      <option value="">All assignment modes</option>
+      <option value="round_robin" {% if mode_filter == 'round_robin' %}selected{% endif %}>Round robin</option>
+      <option value="least_loaded" {% if mode_filter == 'least_loaded' %}selected{% endif %}>Least loaded</option>
+      <option value="manual" {% if mode_filter == 'manual' %}selected{% endif %}>Manual</option>
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Name (A-Z)</option>
+      <option value="name_desc" {% if sort == 'name_desc' %}selected{% endif %}>Sort: Name (Z-A)</option>
+      <option value="agents" {% if sort == 'agents' %}selected{% endif %}>Sort: Active agents</option>
+      <option value="mode" {% if sort == 'mode' %}selected{% endif %}>Sort: Assignment mode</option>
+    </select>
+    {% if q or status_filter or mode_filter or sort %}<a class="link-quiet" href="?tab=departments">Clear</a>{% endif %}
+  </form>
+  <button type="button" class="btn btn-primary" data-open="dlg-add-dept">{% icon 'plus' %}Add department</button>
+</div>
+
+{% if departments %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Department</th><th>Head</th><th>Assignment Mode</th><th>Equipment Desk</th><th class="num-col">Active Agents</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for d in departments %}
+  <tr>
+    <td class="cell-title"><b>{{ d.name }}</b></td>
+    <td data-l="Head">{% if d.head %}{% avatar d.head 's' %} {{ d.head.display_name }}{% else %}<span class="muted">None assigned</span>{% endif %}</td>
+    <td data-l="Mode">
+      {% if d.assignment_mode == 'round_robin' %}<span class="loz">Round robin</span>
+      {% elif d.assignment_mode == 'least_loaded' %}<span class="loz loz-strong">Least loaded</span>
+      {% else %}<span class="loz loz-internal">Manual</span>{% endif %}
+    </td>
+    <td data-l="Equipment Desk">{% if d.handles_equipment %}<span class="status status-up">Receives equipment tickets</span>{% else %}<span class="muted">-</span>{% endif %}</td>
+    <td data-l="Agents" class="num-col"><b>{{ d.agent_count }}</b></td>
+    <td data-l="Status">{% if d.active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Inactive</span>{% endif %}</td>
+    <td style="text-align:right;">
+      <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-dept"
+              data-set-id="{{ d.pk }}" data-set-name="{{ d.name }}" data-set-head="{{ d.head_id|default:'' }}"
+              data-set-mode="{{ d.assignment_mode }}" data-set-handles_equipment="{% if d.handles_equipment %}on{% endif %}"
+              data-set-active="{% if d.active %}on{% endif %}">Edit</button>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'users' %}<h2>No departments match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% elif tab == 'categories' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="categories">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search categories..." aria-label="Search categories">
+    <select name="department" aria-label="Department">
+      <option value="">All departments</option>
+      {% for d in departments_all %}<option value="{{ d.pk }}" {% if dept_filter == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+    </select>
+    <select name="priority" aria-label="Default priority">
+      <option value="">All priorities</option>
+      {% for k, l in priorities %}<option value="{{ k }}" {% if priority_filter == k %}selected{% endif %}>{{ l }}</option>{% endfor %}
+    </select>
+    <select name="status" aria-label="Status">
+      <option value="">All statuses</option>
+      <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+      <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Department &amp; Name</option>
+      <option value="name_desc" {% if sort == 'name_desc' %}selected{% endif %}>Sort: Name (Z-A)</option>
+      <option value="priority" {% if sort == 'priority' %}selected{% endif %}>Sort: Default priority</option>
+    </select>
+    {% if q or dept_filter or priority_filter or status_filter or sort %}<a class="link-quiet" href="?tab=categories">Clear</a>{% endif %}
+  </form>
+  <button type="button" class="btn btn-primary" data-open="dlg-add-cat">{% icon 'plus' %}Add category</button>
+</div>
+
+{% if categories %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Category</th><th>Department</th><th>Default Priority</th><th>Asks Equipment</th><th>Custom Questions</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for c in categories %}
+  <tr>
+    <td class="cell-title"><b>{{ c.name }}</b></td>
+    <td data-l="Department">{{ c.department.name }}</td>
+    <td data-l="Priority"><span class="prio prio-{{ c.default_priority }}">{{ c.default_priority }}</span> {{ c.get_default_priority_display|slice:"3:" }}</td>
+    <td data-l="Equipment">{% if c.asks_equipment %}<span class="status status-up">Yes</span>{% else %}<span class="muted">No</span>{% endif %}</td>
+    <td data-l="Questions">
+      {% if c.fields.all %}
+        <ul style="margin:0; padding-left:1rem; font-size:0.85rem;">
+          {% for f in c.fields.all %}
+          <li>{{ f.label }} <small class="muted">({{ f.get_kind_display }}{% if f.required %}, required{% endif %})</small></li>
+          {% endfor %}
+        </ul>
+      {% else %}<span class="muted">None</span>{% endif %}
+      <div style="margin-top:0.25rem;"><button type="button" class="link-btn" data-open="dlg-add-field" data-set-category_id="{{ c.pk }}" data-show-category="{{ c.name }}">+ Add question</button></div>
+    </td>
+    <td data-l="Status">{% if c.active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Inactive</span>{% endif %}</td>
+    <td style="text-align:right;">
+      <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-cat"
+              data-set-id="{{ c.pk }}" data-set-name="{{ c.name }}" data-set-priority="{{ c.default_priority }}"
+              data-set-asks_equipment="{% if c.asks_equipment %}on{% endif %}" data-set-active="{% if c.active %}on{% endif %}">Edit</button>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'tag' %}<h2>No categories match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% elif tab == 'sla' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="sla">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search SLA..." aria-label="Search SLA">
+    <select name="department" aria-label="Department">
+      <option value="">All departments</option>
+      <option value="default" {% if dept_filter == 'default' %}selected{% endif %}>Global Default (All)</option>
+      {% for d in departments_all %}<option value="{{ d.pk }}" {% if dept_filter == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+    </select>
+    <select name="priority" aria-label="Priority">
+      <option value="">All priorities</option>
+      {% for k, l in priorities %}<option value="{{ k }}" {% if priority_filter == k %}selected{% endif %}>{{ l }}</option>{% endfor %}
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Priority</option>
+      <option value="response" {% if sort == 'response' %}selected{% endif %}>Sort: Shortest response time</option>
+      <option value="resolution" {% if sort == 'resolution' %}selected{% endif %}>Sort: Shortest resolution time</option>
+    </select>
+    {% if q or dept_filter or priority_filter or sort %}<a class="link-quiet" href="?tab=sla">Clear</a>{% endif %}
+  </form>
+  <button type="button" class="btn btn-primary" data-open="dlg-edit-sla">{% icon 'clock' %}Configure SLA</button>
+</div>
+
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Department</th><th>Priority</th><th>Respond Within</th><th>Resolve Within</th><th></th></tr></thead>
+  <tbody>
+  {% for s in sla_policies %}
+  <tr>
+    <td class="cell-title"><b>{{ s.department.name|default:"All departments (Default)" }}</b></td>
+    <td data-l="Priority"><span class="prio prio-{{ s.priority }}">{{ s.priority }}</span></td>
+    <td data-l="Response"><b>{{ s.response_minutes }} min</b> <small class="muted">({% widthratio s.response_minutes 60 1 %}h)</small></td>
+    <td data-l="Resolution"><b>{{ s.resolution_minutes }} min</b> <small class="muted">({% widthratio s.resolution_minutes 60 1 %}h)</small></td>
+    <td style="text-align:right;">
+      <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-sla"
+              data-set-department="{{ s.department_id|default:'' }}" data-set-priority="{{ s.priority }}"
+              data-set-response_minutes="{{ s.response_minutes }}" data-set-resolution_minutes="{{ s.resolution_minutes }}">Edit</button>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5" class="empty">Using system built-in defaults (P1: 15m/4h, P2: 30m/8h, P3: 2h/24h, P4: 4h/3d). Click Configure SLA to customize.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+{% elif tab == 'escalation' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="escalation">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search rules..." aria-label="Search rules">
+    <select name="basis" aria-label="Clock basis">
+      <option value="">All clock bases</option>
+      <option value="resolution" {% if basis_filter == 'resolution' %}selected{% endif %}>Resolution time</option>
+      <option value="response" {% if basis_filter == 'response' %}selected{% endif %}>Response time</option>
+    </select>
+    <select name="status" aria-label="Status">
+      <option value="">All states</option>
+      <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active only</option>
+      <option value="disabled" {% if status_filter == 'disabled' %}selected{% endif %}>Disabled</option>
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Threshold % (Lowest first)</option>
+      <option value="percent_desc" {% if sort == 'percent_desc' %}selected{% endif %}>Sort: Threshold % (Highest first)</option>
+      <option value="name" {% if sort == 'name' %}selected{% endif %}>Sort: Rule name (A-Z)</option>
+      <option value="basis" {% if sort == 'basis' %}selected{% endif %}>Sort: Clock basis</option>
+    </select>
+    {% if q or basis_filter or status_filter or sort %}<a class="link-quiet" href="?tab=escalation">Clear</a>{% endif %}
+  </form>
+  <button type="button" class="btn btn-primary" data-open="dlg-add-rule">{% icon 'plus' %}Add escalation rule</button>
+</div>
+
+{% if escalation_rules %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Rule Name</th><th>Basis</th><th>Threshold</th><th>Priorities</th><th>Alerted Roles</th><th>State</th><th></th></tr></thead>
+  <tbody>
+  {% for r in escalation_rules %}
+  <tr>
+    <td class="cell-title"><b>{{ r.name }}</b></td>
+    <td data-l="Basis">{{ r.get_basis_display }}</td>
+    <td data-l="Threshold"><b>{{ r.percent }}%</b> of clock</td>
+    <td data-l="Priorities">{{ r.priorities|default:"All priorities" }}</td>
+    <td data-l="Alerts">
+      {% if r.notify_assignee %}<span class="loz">Agent</span>{% endif %}
+      {% if r.notify_dept_head %}<span class="loz loz-strong">Dept Head</span>{% endif %}
+      {% if r.notify_centre_manager %}<span class="loz">Centre Mgr</span>{% endif %}
+      {% if r.notify_area_manager %}<span class="loz">Area Mgr</span>{% endif %}
+    </td>
+    <td data-l="State">{% if r.active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Disabled</span>{% endif %}</td>
+    <td style="text-align:right;">
+      <form method="post" action="{% url 'masters_action' 'escalation' %}" style="display:inline;">{% csrf_token %}
+        <input type="hidden" name="do" value="toggle">
+        <input type="hidden" name="id" value="{{ r.pk }}">
+        <button type="submit" class="btn btn-s btn-soft">{% if r.active %}Disable{% else %}Enable{% endif %}</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'triangle-alert' %}<h2>No escalation rules match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% elif tab == 'users' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="users">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search staff name, email, mobile..." aria-label="Search users">
+    <select name="role" aria-label="Role">
+      <option value="">All roles</option>
+      {% for k, l in roles %}<option value="{{ k }}" {% if role_filter == k %}selected{% endif %}>{{ l }}</option>{% endfor %}
+    </select>
+    <select name="centre" aria-label="Centre">
+      <option value="">All centres</option>
+      {% for c in centres_all %}<option value="{{ c.pk }}" {% if centre_filter == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+    <select name="department" aria-label="Department">
+      <option value="">All departments</option>
+      {% for d in departments_all %}<option value="{{ d.pk }}" {% if dept_filter == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+    </select>
+    <select name="status" aria-label="Status">
+      <option value="">All statuses</option>
+      <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+      <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Role</option>
+      <option value="name" {% if sort == 'name' %}selected{% endif %}>Sort: Name (A-Z)</option>
+      <option value="username" {% if sort == 'username' %}selected{% endif %}>Sort: Username</option>
+    </select>
+    {% if q or role_filter or centre_filter or dept_filter or status_filter or sort %}<a class="link-quiet" href="?tab=users">Clear</a>{% endif %}
+  </form>
+  <div style="display:flex; gap:0.5rem;">
+    <button type="button" class="btn btn-primary" data-open="dlg-add-user">{% icon 'plus' %}Add user</button>
+    <a class="btn" href="{% url 'import_page' %}">{% icon 'upload' %}Bulk import</a>
+  </div>
+</div>
+
+{% if staff %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>User</th><th>Role</th><th>Centres Covered</th><th>Teams</th><th>Contact</th><th>Sign-in</th><th>State</th><th></th></tr></thead>
+  <tbody>
+  {% for u in staff %}
+  <tr>
+    <td class="cell-title">
+      <div style="display:flex; align-items:center; gap:0.5rem;">
+        {% avatar u 's' %}
+        <div><b>{{ u.display_name }}</b><br><small class="muted">@{{ u.username }}</small></div>
+      </div>
+    </td>
+    <td data-l="Role"><span class="loz loz-strong">{{ u.role_label }}</span></td>
+    <td data-l="Centres">
+      {% if u.centres.all %}
+        {% for c in u.centres.all %}<span class="loz">{{ c.code }}</span> {% endfor %}
+      {% else %}
+        <span class="muted">All centres</span>
+      {% endif %}
+    </td>
+    <td data-l="Teams">
+      {% if u.departments.all %}
+        {% for d in u.departments.all %}<span class="loz">{{ d.name }}</span> {% endfor %}
+      {% else %}<span class="muted">-</span>{% endif %}
+    </td>
+    <td data-l="Contact">
+      {% if u.email %}<div>{{ u.email }}</div>{% endif %}
+      {% if u.mobile %}<small>{{ u.mobile }}</small>{% endif %}
+      {% if u.telegram_chat_id %}<br><small class="status status-up">Telegram: {{ u.telegram_chat_id }}</small>{% endif %}
+    </td>
+    <td data-l="Sign-in">
+      {% if u.is_locked %}
+        <span class="bad-text"><b>Locked</b></span>
+        <form method="post" action="{% url 'masters_action' 'users' %}" style="display:inline; margin-left:4px;">{% csrf_token %}
+          <input type="hidden" name="do" value="unlock">
+          <input type="hidden" name="username" value="{{ u.username }}">
+          <button type="submit" class="btn btn-xs">Unlock</button>
+        </form>
+      {% else %}
+        <span class="muted">Open</span>
+      {% endif %}
+    </td>
+    <td data-l="State">{% if u.is_active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Inactive</span>{% endif %}</td>
+    <td style="text-align:right;">
+      {% if u.pk != request.user.pk %}
+      <form method="post" action="{% url 'masters_action' 'users' %}" style="display:inline;">{% csrf_token %}
+        <input type="hidden" name="do" value="toggle_active">
+        <input type="hidden" name="id" value="{{ u.pk }}">
+        <button type="submit" class="btn btn-s btn-soft">{% if u.is_active %}Deactivate{% else %}Activate{% endif %}</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'user' %}<h2>No users match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% elif tab == 'locks' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="locks">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search user or IP..." aria-label="Search locks">
+    <select name="status" aria-label="Status">
+      <option value="">All states</option>
+      <option value="paused" {% if status_filter == 'paused' %}selected{% endif %}>Sign-in paused only</option>
+      <option value="counting" {% if status_filter == 'counting' %}selected{% endif %}>Counting failures</option>
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Locked until</option>
+      <option value="failures" {% if sort == 'failures' %}selected{% endif %}>Sort: Most failures</option>
+      <option value="recent" {% if sort == 'recent' %}selected{% endif %}>Sort: Latest attempt</option>
+      <option value="first" {% if sort == 'first' %}selected{% endif %}>Sort: Earliest attempt</option>
+    </select>
+    {% if q or status_filter or sort %}<a class="link-quiet" href="?tab=locks">Clear</a>{% endif %}
+  </form>
+</div>
+
+{% if locks %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Target Account / Address</th><th class="num-col">Failed Attempts</th><th>First Failure</th><th>Locked Until</th><th>Status</th><th>Last IP Address</th><th></th></tr></thead>
+  <tbody>
+  {% for lock in locks %}
+  <tr>
+    <td class="cell-title"><b>{{ lock.who }}</b></td>
+    <td data-l="Failures" class="num-col"><b>{{ lock.failures }}</b></td>
+    <td data-l="First Failure">{{ lock.first_failure|date:"d M Y, H:i" }}</td>
+    <td data-l="Locked Until">{% if lock.locked_until %}{{ lock.locked_until|date:"d M Y, H:i" }}{% else %}-{% endif %}</td>
+    <td data-l="Status">
+      {% if lock.is_active_lock %}
+        <span class="bad-text"><b>Sign-in Paused</b></span>
+      {% else %}
+        <span class="muted">Counting failures</span>
+      {% endif %}
+    </td>
+    <td data-l="IP">{{ lock.last_address|default:"-" }}</td>
+    <td style="text-align:right;">
+      <form method="post" action="{% url 'masters_action' 'locks' %}" style="display:inline;">{% csrf_token %}
+        <input type="hidden" name="do" value="lift">
+        <input type="hidden" name="key" value="{{ lock.key }}">
+        <button type="submit" class="btn btn-s btn-soft">Lift lock</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'shield-check' %}<h2>No sign-in locks active</h2><p>All user accounts and client IP addresses are open with clean sign-in states.</p></div>
+{% endif %}
+
+{% elif tab == 'vendors' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="vendors">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search vendors..." aria-label="Search vendors">
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Name (A-Z)</option>
+      <option value="name_desc" {% if sort == 'name_desc' %}selected{% endif %}>Sort: Name (Z-A)</option>
+      <option value="machines" {% if sort == 'machines' %}selected{% endif %}>Sort: Most machines supported</option>
+    </select>
+    {% if q or sort %}<a class="link-quiet" href="?tab=vendors">Clear</a>{% endif %}
+  </form>
+  <button type="button" class="btn btn-primary" data-open="dlg-add-vendor">{% icon 'plus' %}Add vendor</button>
+</div>
+
+{% if vendors %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Vendor Company</th><th>Contact Person</th><th>Phone</th><th>Email</th><th class="num-col">Machines Supported</th><th>Notes</th></tr></thead>
+  <tbody>
+  {% for v in vendors %}
+  <tr>
+    <td class="cell-title"><b>{{ v.name }}</b></td>
+    <td data-l="Contact">{{ v.contact_person|default:"-" }}</td>
+    <td data-l="Phone">{{ v.phone|default:"-" }}</td>
+    <td data-l="Email">{{ v.email|default:"-" }}</td>
+    <td data-l="Machines" class="num-col"><b>{{ v.equipment_count }}</b></td>
+    <td data-l="Notes"><small class="muted">{{ v.notes|default:"-" }}</small></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'wrench' %}<h2>No vendors match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% elif tab == 'equipment' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="equipment">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search equipment..." aria-label="Search equipment">
+    <select name="centre" aria-label="Centre">
+      <option value="">All centres</option>
+      {% for c in centres_all %}<option value="{{ c.pk }}" {% if centre_filter == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+    <select name="vendor" aria-label="Vendor">
+      <option value="">All vendors</option>
+      {% for v in vendors_all %}<option value="{{ v.pk }}" {% if vendor_filter == v.pk|stringformat:"s" %}selected{% endif %}>{{ v.name }}</option>{% endfor %}
+    </select>
+    <select name="amc" aria-label="AMC status">
+      <option value="">All AMC statuses</option>
+      <option value="soon" {% if amc_filter == 'soon' %}selected{% endif %}>Expiring within 30 days</option>
+      <option value="expired" {% if amc_filter == 'expired' %}selected{% endif %}>Expired AMC</option>
+      <option value="active" {% if amc_filter == 'active' %}selected{% endif %}>Active AMC</option>
+    </select>
+    <select name="status" aria-label="Equipment status">
+      <option value="">All statuses</option>
+      <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active only</option>
+      <option value="retired" {% if status_filter == 'retired' %}selected{% endif %}>Retired</option>
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Centre &amp; Name</option>
+      <option value="name_desc" {% if sort == 'name_desc' %}selected{% endif %}>Sort: Name (Z-A)</option>
+      <option value="amc" {% if sort == 'amc' %}selected{% endif %}>Sort: AMC expiry soonest</option>
+      <option value="guarantee" {% if sort == 'guarantee' %}selected{% endif %}>Sort: Highest uptime SLA</option>
+      <option value="penalty" {% if sort == 'penalty' %}selected{% endif %}>Sort: Highest penalty rate</option>
+    </select>
+    {% if q or centre_filter or vendor_filter or amc_filter or status_filter or sort %}<a class="link-quiet" href="?tab=equipment">Clear</a>{% endif %}
+  </form>
+  <button type="button" class="btn btn-primary" data-open="dlg-add-equipment">{% icon 'plus' %}Add equipment</button>
+</div>
+
+{% if equipment %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Machine Name</th><th>Centre</th><th>Make &amp; Model</th><th>Serial No</th><th>Vendor</th><th>AMC Expiry</th><th class="num-col">Uptime SLA</th><th class="num-col">Daily Penalty</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for e in equipment %}
+  <tr>
+    <td class="cell-title"><a href="{% url 'equipment_detail' e.pk %}"><b>{{ e.name }}</b></a></td>
+    <td data-l="Centre"><span class="loz">{{ e.centre.code }}</span> {{ e.centre.name }}</td>
+    <td data-l="Model">{{ e.make }} {{ e.model }}</td>
+    <td data-l="Serial" style="font-family:var(--font-mono); font-size:0.85rem;">{{ e.serial_no|default:"-" }}</td>
+    <td data-l="Vendor">{{ e.vendor.name|default:"-" }}</td>
+    <td data-l="AMC">
+      {% if e.amc_expiry %}
+        {{ e.amc_expiry|date:"d M Y" }}
+        {% if e.amc_left is not None %}
+          <br><small class="{% if e.amc_left <= 0 %}bad-text{% elif e.amc_left <= 30 %}status-warn{% else %}muted{% endif %}">
+            {% if e.amc_left < 0 %}Expired {{ e.amc_left|abs }}d ago{% elif e.amc_left == 0 %}Expires today{% else %}{{ e.amc_left }} days left{% endif %}
+          </small>
+        {% endif %}
+      {% else %}<span class="muted">-</span>{% endif %}
+    </td>
+    <td data-l="Uptime SLA" class="num-col"><b>{{ e.uptime_guarantee_percent }}%</b></td>
+    <td data-l="Penalty" class="num-col">{% if e.penalty_rate_per_day %}₹{{ e.penalty_rate_per_day|floatformat:0 }}/d{% else %}<span class="muted">-</span>{% endif %}</td>
+    <td data-l="Status">{% if e.active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Retired</span>{% endif %}</td>
+    <td style="text-align:right;"><a class="btn btn-s btn-soft" href="{% url 'equipment_detail' e.pk %}">View</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'stethoscope' %}<h2>No equipment match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% elif tab == 'pm' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="pm">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search PM schedules..." aria-label="Search PM">
+    <select name="due_state" aria-label="Due status">
+      <option value="">All due states</option>
+      <option value="overdue" {% if due_state == 'overdue' %}selected{% endif %}>Overdue</option>
+      <option value="due_soon" {% if due_state == 'due_soon' %}selected{% endif %}>Due soon</option>
+      <option value="scheduled" {% if due_state == 'scheduled' %}selected{% endif %}>Scheduled</option>
+    </select>
+    <select name="frequency" aria-label="Frequency">
+      <option value="">All frequencies</option>
+      {% for m, label in frequency_choices %}<option value="{{ m }}" {% if freq_filter == m|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="centre" aria-label="Centre">
+      <option value="">All centres</option>
+      {% for c in centres_all %}<option value="{{ c.pk }}" {% if centre_filter == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Due date (Earliest first)</option>
+      <option value="due_desc" {% if sort == 'due_desc' %}selected{% endif %}>Sort: Due date (Latest first)</option>
+      <option value="machine" {% if sort == 'machine' %}selected{% endif %}>Sort: Machine name</option>
+      <option value="title" {% if sort == 'title' %}selected{% endif %}>Sort: Schedule title</option>
+    </select>
+    {% if q or due_state or freq_filter or centre_filter or sort %}<a class="link-quiet" href="?tab=pm">Clear</a>{% endif %}
+  </form>
+  <button type="button" class="btn btn-primary" data-open="dlg-add-pm">{% icon 'plus' %}Add PM schedule</button>
+</div>
+
+{% if pm_list %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Machine &amp; Centre</th><th>Schedule Title</th><th>Frequency</th><th>Target Due Date</th><th>Status</th><th>Assigned Engineer</th><th>Last Ticket</th><th>State</th></tr></thead>
+  <tbody>
+  {% for pm in pm_list %}
+  <tr>
+    <td class="cell-title">
+      <a href="{% url 'equipment_detail' pm.equipment.pk %}"><b>{{ pm.equipment.name }}</b></a><br>
+      <small class="muted"><span class="loz">{{ pm.equipment.centre.code }}</span> {{ pm.equipment.centre.name }}</small>
+    </td>
+    <td data-l="Title"><b>{{ pm.title }}</b>{% if pm.notes %}<br><small class="muted">{{ pm.notes|truncatewords:8 }}</small>{% endif %}</td>
+    <td data-l="Frequency"><span class="loz">{{ pm.get_frequency_months_display }}</span></td>
+    <td data-l="Due Date"><b>{{ pm.next_due_date|date:"d M Y" }}</b></td>
+    <td data-l="Status">
+      {% if pm.due_status == 'overdue' %}
+        <span class="loz prio-P1"><b>Overdue ({{ pm.days_overdue }}d)</b></span>
+      {% elif pm.due_status == 'due_soon' %}
+        <span class="loz prio-P2"><b>Due in {{ pm.days_left }}d</b></span>
+      {% else %}
+        <span class="loz loz-strong">In {{ pm.days_left }}d</span>
+      {% endif %}
+    </td>
+    <td data-l="Engineer">{% if pm.assigned_to %}{{ pm.assigned_to.display_name }}{% else %}<span class="muted">Unassigned</span>{% endif %}</td>
+    <td data-l="Ticket">{% if pm.last_ticket %}<a href="{% url 'ticket_detail' pm.last_ticket.number %}"><b>{{ pm.last_ticket.number }}</b></a>{% else %}<span class="muted">-</span>{% endif %}</td>
+    <td data-l="State">
+      <form method="post" action="{% url 'masters_action' 'pm' %}" style="display:inline;">{% csrf_token %}
+        <input type="hidden" name="do" value="toggle">
+        <input type="hidden" name="id" value="{{ pm.pk }}">
+        <button type="submit" class="btn btn-s btn-soft">{% if pm.active %}Disable{% else %}Enable{% endif %}</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'calendar-clock' %}<h2>No PM schedules match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% elif tab == 'alerts' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="alerts">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search recipient, subject..." aria-label="Search alerts">
+    <select name="channel" aria-label="Channel">
+      <option value="">All channels</option>
+      <option value="email" {% if channel == 'email' %}selected{% endif %}>Email</option>
+      <option value="telegram" {% if channel == 'telegram' %}selected{% endif %}>Telegram</option>
+      <option value="sms" {% if channel == 'sms' %}selected{% endif %}>SMS</option>
+      <option value="whatsapp" {% if channel == 'whatsapp' %}selected{% endif %}>WhatsApp</option>
+    </select>
+    <select name="status" aria-label="Delivery status">
+      <option value="">All delivery statuses</option>
+      <option value="sent" {% if status_filter == 'sent' %}selected{% endif %}>Sent</option>
+      <option value="waiting" {% if status_filter == 'waiting' %}selected{% endif %}>Waiting</option>
+      <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Newest first</option>
+      <option value="old" {% if sort == 'old' %}selected{% endif %}>Sort: Oldest first</option>
+      <option value="attempts" {% if sort == 'attempts' %}selected{% endif %}>Sort: Most attempts</option>
+    </select>
+    {% if q or channel or status_filter or sort %}<a class="link-quiet" href="?tab=alerts">Clear</a>{% endif %}
+  </form>
+</div>
+
+{% if page.object_list %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Timestamp</th><th>Channel</th><th>Recipient</th><th>Subject / Preview</th><th>Status</th><th>Attempts</th><th>Details / Error</th></tr></thead>
+  <tbody>
+  {% for m in page.object_list %}
+  <tr>
+    <td data-l="Time" style="white-space:nowrap;"><small>{{ m.created_at|date:"d M Y, H:i:s" }}</small></td>
+    <td data-l="Channel"><span class="loz loz-strong">{{ m.get_channel_display }}</span></td>
+    <td data-l="Recipient"><b>{{ m.to }}</b></td>
+    <td data-l="Subject">
+      {% if m.subject %}<b>{{ m.subject }}</b><br>{% endif %}
+      <small class="muted">{{ m.body|truncatechars:100 }}</small>
+    </td>
+    <td data-l="Status">
+      {% if m.status == 'sent' %}<span class="status status-up">Sent</span>
+      {% elif m.status == 'waiting' %}<span class="status-warn">Waiting</span>
+      {% else %}<span class="bad-text">Failed</span>{% endif %}
+    </td>
+    <td data-l="Attempts" class="num-col">{{ m.attempts }}</td>
+    <td data-l="Details"><small class="bad-text">{{ m.error|default:"-" }}</small></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+{% if page.has_other_pages %}
+<div class="pagination" style="display:flex; justify-content:center; gap:0.5rem; margin-top:1rem;">
+  {% if page.has_previous %}<a class="btn btn-s btn-soft" href="?tab=alerts&page={{ page.previous_page_number }}{% if channel %}&channel={{ channel }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}{% if q %}&q={{ q }}{% endif %}">Previous</a>{% endif %}
+  <span class="muted" style="align-self:center; font-size:0.85rem;">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a class="btn btn-s btn-soft" href="?tab=alerts&page={{ page.next_page_number }}{% if channel %}&channel={{ channel }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}{% if q %}&q={{ q }}{% endif %}">Next</a>{% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-big">{% icon 'bell' %}<h2>No sent alerts match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% elif tab == 'history' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="history">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search ticket #, user, action..." aria-label="Search history">
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Newest first</option>
+      <option value="old" {% if sort == 'old' %}selected{% endif %}>Sort: Oldest first</option>
+    </select>
+    {% if q or sort %}<a class="link-quiet" href="?tab=history">Clear</a>{% endif %}
+  </form>
+</div>
+
+{% if page.object_list %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Timestamp</th><th>Ticket</th><th>Actor</th><th>Action / Description</th><th>Field</th><th>Old Value</th><th>New Value</th></tr></thead>
+  <tbody>
+  {% for h in page.object_list %}
+  <tr>
+    <td data-l="Time" style="white-space:nowrap;"><small>{{ h.created_at|date:"d M Y, H:i:s" }}</small></td>
+    <td data-l="Ticket"><a href="{% url 'ticket_detail' h.ticket.number %}"><b>{{ h.ticket.number }}</b></a></td>
+    <td data-l="Actor">{% if h.actor %}{{ h.actor.display_name }}{% else %}<span class="muted">System</span>{% endif %}</td>
+    <td data-l="Action"><b>{{ h.text }}</b>{% if h.note %}<br><small class="muted">{{ h.note }}</small>{% endif %}</td>
+    <td data-l="Field"><small class="muted">{{ h.field|default:"-" }}</small></td>
+    <td data-l="Old"><small class="muted">{{ h.old|default:"-" }}</small></td>
+    <td data-l="New"><small>{{ h.new|default:"-" }}</small></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+{% if page.has_other_pages %}
+<div class="pagination" style="display:flex; justify-content:center; gap:0.5rem; margin-top:1rem;">
+  {% if page.has_previous %}<a class="btn btn-s btn-soft" href="?tab=history&page={{ page.previous_page_number }}{% if sort %}&sort={{ sort }}{% endif %}{% if q %}&q={{ q }}{% endif %}">Previous</a>{% endif %}
+  <span class="muted" style="align-self:center; font-size:0.85rem;">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a class="btn btn-s btn-soft" href="?tab=history&page={{ page.next_page_number }}{% if sort %}&sort={{ sort }}{% endif %}{% if q %}&q={{ q }}{% endif %}">Next</a>{% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-big">{% icon 'history' %}<h2>No ticket history logs match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% elif tab == 'vendor_calls' %}
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+  <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
+    <input type="hidden" name="tab" value="vendor_calls">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search ticket, vendor, complaint ref..." aria-label="Search calls">
+    <select name="vendor" aria-label="Vendor">
+      <option value="">All vendors</option>
+      {% for v in vendors_all %}<option value="{{ v.pk }}" {% if vendor_filter == v.pk|stringformat:"s" %}selected{% endif %}>{{ v.name }}</option>{% endfor %}
+    </select>
+    <select name="status" aria-label="Status">
+      <option value="">All visit statuses</option>
+      <option value="waiting" {% if status_filter == 'waiting' %}selected{% endif %}>Awaiting visit</option>
+      <option value="attended" {% if status_filter == 'attended' %}selected{% endif %}>Attended</option>
+    </select>
+    <select name="sort" aria-label="Sort">
+      <option value="">Sort: Most recent call</option>
+      <option value="old" {% if sort == 'old' %}selected{% endif %}>Sort: Oldest call</option>
+    </select>
+    {% if q or vendor_filter or status_filter or sort %}<a class="link-quiet" href="?tab=vendor_calls">Clear</a>{% endif %}
+  </form>
+</div>
+
+{% if page.object_list %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Called At</th><th>Vendor</th><th>Ticket</th><th>Complaint / Ref #</th><th>Engineer</th><th>Attended At</th><th>Logged By</th></tr></thead>
+  <tbody>
+  {% for call in page.object_list %}
+  <tr>
+    <td data-l="Called At" style="white-space:nowrap;"><small>{{ call.called_at|date:"d M Y, H:i" }}</small></td>
+    <td class="cell-title"><b>{{ call.vendor.name }}</b></td>
+    <td data-l="Ticket"><a href="{% url 'ticket_detail' call.ticket.number %}"><b>{{ call.ticket.number }}</b></a></td>
+    <td data-l="Reference" style="font-family:var(--font-mono);">{{ call.reference|default:"-" }}</td>
+    <td data-l="Engineer">{{ call.engineer|default:"-" }}</td>
+    <td data-l="Attended">{% if call.attended_at %}{{ call.attended_at|date:"d M Y, H:i" }}{% else %}<span class="status-warn">Awaiting visit</span>{% endif %}</td>
+    <td data-l="Logged By"><small>{{ call.logged_by.display_name }}</small></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+{% if page.has_other_pages %}
+<div class="pagination" style="display:flex; justify-content:center; gap:0.5rem; margin-top:1rem;">
+  {% if page.has_previous %}<a class="btn btn-s btn-soft" href="?tab=vendor_calls&page={{ page.previous_page_number }}{% if vendor_filter %}&vendor={{ vendor_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}{% if q %}&q={{ q }}{% endif %}">Previous</a>{% endif %}
+  <span class="muted" style="align-self:center; font-size:0.85rem;">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a class="btn btn-s btn-soft" href="?tab=vendor_calls&page={{ page.next_page_number }}{% if vendor_filter %}&vendor={{ vendor_filter }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}{% if q %}&q={{ q }}{% endif %}">Next</a>{% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-big">{% icon 'phone-call' %}<h2>No vendor calls match</h2><p>Try clearing your search query or filters.</p></div>
+{% endif %}
+
+{% endif %}
+
+<!-- ==================== DIALOGS ==================== -->
+
+<!-- Add Centre -->
+<dialog class="dialog" id="dlg-add-centre"><form method="post" action="{% url 'masters_action' 'centres' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="add">
+  <h2>Add diagnostic centre</h2>
+  <label class="field"><span>Centre name</span><input type="text" name="name" required placeholder="e.g. Kukatpally, Vijayawada"></label>
+  <label class="field"><span>Short code (2 to 5 capital letters/numbers)</span>
+    <input type="text" name="code" required maxlength="5" placeholder="e.g. KKP, BZA, BEN" style="text-transform:uppercase; font-family:var(--font-mono);">
+    <small class="muted">Prefixes every ticket raised at this centre (e.g. KKP-000123). Cannot be changed once tickets exist.</small>
+  </label>
+  <label class="field"><span>City / Location</span><input type="text" name="city" placeholder="e.g. Hyderabad, Vijayawada"></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create centre</button></div>
+</form></dialog>
+
+<!-- Edit Centre -->
+<dialog class="dialog" id="dlg-edit-centre"><form method="post" action="{% url 'masters_action' 'centres' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="edit">
+  <input type="hidden" name="id">
+  <h2>Edit centre</h2>
+  <label class="field"><span>Centre name</span><input type="text" name="name" required></label>
+  <label class="field"><span>City</span><input type="text" name="city"></label>
+  <label class="check"><input type="checkbox" name="active" checked><span><b>Active centre</b><small>Untick when a centre closes; historical tickets stay preserved.</small></span></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>
+</form></dialog>
+
+<!-- Add Department -->
+<dialog class="dialog" id="dlg-add-dept"><form method="post" action="{% url 'masters_action' 'departments' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="add">
+  <h2>Add department</h2>
+  <label class="field"><span>Department name</span><input type="text" name="name" required placeholder="e.g. Biomedical, IT, Facilities"></label>
+  <label class="field"><span>Head of department</span>
+    <select name="head">
+      <option value="">Choose head (optional)</option>
+      {% for u in users_all %}<option value="{{ u.pk }}">{{ u.display_name }} ({{ u.role_label }})</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field"><span>Ticket assignment mode</span>
+    <select name="assignment_mode">
+      <option value="round_robin">Round robin: each agent in turn</option>
+      <option value="least_loaded">Least loaded: agent with fewest open tickets</option>
+      <option value="manual">Manual: department head assigns</option>
+    </select>
+  </label>
+  <label class="check"><input type="checkbox" name="handles_equipment"><span><b>Receives equipment tickets</b><small>Tick for one department only (Biomedical). Any ticket with equipment goes here.</small></span></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create department</button></div>
+</form></dialog>
+
+<!-- Edit Department -->
+<dialog class="dialog" id="dlg-edit-dept"><form method="post" action="{% url 'masters_action' 'departments' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="edit">
+  <input type="hidden" name="id">
+  <h2>Edit department</h2>
+  <label class="field"><span>Department name</span><input type="text" name="name" required></label>
+  <label class="field"><span>Head of department</span>
+    <select name="head">
+      <option value="">None</option>
+      {% for u in users_all %}<option value="{{ u.pk }}">{{ u.display_name }} ({{ u.role_label }})</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field"><span>Ticket assignment mode</span>
+    <select name="mode">
+      <option value="round_robin">Round robin: each agent in turn</option>
+      <option value="least_loaded">Least loaded: agent with fewest open tickets</option>
+      <option value="manual">Manual: department head assigns</option>
+    </select>
+  </label>
+  <label class="check"><input type="checkbox" name="handles_equipment"><span><b>Receives equipment tickets</b></span></label>
+  <label class="check"><input type="checkbox" name="active" checked><span><b>Active</b></span></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>
+</form></dialog>
+
+<!-- Add Category -->
+<dialog class="dialog" id="dlg-add-cat"><form method="post" action="{% url 'masters_action' 'categories' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="add">
+  <h2>Add ticket category</h2>
+  <label class="field"><span>Category name</span><input type="text" name="name" required placeholder="e.g. MRI 1.5T Breakdown, PACS Network Issue"></label>
+  <label class="field"><span>Department</span>
+    <select name="department" required>
+      {% for d in departments_all %}<option value="{{ d.pk }}">{{ d.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field"><span>Default priority</span>
+    <select name="default_priority">
+      {% for k, l in priorities %}<option value="{{ k }}" {% if k == 'P3' %}selected{% endif %}>{{ l }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="check"><input type="checkbox" name="asks_equipment"><span><b>Ask which equipment</b><small>Tick to show machine selector when this category is picked.</small></span></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create category</button></div>
+</form></dialog>
+
+<!-- Edit Category -->
+<dialog class="dialog" id="dlg-edit-cat"><form method="post" action="{% url 'masters_action' 'categories' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="edit">
+  <input type="hidden" name="id">
+  <h2>Edit category</h2>
+  <label class="field"><span>Category name</span><input type="text" name="name" required></label>
+  <label class="field"><span>Default priority</span>
+    <select name="default_priority">
+      {% for k, l in priorities %}<option value="{{ k }}">{{ l }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="check"><input type="checkbox" name="asks_equipment"><span><b>Ask which equipment</b></span></label>
+  <label class="check"><input type="checkbox" name="active" checked><span><b>Active</b></span></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>
+</form></dialog>
+
+<!-- Add Field to Category -->
+<dialog class="dialog" id="dlg-add-field"><form method="post" action="{% url 'masters_action' 'categories' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="add_field">
+  <input type="hidden" name="category_id">
+  <h2>Add custom question to <span data-show-category></span></h2>
+  <label class="field"><span>Question label</span><input type="text" name="label" required placeholder="e.g. Error code, Room number, Cassette ID"></label>
+  <label class="field"><span>Answer type</span>
+    <select name="kind">
+      <option value="text">Text box</option>
+      <option value="number">Number</option>
+      <option value="choice">Pick from a list</option>
+    </select>
+  </label>
+  <label class="field"><span>Choices (if 'Pick from a list')</span><input type="text" name="choices" placeholder="Option 1, Option 2, Option 3 (comma-separated)"></label>
+  <label class="check"><input type="checkbox" name="required"><span><b>Required question</b></span></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Add question</button></div>
+</form></dialog>
+
+<!-- Configure SLA -->
+<dialog class="dialog" id="dlg-edit-sla"><form method="post" action="{% url 'masters_action' 'sla' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="save">
+  <h2>Configure SLA policy</h2>
+  <label class="field"><span>Department</span>
+    <select name="department">
+      <option value="">All departments (Default)</option>
+      {% for d in departments_all %}<option value="{{ d.pk }}">{{ d.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field"><span>Priority</span>
+    <select name="priority" required>
+      {% for k, l in priorities %}<option value="{{ k }}">{{ l }}</option>{% endfor %}
+    </select>
+  </label>
+  <div class="field-row">
+    <label class="field"><span>Respond within (minutes)</span><input type="number" name="response_minutes" required value="30"></label>
+    <label class="field"><span>Resolve within (minutes)</span><input type="number" name="resolution_minutes" required value="480"></label>
+  </div>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save policy</button></div>
+</form></dialog>
+
+<!-- Add Escalation Rule -->
+<dialog class="dialog" id="dlg-add-rule"><form method="post" action="{% url 'masters_action' 'escalation' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="add">
+  <h2>Add escalation rule</h2>
+  <label class="field"><span>Rule name</span><input type="text" name="name" required placeholder="e.g. Resolution deadline approaching (75%)"></label>
+  <div class="field-row">
+    <label class="field"><span>Clock basis</span>
+      <select name="basis">
+        <option value="resolution">Resolution time</option>
+        <option value="response">Response time</option>
+      </select>
+    </label>
+    <label class="field"><span>Percent of time used (%)</span><input type="number" name="percent" value="75" required></label>
+  </div>
+  <label class="field"><span>Apply to priorities (empty for all)</span><input type="text" name="priorities" placeholder="e.g. P1,P2"></label>
+  <p style="font-weight:600; font-size:0.85rem; margin-top:0.5rem;">Who should be alerted when triggered?</p>
+  <label class="check"><input type="checkbox" name="notify_assignee"><span><b>Assigned agent</b></span></label>
+  <label class="check"><input type="checkbox" name="notify_dept_head" checked><span><b>Department head</b></span></label>
+  <label class="check"><input type="checkbox" name="notify_centre_manager"><span><b>Centre manager</b></span></label>
+  <label class="check"><input type="checkbox" name="notify_area_manager"><span><b>Area manager</b></span></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create rule</button></div>
+</form></dialog>
+
+<!-- Add User -->
+<dialog class="dialog" id="dlg-add-user"><form method="post" action="{% url 'masters_action' 'users' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="add">
+  <h2>Add user account</h2>
+  <div class="field-row">
+    <label class="field"><span>Username</span><input type="text" name="username" required placeholder="e.g. ravi, priya"></label>
+    <label class="field"><span>Initial password</span><input type="password" name="password" required></label>
+  </div>
+  <div class="field-row">
+    <label class="field"><span>First name</span><input type="text" name="first_name" required></label>
+    <label class="field"><span>Last name</span><input type="text" name="last_name"></label>
+  </div>
+  <label class="field"><span>System role</span>
+    <select name="role">
+      {% for k, l in roles %}<option value="{{ k }}">{{ l }}</option>{% endfor %}
+    </select>
+  </label>
+  <div class="field-row">
+    <label class="field"><span>Email</span><input type="email" name="email" placeholder="staff@pramodini.in"></label>
+    <label class="field"><span>Mobile (SMS/WhatsApp)</span><input type="text" name="mobile" placeholder="919876543210"></label>
+  </div>
+  <label class="field"><span>Telegram Chat ID</span><input type="text" name="telegram_chat_id" placeholder="Personal or group Chat ID"></label>
+  
+  <p style="font-weight:600; font-size:0.85rem; margin-top:0.5rem; margin-bottom:0.25rem;">Centres covered (leave blank for all):</p>
+  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; max-height:100px; overflow-y:auto; padding:0.25rem; border:1px solid var(--line); border-radius:6px;">
+    {% for c in centres_all %}
+    <label class="check" style="margin:0;"><input type="checkbox" name="centres" value="{{ c.pk }}"><span>{{ c.name }} ({{ c.code }})</span></label>
+    {% endfor %}
+  </div>
+
+  <p style="font-weight:600; font-size:0.85rem; margin-top:0.5rem; margin-bottom:0.25rem;">Departments (for agents/heads):</p>
+  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; max-height:100px; overflow-y:auto; padding:0.25rem; border:1px solid var(--line); border-radius:6px;">
+    {% for d in departments_all %}
+    <label class="check" style="margin:0;"><input type="checkbox" name="departments" value="{{ d.pk }}"><span>{{ d.name }}</span></label>
+    {% endfor %}
+  </div>
+
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create user</button></div>
+</form></dialog>
+
+<!-- Add Vendor -->
+<dialog class="dialog" id="dlg-add-vendor"><form method="post" action="{% url 'masters_action' 'vendors' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="add">
+  <h2>Add vendor</h2>
+  <label class="field"><span>Vendor company name</span><input type="text" name="name" required placeholder="e.g. GE Healthcare, Siemens Healthineers"></label>
+  <div class="field-row">
+    <label class="field"><span>Contact person</span><input type="text" name="contact_person" placeholder="e.g. Rakesh Sharma"></label>
+    <label class="field"><span>Phone</span><input type="text" name="phone" placeholder="e.g. +91 9876543210"></label>
+  </div>
+  <label class="field"><span>Email</span><input type="email" name="email" placeholder="e.g. service@vendor.com"></label>
+  <label class="field"><span>Notes / Service SLA</span><textarea name="notes" rows="2" placeholder="Helpdesk number, escalation matrix..."></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save vendor</button></div>
+</form></dialog>
+
+<!-- Add Equipment -->
+<dialog class="dialog" id="dlg-add-equipment"><form method="post" action="{% url 'masters_action' 'equipment' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="add">
+  <h2>Add equipment to register</h2>
+  <label class="field"><span>Centre</span>
+    <select name="centre" required>
+      {% for c in centres_all %}<option value="{{ c.pk }}">{{ c.name }} ({{ c.code }})</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field"><span>Equipment name</span><input type="text" name="name" required placeholder="e.g. MRI 1.5T Discovery, CT 128 Slice"></label>
+  <div class="field-row">
+    <label class="field"><span>Make</span><input type="text" name="make" placeholder="e.g. GE, Siemens"></label>
+    <label class="field"><span>Model</span><input type="text" name="model" placeholder="e.g. Optima MR360"></label>
+  </div>
+  <div class="field-row">
+    <label class="field"><span>Serial number</span><input type="text" name="serial_no" placeholder="e.g. SN-982310"></label>
+    <label class="field"><span>Service vendor</span>
+      <select name="vendor">
+        <option value="">None</option>
+        {% for v in vendors_all %}<option value="{{ v.pk }}">{{ v.name }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <label class="field"><span>AMC / CAMC expiry date</span><input type="date" name="amc_expiry"></label>
+  <div class="field-row">
+    <label class="field"><span>Uptime guarantee %</span><input type="number" step="0.01" name="uptime_guarantee_percent" value="95.00"></label>
+    <label class="field"><span>Daily penalty rate (₹)</span><input type="number" step="100" name="penalty_rate_per_day" value="0"></label>
+  </div>
+  <label class="field"><span>Annual CAMC cost (₹)</span><input type="number" step="1000" name="annual_camc_cost" value="0"><small class="muted">Used for pro-rata penalty calculation if daily penalty is 0.</small></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create equipment</button></div>
+</form></dialog>
+
+<!-- Add PM Schedule -->
+<dialog class="dialog" id="dlg-add-pm"><form method="post" action="{% url 'masters_action' 'pm' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="add">
+  <h2>Add preventive maintenance schedule</h2>
+  <label class="field"><span>Equipment</span>
+    <select name="equipment" required>
+      {% for e in equipment_all %}<option value="{{ e.pk }}">{{ e.name }} ({{ e.centre.code }})</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field"><span>Schedule title</span><input type="text" name="title" required placeholder="e.g. Quarterly Calibration &amp; RF Verification"></label>
+  <div class="field-row">
+    <label class="field"><span>Frequency</span>
+      <select name="frequency_months">
+        {% for m, label in frequency_choices %}<option value="{{ m }}" {% if m == 3 %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Target due date</span><input type="date" name="next_due_date" required></label>
+  </div>
+  <div class="field-row">
+    <label class="field"><span>Advance notice (days)</span><input type="number" name="advance_notice_days" value="7"><small class="muted">Auto-raises ticket this many days prior.</small></label>
+    <label class="field"><span>Assigned engineer</span>
+      <select name="assigned_to">
+        <option value="">Default (Biomedical team)</option>
+        {% for u in users_all %}<option value="{{ u.pk }}">{{ u.display_name }} ({{ u.role_label }})</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <label class="field"><span>SOP / Service points / Checklist</span><textarea name="notes" rows="3" placeholder="1. Helium pressure check&#10;2. Gradient coil verification..."></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create PM schedule</button></div>
+</form></dialog>
+
+{% endblock %}

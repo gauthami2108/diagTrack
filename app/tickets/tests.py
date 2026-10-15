@@ -1346,3 +1346,149 @@ class Phase3Tests(Base):
         self.assertEqual(self.req.telegram_chat_id, "11223344")
         mock_send.assert_called_once()
         self.assertEqual(mock_send.call_args[0][1], "11223344")
+
+    def test_pm_schedule_creation_and_properties(self):
+        from .models import PreventiveMaintenance
+        today = timezone.localdate()
+        pm = PreventiveMaintenance.objects.create(
+            equipment=self.mri,
+            title="Quarterly QA & Calibration",
+            frequency_months=3,
+            next_due_date=today + timedelta(days=5),
+            advance_notice_days=7,
+        )
+        self.assertFalse(pm.is_overdue)
+        self.assertEqual(pm.days_until_due, 5)
+
+        pm.next_due_date = today - timedelta(days=2)
+        pm.save()
+        self.assertTrue(pm.is_overdue)
+
+    def test_run_pm_checks_auto_ticket_generation_and_idempotency(self):
+        from .models import PreventiveMaintenance, Priority
+        today = timezone.localdate()
+        pm = PreventiveMaintenance.objects.create(
+            equipment=self.mri,
+            title="Helium Level & RF Check",
+            frequency_months=1,
+            next_due_date=today + timedelta(days=3),
+            advance_notice_days=7,
+            assigned_to=self.agent1,
+        )
+        created = services.run_pm_checks(today=today)
+        self.assertEqual(created, 1)
+
+        pm.refresh_from_db()
+        self.assertIsNotNone(pm.last_ticket)
+        t = pm.last_ticket
+        self.assertIn("PM: Helium Level & RF Check", t.subject)
+        self.assertEqual(t.priority, Priority.P3)
+        self.assertEqual(t.assignee, self.agent1)
+        self.assertEqual(t.equipment, self.mri)
+        self.assertEqual(t.pm_schedule, pm)
+
+        created_again = services.run_pm_checks(today=today)
+        self.assertEqual(created_again, 0)
+
+    def test_resolve_ticket_advances_pm_schedule(self):
+        from .models import PreventiveMaintenance
+        today = timezone.localdate()
+        pm = PreventiveMaintenance.objects.create(
+            equipment=self.mri,
+            title="Biannual Coil Servicing",
+            frequency_months=6,
+            next_due_date=today,
+            advance_notice_days=7,
+        )
+        services.run_pm_checks(today=today)
+        pm.refresh_from_db()
+        t = pm.last_ticket
+        self.assertIsNotNone(t)
+
+        services.start_work(t, self.agent1)
+        services.resolve(t, self.agent1, "Replaced helium seal and calibrated coils.")
+        pm.refresh_from_db()
+
+        self.assertEqual(pm.last_performed_at, today)
+        self.assertGreater(pm.next_due_date, today)
+
+    def test_camc_uptime_penalties_calculation(self):
+        from .models import DowntimeLog
+        from . import reports
+        now = timezone.now()
+
+        self.mri.uptime_guarantee_percent = 98.0
+        self.mri.penalty_rate_per_day = 10000.00
+        self.mri.save()
+
+        t = self.raise_ticket(patient_impact=True, equipment=self.mri)
+        DowntimeLog.objects.filter(ticket=t).delete()
+        DowntimeLog.objects.create(
+            equipment=self.mri,
+            ticket=t,
+            start=now - timedelta(hours=120),
+            end=now
+        )
+
+        res = reports.camc_uptime_penalties(centres=[self.mri.centre], days=90, now=now)
+        mri_row = next((r for r in res["rows"] if r["equipment"].pk == self.mri.pk), None)
+        self.assertIsNotNone(mri_row)
+        self.assertEqual(mri_row["guarantee_pct"], 98.0)
+        self.assertEqual(mri_row["down_hours"], 120.0)
+        self.assertEqual(mri_row["allowable_down_hours"], 43.2)
+        self.assertEqual(mri_row["excess_down_hours"], 76.8)
+        self.assertEqual(mri_row["excess_days"], 3.2)
+        self.assertEqual(mri_row["penalty_amount"], 32000.00)
+        self.assertEqual(mri_row["status"], "penalty")
+
+    def test_masters_hub_view_and_permissions(self):
+        # Requester cannot access masters
+        self.client.force_login(self.req)
+        resp = self.client.get(reverse("masters_hub"))
+        self.assertEqual(resp.status_code, 403)
+
+        # Admin can access masters hub
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("masters_hub"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Masters and rules")
+        self.assertContains(resp, "Departments")
+
+        # Test tabs
+        for tab in ("departments", "categories", "sla", "escalation", "users", "vendors"):
+            resp = self.client.get(f"{reverse('masters_hub')}?tab={tab}")
+            self.assertEqual(resp.status_code, 200)
+
+    def test_masters_actions(self):
+        self.client.force_login(self.admin)
+
+        # Add Department
+        resp = self.client.post(reverse("masters_action", kwargs={"section": "departments"}), {
+            "do": "add",
+            "name": "Radiology Physics",
+            "assignment_mode": "round_robin",
+        }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Department.objects.filter(name="Radiology Physics").exists())
+
+        # Add Category
+        dept = Department.objects.get(name="Radiology Physics")
+        resp = self.client.post(reverse("masters_action", kwargs={"section": "categories"}), {
+            "do": "add",
+            "name": "Dosimetry Calibration",
+            "department": dept.pk,
+            "default_priority": "P2",
+        }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Category.objects.filter(name="Dosimetry Calibration", department=dept).exists())
+
+        # Configure SLA
+        resp = self.client.post(reverse("masters_action", kwargs={"section": "sla"}), {
+            "do": "save",
+            "department": dept.pk,
+            "priority": "P2",
+            "response_minutes": "25",
+            "resolution_minutes": "360",
+        }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(SlaPolicy.objects.filter(department=dept, priority="P2", response_minutes=25).exists())

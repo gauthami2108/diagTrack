@@ -9,23 +9,144 @@
   <div class="band-cell {% if stats.uptime_pct < 95 %}is-warn{% endif %}"><span class="band-n">{{ stats.uptime_pct }}%</span><span class="band-l">Uptime, 30 days</span></div>
   <div class="band-cell"><span class="band-n">{{ stats.down_seconds|span }}</span><span class="band-l">Downtime, 30 days</span></div>
   <div class="band-cell"><span class="band-n">{{ stats90.uptime_pct }}%</span><span class="band-l">Uptime, 90 days</span></div>
-  <div class="band-cell"><span class="band-n">{{ tickets|length }}</span><span class="band-l">Tickets so far</span></div>
+  <div class="band-cell {% if penalty_stats.excess_down_hours %}is-warn{% endif %}"><span class="band-n">{% if penalty_stats.penalty_amount %}₹{{ penalty_stats.penalty_amount|floatformat:0 }}{% else %}₹0{% endif %}</span><span class="band-l">Penalty deduction (90d)</span></div>
 </section>
 <div class="grid-2">
-  <section class="panel"><header><h2>Tickets</h2></header>
-    {% if tickets %}{% include "_rows.html" with tickets=tickets show_owner=True %}{% else %}<p class="empty">No tickets have been raised for this equipment.</p>{% endif %}
-  </section>
+  <div class="stack">
+    <section class="panel"><header><h2>Tickets</h2></header>
+      {% if tickets %}{% include "_rows.html" with tickets=tickets show_owner=True %}{% else %}<p class="empty">No tickets have been raised for this equipment.</p>{% endif %}
+    </section>
+
+    <section class="panel">
+      <header style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>Preventive maintenance schedules</h2>
+      </header>
+      {% if pm_schedules %}
+      <table class="table table-s">
+        <thead><tr><th>Schedule</th><th>Frequency</th><th>Target due</th><th>Assigned</th><th>Current ticket</th><th></th></tr></thead>
+        <tbody>
+        {% for pm in pm_schedules %}
+        <tr>
+          <td><b>{{ pm.title }}</b>{% if pm.notes %}<br><small class="muted">{{ pm.notes|truncatechars:60 }}</small>{% endif %}</td>
+          <td>{{ pm.get_frequency_months_display }}</td>
+          <td>
+            {% if pm.due_status == 'overdue' %}
+              <span class="bad-text"><b>{{ pm.next_due_date|date:"d M Y" }}</b> ({{ pm.days_overdue|default:pm.days_left|abs }}d late)</span>
+            {% elif pm.due_status == 'due_soon' %}
+              <span class="warn-text"><b>{{ pm.next_due_date|date:"d M Y" }}</b> ({{ pm.days_left }}d)</span>
+            {% else %}
+              {{ pm.next_due_date|date:"d M Y" }}
+            {% endif %}
+          </td>
+          <td>{{ pm.assigned_to.display_name|default:"Auto-route" }}</td>
+          <td>
+            {% if pm.last_ticket and pm.last_ticket.is_open %}
+              <a class="num" href="{% url 'ticket_detail' pm.last_ticket.number %}">{{ pm.last_ticket.number }}</a>
+            {% elif pm.last_ticket %}
+              <a class="num muted" href="{% url 'ticket_detail' pm.last_ticket.number %}">{{ pm.last_ticket.number }}</a> <small class="muted">({{ pm.last_ticket.get_status_display }})</small>
+            {% else %}
+              <span class="muted">-</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="{% url 'pm_trigger_ticket' pm.pk %}" style="display:inline;">{% csrf_token %}
+              <button type="submit" class="btn btn-s btn-soft" title="Auto-raise PM ticket now">{% icon 'plus' %}Ticket</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">No PM schedule configured for this machine.</p>
+      {% endif %}
+
+      <details style="margin-top:1rem; padding:0.75rem; background:var(--bg-sub, #f8f9fa); border-radius:6px;">
+        <summary style="cursor:pointer; font-weight:600; font-size:0.9rem;">+ Add new PM schedule</summary>
+        <form method="post" action="{% url 'equipment_pm_create' e.pk %}" style="margin-top:0.75rem; display:grid; gap:0.5rem;">{% csrf_token %}
+          <div>
+            <label style="font-size:0.8rem; font-weight:600;">Title</label>
+            <input type="text" name="title" placeholder="e.g. Quarterly Helium &amp; RF Calibration" required style="width:100%;">
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+            <div>
+              <label style="font-size:0.8rem; font-weight:600;">Frequency</label>
+              <select name="frequency_months" style="width:100%;">
+                <option value="1">Monthly (1 month)</option>
+                <option value="3" selected>Quarterly (3 months)</option>
+                <option value="6">Half-yearly (6 months)</option>
+                <option value="12">Annual (12 months)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.8rem; font-weight:600;">First Due Date</label>
+              <input type="date" name="next_due_date" required style="width:100%;">
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+            <div>
+              <label style="font-size:0.8rem; font-weight:600;">Advance Notice (days before)</label>
+              <input type="number" name="advance_notice_days" value="7" style="width:100%;">
+            </div>
+            <div>
+              <label style="font-size:0.8rem; font-weight:600;">Assigned Engineer / Agent</label>
+              <select name="assigned_to" style="width:100%;">
+                <option value="">Auto-assign / Team head</option>
+                {% for u in agents %}
+                <option value="{{ u.pk }}">{{ u.display_name }} ({{ u.role_label }})</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:0.8rem; font-weight:600;">Checklist / Service SOP Guidelines</label>
+            <textarea name="notes" rows="2" placeholder="Inspection checklist points, calibration specs, or safety tests..." style="width:100%;"></textarea>
+          </div>
+          <div>
+            <button type="submit" class="btn btn-s">Save PM schedule</button>
+          </div>
+        </form>
+      </details>
+    </section>
+  </div>
+
   <div class="stack">
     <section class="panel"><header><h2>Downtime log</h2></header>
       {% if downtime %}<table class="table table-s"><thead><tr><th>From</th><th>To</th><th class="num-col">Length</th><th>Ticket</th></tr></thead><tbody>
       {% for x in downtime %}<tr><td>{{ x.start|date:"d M, H:i" }}</td><td>{% if x.end %}{{ x.end|date:"d M, H:i" }}{% else %}<span class="bad-text">Still down</span>{% endif %}</td><td class="num-col">{{ x.seconds|span }}</td><td><a class="num" href="{% url 'ticket_detail' x.ticket.number %}">{{ x.ticket.number }}</a></td></tr>{% endfor %}
       </tbody></table>{% else %}<p class="empty">No downtime recorded.</p>{% endif %}
     </section>
+
     <section class="panel"><header><h2>Vendor calls</h2></header>
       {% if calls %}<table class="table table-s"><thead><tr><th>Called</th><th>Vendor</th><th class="num-col">Arrived after</th><th>Ticket</th></tr></thead><tbody>
       {% for c in calls %}<tr><td>{{ c.called_at|date:"d M, H:i" }}</td><td>{{ c.vendor.name }}</td><td class="num-col">{% if c.attended_at %}{{ c.response_seconds|span }}{% else %}<span class="bad-text">Waiting</span>{% endif %}</td><td><a class="num" href="{% url 'ticket_detail' c.ticket.number %}">{{ c.ticket.number }}</a></td></tr>{% endfor %}
       </tbody></table>{% else %}<p class="empty">No vendor calls logged.</p>{% endif %}
     </section>
+
+    <section class="panel"><header><h2>Service vendor &amp; CAMC SLA</h2></header>
+      {% if e.vendor %}<dl class="kv">
+        <div><dt>Vendor</dt><dd>{{ e.vendor.name }}</dd></div>
+        {% if e.vendor.phone %}<div><dt>Phone</dt><dd>{{ e.vendor.phone }}</dd></div>{% endif %}
+        {% if e.contract_start %}<div><dt>Contract start</dt><dd>{{ e.contract_start|date:"d M Y" }}</dd></div>{% endif %}
+        {% if e.amc_expiry %}<div><dt>AMC until</dt><dd>{{ e.amc_expiry|date:"d M Y" }}{% if amc_left is not None and amc_left < 0 %} <span class="bad-text">Ended</span>{% elif amc_left is not None and amc_left <= 60 %} <span class="warn-text">{{ amc_left }} days left</span>{% endif %}</dd></div>{% endif %}
+        <div><dt>Uptime guarantee</dt><dd><b>{{ e.uptime_guarantee_percent }}%</b></dd></div>
+        {% if e.penalty_rate_per_day %}<div><dt>Penalty per day</dt><dd>₹{{ e.penalty_rate_per_day|floatformat:0 }} / day of excess downtime</dd></div>{% endif %}
+        {% if e.annual_camc_cost %}<div><dt>Annual CAMC cost</dt><dd>₹{{ e.annual_camc_cost|floatformat:0 }}</dd></div>{% endif %}
+      </dl>
+      {% if penalty_stats %}
+      <div style="margin-top:0.75rem; padding:0.5rem 0.75rem; border-top:1px solid var(--border, #eee); font-size:0.85rem;">
+        <div style="font-weight:600; margin-bottom:0.25rem;">90-Day SLA Guarantee Audit:</div>
+        <div class="kv" style="grid-template-columns:1fr 1fr; gap:0.25rem;">
+          <div><dt>Allowable downtime</dt><dd>{{ penalty_stats.allowable_down_hours }} h</dd></div>
+          <div><dt>Actual downtime</dt><dd>{{ penalty_stats.down_hours }} h ({{ penalty_stats.uptime_pct }}%)</dd></div>
+          <div><dt>Excess downtime</dt><dd>{% if penalty_stats.excess_down_hours %}<span class="bad-text"><b>{{ penalty_stats.excess_down_hours }} h</b> ({{ penalty_stats.excess_days }}d)</span>{% else %}<span class="muted">0 h</span>{% endif %}</dd></div>
+          <div><dt>Penalty deduction</dt><dd>{% if penalty_stats.penalty_amount %}<span class="bad-text"><b>₹{{ penalty_stats.penalty_amount|floatformat:2 }}</b></span>{% else %}<span class="status status-up">₹0</span>{% endif %}</dd></div>
+        </div>
+      </div>
+      {% endif %}
+      {% else %}<p class="empty">No vendor recorded.</p>{% endif %}
+    </section>
+
     <section class="panel qr-panel"><header><h2>QR label</h2></header>
       <div class="qr-row">
         <img class="qr-img" src="{% url 'equipment_qr' e.pk %}" alt="QR code for {{ e.name }}" width="132" height="132">
@@ -36,10 +157,6 @@
           <div class="qr-btns"><a class="btn btn-s" href="{% url 'equipment_labels' %}?id={{ e.pk }}" target="_blank">{% icon 'scan-line' %}Print label</a><a class="btn btn-s btn-soft" href="{% url 'equipment_qr' e.pk %}?format=png">{% icon 'download' %}Download PNG</a></div>
         </div>
       </div>
-    </section>
-    <section class="panel"><header><h2>Service vendor</h2></header>
-      {% if e.vendor %}<dl class="kv"><div><dt>Vendor</dt><dd>{{ e.vendor.name }}</dd></div>{% if e.vendor.phone %}<div><dt>Phone</dt><dd>{{ e.vendor.phone }}</dd></div>{% endif %}{% if e.amc_expiry %}<div><dt>AMC until</dt><dd>{{ e.amc_expiry|date:"d M Y" }}{% if amc_left is not None and amc_left < 0 %} <span class="bad-text">Ended</span>{% elif amc_left is not None and amc_left <= 60 %} <span class="warn-text">{{ amc_left }} days left</span>{% endif %}</dd></div>{% endif %}</dl>
-      {% else %}<p class="empty">No vendor recorded.</p>{% endif %}
     </section>
   </div>
 </div>

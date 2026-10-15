@@ -8,6 +8,8 @@
 
 <div class="tabs" role="tablist">
   <a role="tab" href="?tab=machines" {% if tab == 'machines' %}aria-selected="true"{% endif %}>Machines</a>
+  <a role="tab" href="?tab=pm" {% if tab == 'pm' %}aria-selected="true"{% endif %}>Preventive maintenance{% if pm_due_count %} <span class="count count-warn">{{ pm_due_count }}</span>{% endif %}</a>
+  <a role="tab" href="?tab=penalties" {% if tab == 'penalties' %}aria-selected="true"{% endif %}>CAMC uptime &amp; penalties{% if penalties.summary.penalized %} <span class="count count-bad">{{ penalties.summary.penalized }}</span>{% endif %}</a>
   <a role="tab" href="?tab=faults" {% if tab == 'faults' %}aria-selected="true"{% endif %}>Repeat faults{% if faults %} <span class="count">{{ faults|length }}</span>{% endif %}</a>
   <a role="tab" href="?tab=vendors" {% if tab == 'vendors' %}aria-selected="true"{% endif %}>Vendor response</a>
   <a role="tab" href="?tab=amc" {% if tab == 'amc' %}aria-selected="true"{% endif %}>AMC renewals{% if amc %} <span class="count count-warn">{{ amc|length }}</span>{% endif %}</a>
@@ -35,6 +37,96 @@
 </table></div>
 {% else %}
 <div class="empty-big">{% icon 'scan-line' %}<h2>No equipment found</h2><p>{% if request.user.is_admin %}Add equipment under Masters and rules.{% else %}Ask the administrator to add equipment for your centre.{% endif %}</p></div>
+{% endif %}
+
+{% elif tab == 'pm' %}
+<p class="sub tab-intro">Planned Preventive Maintenance (PM) Calendar. Recurring scheduled calibrations, inspections and servicing. Tickets are auto-raised {{ cfg.advance_notice_days|default:7 }} days prior to due dates.</p>
+{% if pm_list %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Equipment</th><th>PM Title</th><th>Centre</th><th>Frequency</th><th>Target Due Date</th><th>Last Done</th><th>Assigned</th><th>Current Ticket</th><th></th></tr></thead>
+  <tbody>{% for pm in pm_list %}
+  <tr data-href="{% url 'equipment_detail' pm.equipment.pk %}">
+    <td class="cell-title"><a href="{% url 'equipment_detail' pm.equipment.pk %}">{{ pm.equipment.name }}</a></td>
+    <td data-l="PM Title"><b>{{ pm.title }}</b></td>
+    <td data-l="Centre">{{ pm.equipment.centre.name }}</td>
+    <td data-l="Frequency">{{ pm.get_frequency_months_display }}</td>
+    <td data-l="Due Date">
+      {% if pm.due_status == 'overdue' %}
+        <span class="bad-text"><b>{{ pm.next_due_date|date:"d M Y" }}</b> ({{ pm.days_overdue|default:pm.days_left|abs }}d overdue)</span>
+      {% elif pm.due_status == 'due_soon' %}
+        <span class="warn-text"><b>{{ pm.next_due_date|date:"d M Y" }}</b> (in {{ pm.days_left }}d)</span>
+      {% else %}
+        {{ pm.next_due_date|date:"d M Y" }} <small class="muted">({{ pm.days_left }}d)</small>
+      {% endif %}
+    </td>
+    <td data-l="Last Done">{% if pm.last_performed_at %}{{ pm.last_performed_at|date:"d M Y" }}{% else %}<span class="muted">Never</span>{% endif %}</td>
+    <td data-l="Assigned">{{ pm.assigned_to.display_name|default:"Auto-route" }}</td>
+    <td data-l="Current Ticket">
+      {% if pm.last_ticket and pm.last_ticket.is_open %}
+        <a class="num" href="{% url 'ticket_detail' pm.last_ticket.number %}">{{ pm.last_ticket.number }}</a> <span class="status status-{{ pm.last_ticket.status }}">{{ pm.last_ticket.get_status_display }}</span>
+      {% elif pm.last_ticket %}
+        <a class="num muted" href="{% url 'ticket_detail' pm.last_ticket.number %}">{{ pm.last_ticket.number }}</a>
+      {% else %}
+        <span class="muted">None open</span>
+      {% endif %}
+    </td>
+    <td>
+      <form method="post" action="{% url 'pm_trigger_ticket' pm.pk %}" style="display:inline;">{% csrf_token %}
+        <button type="submit" class="btn btn-s btn-soft" title="Generate PM ticket now">{% icon 'plus' %}Raise Ticket</button>
+      </form>
+    </td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'calendar' %}<h2>No PM schedules yet</h2><p>Open any equipment detail page to configure recurring Preventive Maintenance checks.</p></div>
+{% endif %}
+
+{% elif tab == 'penalties' %}
+<div class="filters">
+  <div class="sub tab-intro" style="margin:0;">Vendor CAMC Uptime Guarantee &amp; Penalty Calculator. Evaluates equipment downtime against contractual uptime guarantees.</div>
+  <div class="tabs" style="margin:0;">
+    <a href="?tab=penalties&days=30" {% if penalty_days == 30 %}aria-selected="true"{% endif %}>30 days</a>
+    <a href="?tab=penalties&days=90" {% if penalty_days == 90 %}aria-selected="true"{% endif %}>90 days</a>
+    <a href="?tab=penalties&days=180" {% if penalty_days == 180 %}aria-selected="true"{% endif %}>180 days</a>
+    <a href="?tab=penalties&days=365" {% if penalty_days == 365 %}aria-selected="true"{% endif %}>1 year</a>
+  </div>
+</div>
+
+<section class="band" style="margin-bottom:1.5rem;">
+  <div class="band-cell"><span class="band-n">{{ penalties.summary.avg_uptime }}%</span><span class="band-l">Average fleet uptime ({{ penalty_days }}d)</span></div>
+  <div class="band-cell"><span class="band-n">{{ penalties.summary.compliant }} / {{ penalties.summary.total_machines }}</span><span class="band-l">Compliant machines</span></div>
+  <div class="band-cell {% if penalties.summary.penalized %}is-warn{% endif %}"><span class="band-n">{{ penalties.summary.penalized }}</span><span class="band-l">Machines breaching SLA</span></div>
+  <div class="band-cell {% if penalties.summary.total_penalty %}is-warn{% endif %}"><span class="band-n">₹{{ penalties.summary.total_penalty|floatformat:0 }}</span><span class="band-l">Total calculated penalty</span></div>
+</section>
+
+{% if penalties.rows %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Equipment</th><th>Centre</th><th>Vendor</th><th class="num-col">Guarantee</th><th class="num-col">Actual Uptime</th><th class="num-col">Downtime</th><th class="num-col">Allowable</th><th class="num-col">Excess</th><th>Calculation Basis</th><th class="num-col">Deduction (₹)</th><th>Status</th></tr></thead>
+  <tbody>{% for r in penalties.rows %}
+  <tr data-href="{% url 'equipment_detail' r.equipment.pk %}">
+    <td class="cell-title"><a href="{% url 'equipment_detail' r.equipment.pk %}">{{ r.equipment.name }}</a></td>
+    <td data-l="Centre">{{ r.centre.name }}</td>
+    <td data-l="Vendor">{{ r.vendor.name|default:"Not recorded" }}</td>
+    <td data-l="Guarantee" class="num-col">{{ r.guarantee_pct }}%</td>
+    <td data-l="Actual Uptime" class="num-col"><b>{{ r.uptime_pct }}%</b></td>
+    <td data-l="Downtime" class="num-col">{{ r.down_hours }} h</td>
+    <td data-l="Allowable" class="num-col muted">{{ r.allowable_down_hours }} h</td>
+    <td data-l="Excess" class="num-col {% if r.excess_down_hours %}bad-text{% endif %}"><b>{{ r.excess_down_hours }} h</b>{% if r.excess_days %} <small>({{ r.excess_days }}d)</small>{% endif %}</td>
+    <td data-l="Basis"><small>{{ r.calc_basis }}</small></td>
+    <td data-l="Deduction" class="num-col {% if r.penalty_amount %}bad-text{% endif %}"><b>{% if r.penalty_amount %}₹{{ r.penalty_amount|floatformat:2 }}{% else %}₹0{% endif %}</b></td>
+    <td data-l="Status">
+      {% if r.status == 'penalty' %}
+        <span class="status status-down">Penalty due</span>
+      {% elif r.status == 'warning' %}
+        <span class="status status-hold">At risk</span>
+      {% else %}
+        <span class="status status-up">Compliant</span>
+      {% endif %}
+    </td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'circle-check' %}<h2>No equipment records</h2><p>No active equipment found for this period.</p></div>
 {% endif %}
 
 {% elif tab == 'faults' %}

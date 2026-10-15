@@ -176,6 +176,7 @@ continues there as before. Nothing on the old server was changed.
 | Every day | Look at Settings and health |
 | Every week | Glance at the Backups page: green, recent, weekly check passed |
 | Every month | Disk under 80% full. Install Windows (or Linux) updates out of hours, then restart the server |
+| Every month | Review PM schedules and CAMC uptime compliance under Equipment |
 | Every 3 months | Restore a full copy on a spare computer (section 4) |
 | When staff join or leave | Add the user, or untick Active |
 | When an AMC is renewed | Change the AMC expiry date on the machine |

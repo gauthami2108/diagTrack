@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from . import signin
 
-from .models import (Category, CategoryField, Centre, Department, Equipment, EscalationRule,
+from .models import (Category, CategoryField, Centre, Department, Equipment, EscalationRule, PreventiveMaintenance,
                      OutboundMessage, SignInLock, SlaPolicy, TicketHistory, User, Vendor, VendorCall)
 
 admin.site.site_header = "DiagTrack administration"
@@ -126,13 +126,21 @@ class VendorAdmin(admin.ModelAdmin):
 
 @admin.register(Equipment)
 class EquipmentAdmin(admin.ModelAdmin):
-    list_display = ("name", "centre", "make_and_model", "serial_no", "vendor", "amc_expiry", "active")
+    list_display = ("name", "centre", "make_and_model", "vendor", "amc_expiry", "uptime_guarantee_percent", "penalty_rate_per_day", "active")
     list_filter = ("centre", "active")
     search_fields = ("name", "serial_no", "make", "model")
 
     @admin.display(description="Make and model", ordering="make")
     def make_and_model(self, e):
         return f"{e.make} {e.model}".strip()
+
+
+@admin.register(PreventiveMaintenance)
+class PreventiveMaintenanceAdmin(admin.ModelAdmin):
+    list_display = ("equipment", "title", "frequency_months", "next_due_date", "last_performed_at", "active", "assigned_to", "last_ticket")
+    list_filter = ("frequency_months", "active", "equipment__centre")
+    search_fields = ("title", "equipment__name", "notes")
+    autocomplete_fields = ("equipment", "assigned_to")
 
 
 @admin.register(SlaPolicy)

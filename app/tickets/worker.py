@@ -30,9 +30,12 @@ class Worker:
         today = timezone.localdate()
         if self.amc_day != today:  # once a day, and at start
             amc = services.amc_checks()
+            pm_sent = services.run_pm_checks()
             self.amc_day = today
             if amc:
                 log.info("Sent %s AMC expiry alerts.", amc)
+            if pm_sent:
+                log.info("Auto-generated %s PM tickets.", pm_sent)
 
         if today.weekday() == 0:  # Monday: executive summary to management
             try:

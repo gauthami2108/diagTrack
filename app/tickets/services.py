@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from . import notify as nt
 from .models import (
-    OPEN_STATUSES, RUNNING_STATUSES, Centre, Department, DowntimeLog, Equipment, EscalationLog, VendorCall,
+    OPEN_STATUSES, RUNNING_STATUSES, Category, Centre, Department, DowntimeLog, Equipment, EscalationLog, VendorCall, PreventiveMaintenance,
     EscalationRule, Heartbeat, Priority, SiteSettings, SlaPolicy, Status, Ticket,
     TicketAttachment, TicketComment, TicketHistory, User,
 )
@@ -338,6 +338,17 @@ def resolve(t, actor, note, downtime_end=None):
     _mark_response(t, actor, now)
     t.save()
     log(t, actor, "Resolved the ticket", "status", "In progress", "Resolved", note.strip())
+    pm = getattr(t, "pm_schedule", None) or PreventiveMaintenance.objects.filter(last_ticket=t).first()
+    if pm:
+        today = timezone.localdate(now)
+        pm.last_performed_at = today
+        year = today.year + (today.month + pm.frequency_months - 1) // 12
+        month = (today.month + pm.frequency_months - 1) % 12 + 1
+        day = min(today.day, 28)
+        import datetime as _dt
+        pm.next_due_date = _dt.date(year, month, day)
+        pm.save(update_fields=["last_performed_at", "next_due_date"])
+        log(t, actor, f"Completed PM schedule '{pm.title}'. Next due date advanced to {pm.next_due_date:%d %b %Y}.")
     s = SiteSettings.load()
     who = [t.requester]
     if t.assignee and actor.pk != t.assignee_id:
@@ -690,3 +701,65 @@ def auto_close(now=None):
 
 def beat(name, detail=""):
     Heartbeat.objects.update_or_create(name=name, defaults={"at": timezone.now(), "detail": detail[:300]})
+
+
+def run_pm_checks(today=None):
+    """Once a day: check active PM schedules and generate tickets for upcoming or overdue maintenance."""
+    today = today or timezone.localdate()
+    schedules = PreventiveMaintenance.objects.filter(active=True, equipment__active=True).select_related("equipment__centre", "assigned_to")
+    biomed_dept = Department.objects.filter(handles_equipment=True, active=True).first()
+    admins = list(User.objects.filter(role=User.ADMIN, is_active=True))
+    default_requester = admins[0] if admins else User.objects.filter(is_active=True).first()
+
+    generated = 0
+    for pm in schedules:
+        days_until = (pm.next_due_date - today).days
+        if days_until > pm.advance_notice_days:
+            continue
+        if pm.last_ticket and pm.last_ticket.status in OPEN_STATUSES:
+            continue
+        if Ticket.objects.filter(pm_schedule=pm, status__in=OPEN_STATUSES).exists():
+            continue
+
+        dept = biomed_dept or Department.objects.filter(active=True).first()
+        if not dept:
+            continue
+
+        cat, _ = Category.objects.get_or_create(
+            department=dept,
+            name="Preventive Maintenance",
+            defaults={"default_priority": Priority.P3, "asks_equipment": True}
+        )
+
+        requester = pm.assigned_to or dept.head or default_requester
+        priority = Priority.P2 if pm.is_overdue else Priority.P3
+        subject = f"PM: {pm.title} - {pm.equipment.name}"
+        desc = (
+            f"Scheduled Preventive Maintenance ({pm.get_frequency_months_display()}) for {pm.equipment.name} "
+            f"at {pm.equipment.centre.name}.\n"
+            f"Target Due Date: {pm.next_due_date.strftime('%d %b %Y')}.\n\n"
+            f"Checklist & Service Points:\n"
+            f"{pm.notes or 'Perform manufacturer-recommended inspection, calibration, safety checks, and routine maintenance.'}"
+        )
+
+        t = create_ticket(
+            user=requester,
+            centre=pm.equipment.centre,
+            category=cat,
+            subject=subject,
+            description=desc,
+            equipment=pm.equipment,
+            patient_impact=False,
+            equipment_down=False
+        )
+        t.pm_schedule = pm
+        if pm.assigned_to:
+            t.assignee = pm.assigned_to
+            t.status = Status.ASSIGNED
+        t.priority = priority
+        t.save()
+        pm.last_ticket = t
+        pm.save(update_fields=["last_ticket"])
+        generated += 1
+
+    return generated

@@ -9,8 +9,8 @@ For a software developer who needs to change or extend DiagTrack. The other guid
 | Language and framework | Python 3.13, Django 6.1, server-rendered templates |
 | Database | PostgreSQL 17 (SQLite when `DB_HOST` is not set, for local work) |
 | Web server | Docker: Gunicorn behind Caddy 2. Native Windows: Waitress inside `manage.py serve` (with optional Caddy TLS reverse proxy) |
-| Front end | Hand-written CSS (`static/css/app.css`), plain JavaScript (`static/js/app.js`), PWA Service Worker (`static/sw.js`), and Web App Manifest (`static/manifest.json`). No build step and no CDN: fonts (IBM Plex) and icons (Lucide) are bundled, so it works without internet |
-| Background jobs | `tickets.worker.Worker` once a minute (`runworker` in Docker, a thread of `serve` on Windows) evaluates SLA deadlines, escalations, weekly report schedules, and outbound dispatch; the backup runner every 5 seconds (`runbackups` in Docker, a thread of `serve` on Windows) |
+| Front end | Hand-written CSS (`static/css/app.css`), plain JavaScript (`static/js/app.js`), PWA Service Worker (`static/sw.js`), and Web App Manifest (`static/manifest.json`). No build step and no CDN: fonts (IBM Plex) and icons (Lucide) are bundled, so it works without internet. Includes mini sidebar hover tooltips and multi-line pill tab navigation (`.tabs-pills`) |
+| Background jobs | `tickets.worker.Worker` once a minute (`runworker` in Docker, a thread of `serve` on Windows) evaluates SLA deadlines, escalations, weekly report schedules, PM schedules, and outbound dispatch; the backup runner every 5 seconds (`runbackups` in Docker, a thread of `serve` on Windows) |
 | Encryption | `cryptography`: AES-256-GCM for backups and stored secrets, scrypt for the backup key, Windows DPAPI for the secrets file |
 | Live updates | Server-Sent Events (SSE) via `/api/live/stream/` with automatic 15-second polling fallback (`/api/live/`); no external messaging broker required |
 | Excel and QR | `openpyxl` and `segno` |
@@ -45,9 +45,9 @@ Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_P
 | `config/runtime.py` | Loads the settings file, the secrets file and `/run/secrets` into the environment |
 | `config/urls.py` | Every URL |
 | `tickets/models.py` | The data model |
-| `tickets/services.py` | **All business rules**: visibility, permissions, routing, assignment, status changes, SLA clock and database-level breach evaluations, escalation, vendor calls, AMC checks, mentions. Views never change a ticket directly |
+| `tickets/services.py` | **All business rules**: visibility, permissions, routing, assignment, status changes, SLA clock and database-level breach evaluations, escalation, vendor calls, AMC checks, PM checks, mentions. Views never change a ticket directly |
 | `tickets/notify.py` | In-app alerts and the outbound queue for email, SMS, WhatsApp and Telegram |
-| `tickets/worker.py` | One round of background work: SLA evaluations, weekly management reports, escalations, alert queue; skipped during maintenance, reduced to sending alerts when read-only |
+| `tickets/worker.py` | One round of background work: SLA evaluations, weekly management reports, PM auto-tickets, escalations, alert queue; skipped during maintenance, reduced to sending alerts when read-only |
 | `tickets/backup/` | `container.py` the encrypted file format, `engine.py` backup/verify/restore/test-restore/retention, `destinations.py` folders, schedules, retention rules, NAS logon, `runner.py` jobs, schedule, checks, alerts |
 | `tickets/state.py` | Shared JSON state in `STATUS_DIR`: jobs, maintenance and read-only flags, backup state and catalog, a file lock |
 | `tickets/middleware.py` | Maintenance page during restores (no database access), read-only mode during a move |
@@ -56,15 +56,15 @@ Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_P
 | `tickets/signin.py` | Wrong-password lock-out, active session invalidation (`invalidate_user_sessions`), the sign-in forms for main and admin login |
 | `tickets/bulk_import.py`, `tickets/views_import.py` | Import from Excel: the workbook with current data, row checks across sheets, one-transaction apply; the upload, preview and import screen |
 | `tickets/wording.py` | Events, placeholders, built-in wording and the template renderer for email, SMS, WhatsApp and Telegram |
-| `tickets/reports.py` | Home, dashboard, centre matrix, equipment figures, and weekly management summary report generation |
+| `tickets/reports.py` | Home, dashboard, centre matrix, equipment figures, PM schedule status, CAMC penalty calculation, and weekly management summary report generation |
 | `tickets/exports.py` | The Reports screen and the Excel workbook |
 | `tickets/views.py` | Screens, bulk actions, duplicate detection, SSE stream, and JSON feeds |
 | `tickets/admin.py` | Masters and rules (Django admin) |
-| `tickets/templatetags/dt.py` | SLA bar, avatars, icons, the safe comment formatter (`rich`) |
+| `tickets/templatetags/dt.py` | SLA bar, avatars, icons, `abs` filter, the safe comment formatter (`rich`) |
 | `tickets/mail.py` | Email backend that reads the SMTP details from Settings |
 | `tickets/management/commands/` | `serve`, `runworker`, `runbackups`, `backup`, `restore`, `verifybackup`, `setup_initial`, `setupcheck`, `siteconfig`, `unlock`, `seed_demo`, `archive_tickets`, `send_weekly_report` |
-| `tickets/tests.py` | Automated tests of the rules, screens, backups, bulk actions, duplicates, SSE, and alerts |
-| `templates/`, `static/` | Screens, styles, script, service worker (`sw.js`), manifest, fonts, icons, logo |
+| `tickets/tests.py` | Automated tests of the rules, screens, backups, bulk actions, duplicates, SSE, PM lifecycle, CAMC penalties, and alerts |
+| `templates/`, `static/` | Screens (including `masters_hub.html`), styles, script, service worker (`sw.js`), manifest, fonts, icons, logo |
 
 The setup program lives outside `app/`, in `installer/`: `setup.py` and the `diagtrack_setup` package (`main`, `ui`,
 `checks`, `common`, `windows`, `docker_mode`), `versions.json` (pinned Python and PostgreSQL downloads),
@@ -74,11 +74,12 @@ The setup program lives outside `app/`, in `installer/`: `setup.py` and the `dia
 
 | Model | Purpose |
 | --- | --- |
-| Centre | `code` is the ticket prefix; `next_seq` is the per-centre counter, row-locked when a number is issued |
+| Centre | `code` is the ticket prefix (2 to 5 characters); `next_seq` is the per-centre counter, row-locked when a number is issued |
 | Department | Head, assignment mode, `handles_equipment`, round-robin pointer |
 | Category, CategoryField | Routing, default priority, extra questions per category |
 | User | Custom user: role, mobile, `telegram_chat_id`, photo, centres (M2M), departments (M2M) |
-| Vendor, Equipment | Equipment register; `amc_alert_for` and `amc_alert_stage` make each AMC warning go out once |
+| Vendor, Equipment | Equipment register with contractual `uptime_guarantee_percent`, `penalty_rate_per_day`, and `annual_camc_cost`; `amc_alert_for` and `amc_alert_stage` make each AMC warning go out once |
+| PreventiveMaintenance | Recurring calibration and PM schedules linked to equipment; tracks `frequency_months`, `last_performed_at`, `next_due_date`, and auto-generated `last_ticket` |
 | DowntimeLog | Downtime per equipment ticket |
 | VendorCall | Vendor called for a ticket: called and attended times, reference, engineer |
 | SlaPolicy | Minutes per priority; department null means the default |
@@ -119,6 +120,12 @@ worker once a minute, evaluating un-responded and un-resolved open tickets direc
 **Active session invalidation.** `signin.invalidate_user_sessions(user)` purges all active session keys from the database, triggered on password reset or explicit user request from My Profile.
 
 **Weekly management email reports.** Every Monday at 07:00, the worker calls `reports.check_and_send_weekly_reports()` to compile and dispatch a 7-day executive summary email covering volume, resolution rates, SLA breaches, and downtime to configured management recipients. Can be run manually with `manage.py send_weekly_report [--force]`.
+
+**Preventive Maintenance (PM) automation.** `PreventiveMaintenance` schedules define recurring servicing intervals (monthly, quarterly, half-yearly, annual). The daily worker checks upcoming due dates via `services.run_pm_checks()` and auto-generates tickets under category `Preventive Maintenance` when within `advance_notice_days` (default 7 days). When a PM ticket is resolved, `services.resolve()` automatically stamps `last_performed_at` and advances `next_due_date` by the schedule's frequency months.
+
+**CAMC Uptime Guarantee & Penalty Calculator.** Contractual parameters on `Equipment` (`uptime_guarantee_percent`, `penalty_rate_per_day`, `annual_camc_cost`) are evaluated against actual downtime in `DowntimeLog` via `reports.camc_uptime_penalties()`. The engine calculates permissible downtime, excess hours, and computes financial deduction penalties either via configured per-day excess rates or pro-rata annual CAMC contract value.
+
+**Masters and rules native hub.** `/masters/` delivers a unified, comprehensive administration interface covering all 13 operational and master entities across dedicated native multi-line pill tabs (`.tabs-pills`): Centres, Departments, Categories & questions, SLA policies, Escalation rules, Users & access, Sign-in locks, Vendors, Equipment register, Preventive maintenance schedules, Sent alerts log, Ticket history audit trail, and Vendor calls. Every table features auto-submitting filters, multi-column sorting, text search, pagination, and modal dialogs for rapid record creation and editing without requiring raw database admin tools.
 
 **Permissions.** `services.allowed_actions(user, ticket)` returns the set of actions a person may take; every screen
 and every action checks it. `services.visible_tickets(user)` is the only way tickets are listed or fetched.
@@ -172,6 +179,7 @@ import, and are removed after it or after a day.
 
 | URL | Returns |
 | --- | --- |
+| `/masters/` | Dedicated native Masters and rules management hub with quick-add dialogs and quick statistics (administrators) |
 | `/api/live/stream/` | Server-Sent Events (SSE) event stream for instant ticket and notification pushes |
 | `/api/live/?after=<id>` | New alerts for the signed-in person since that id, the unread count and the newest id (polling fallback) |
 | `/api/duplicates/` | JSON list of matching open tickets during ticket drafting |
@@ -247,4 +255,4 @@ first tested on the real machines.
 
 HTML (designed) emails, a cloud backup destination, code signing for the Windows installer executable, changing the
 backup passphrase in place, saved replies, child tickets, a calendar view, saved
-filters, preventive maintenance schedules, knowledge articles, and two-step login.
+filters, knowledge articles, and two-step login.

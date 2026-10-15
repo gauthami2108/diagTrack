@@ -28,37 +28,37 @@ d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini
     </a>
     {% with r=request.user.role p=request.resolver_match.url_name v=request.GET.view %}
     <nav aria-label="Main">
-      <a href="{% url 'home' %}" {% if p == 'home' %}aria-current="page"{% endif %}>{% icon 'house' %}<span>Home</span></a>
+      <a href="{% url 'home' %}" data-tooltip="Home" {% if p == 'home' %}aria-current="page"{% endif %}>{% icon 'house' %}<span>Home</span></a>
       {% if r != 'management' or request.user.is_superuser %}
-      <a href="{% url 'ticket_new' %}" {% if p == 'ticket_new' %}aria-current="page"{% endif %}>{% icon 'circle-plus' %}<span>Raise a ticket</span></a>
-      <a href="{% url 'ticket_list' %}?view=mine" {% if p == 'ticket_list' and v == 'mine' %}aria-current="page"{% endif %}>{% icon 'ticket' %}<span>My tickets</span></a>
+      <a href="{% url 'ticket_new' %}" data-tooltip="Raise a ticket" {% if p == 'ticket_new' %}aria-current="page"{% endif %}>{% icon 'circle-plus' %}<span>Raise a ticket</span></a>
+      <a href="{% url 'ticket_list' %}?view=mine" data-tooltip="My tickets" {% if p == 'ticket_list' and v == 'mine' %}aria-current="page"{% endif %}>{% icon 'ticket' %}<span>My tickets</span></a>
       {% endif %}
       {% if request.user.is_resolver %}
       <p class="nav-group">Resolve</p>
-      <a href="{% url 'ticket_list' %}?view=work" {% if p == 'ticket_list' and v == 'work' %}aria-current="page"{% endif %}>{% icon 'inbox' %}<span>Assigned to me</span></a>
-      <a href="{% url 'ticket_list' %}?view=queue" {% if p == 'ticket_list' and v == 'queue' %}aria-current="page"{% endif %}>{% icon 'users' %}<span>Team queue</span></a>
-      <a href="{% url 'board' %}" {% if p == 'board' %}aria-current="page"{% endif %}>{% icon 'square-kanban' %}<span>Board</span></a>
+      <a href="{% url 'ticket_list' %}?view=work" data-tooltip="Assigned to me" {% if p == 'ticket_list' and v == 'work' %}aria-current="page"{% endif %}>{% icon 'inbox' %}<span>Assigned to me</span></a>
+      <a href="{% url 'ticket_list' %}?view=queue" data-tooltip="Team queue" {% if p == 'ticket_list' and v == 'queue' %}aria-current="page"{% endif %}>{% icon 'users' %}<span>Team queue</span></a>
+      <a href="{% url 'board' %}" data-tooltip="Board" {% if p == 'board' %}aria-current="page"{% endif %}>{% icon 'square-kanban' %}<span>Board</span></a>
       {% endif %}
       {% if r != 'requester' or request.user.is_superuser %}
       <p class="nav-group">Oversee</p>
-      <a href="{% url 'ticket_list' %}?view=all" {% if p == 'ticket_list' and v == 'all' %}aria-current="page"{% endif %}>{% icon 'list' %}<span>All tickets</span></a>
-      {% if not request.user.is_resolver %}<a href="{% url 'board' %}" {% if p == 'board' %}aria-current="page"{% endif %}>{% icon 'square-kanban' %}<span>Board</span></a>{% endif %}
-      <a href="{% url 'dashboard' %}" {% if p == 'dashboard' %}aria-current="page"{% endif %}>{% icon 'chart-column' %}<span>Dashboard</span></a>
-      <a href="{% url 'centres' %}" {% if p == 'centres' %}aria-current="page"{% endif %}>{% icon 'building-2' %}<span>Centres</span></a>
-      <a href="{% url 'reports' %}" {% if p == 'reports' %}aria-current="page"{% endif %}>{% icon 'file-text' %}<span>Reports</span></a>
-      <a href="{% url 'equipment_list' %}" {% if p == 'equipment_list' or p == 'equipment_detail' %}aria-current="page"{% endif %}>{% icon 'scan-line' %}<span>Equipment</span></a>
+      <a href="{% url 'ticket_list' %}?view=all" data-tooltip="All tickets" {% if p == 'ticket_list' and v == 'all' %}aria-current="page"{% endif %}>{% icon 'list' %}<span>All tickets</span></a>
+      {% if not request.user.is_resolver %}<a href="{% url 'board' %}" data-tooltip="Board" {% if p == 'board' %}aria-current="page"{% endif %}>{% icon 'square-kanban' %}<span>Board</span></a>{% endif %}
+      <a href="{% url 'dashboard' %}" data-tooltip="Dashboard" {% if p == 'dashboard' %}aria-current="page"{% endif %}>{% icon 'chart-column' %}<span>Dashboard</span></a>
+      <a href="{% url 'centres' %}" data-tooltip="Centres" {% if p == 'centres' %}aria-current="page"{% endif %}>{% icon 'building-2' %}<span>Centres</span></a>
+      <a href="{% url 'reports' %}" data-tooltip="Reports" {% if p == 'reports' %}aria-current="page"{% endif %}>{% icon 'file-text' %}<span>Reports</span></a>
+      <a href="{% url 'equipment_list' %}" data-tooltip="Equipment" {% if p == 'equipment_list' or p == 'equipment_detail' %}aria-current="page"{% endif %}>{% icon 'scan-line' %}<span>Equipment</span></a>
       {% endif %}
       {% if request.user.is_admin %}
       <p class="nav-group">Administer</p>
-      <a href="{% url 'admin:index' %}">{% icon 'sliders-horizontal' %}<span>Masters and rules</span></a>
-      <a href="{% url 'import_page' %}" {% if p == 'import_page' %}aria-current="page"{% endif %}>{% icon 'upload' %}<span>Import from Excel</span></a>
-      <a href="{% url 'backups' %}" {% if p == 'backups' %}aria-current="page"{% endif %}>{% icon 'hard-drive' %}<span>Backups</span></a>
-      <a href="{% url 'message_templates' %}" {% if p == 'message_templates' %}aria-current="page"{% endif %}>{% icon 'mail' %}<span>Message templates</span></a>
-      <a href="{% url 'settings' %}" {% if p == 'settings' %}aria-current="page"{% endif %}>{% icon 'settings' %}<span>Settings and health</span></a>
+      <a href="{% url 'masters_hub' %}" data-tooltip="Masters and rules" {% if p == 'masters_hub' %}aria-current="page"{% endif %}>{% icon 'sliders-horizontal' %}<span>Masters and rules</span></a>
+      <a href="{% url 'import_page' %}" data-tooltip="Import from Excel" {% if p == 'import_page' %}aria-current="page"{% endif %}>{% icon 'upload' %}<span>Import from Excel</span></a>
+      <a href="{% url 'backups' %}" data-tooltip="Backups" {% if p == 'backups' %}aria-current="page"{% endif %}>{% icon 'hard-drive' %}<span>Backups</span></a>
+      <a href="{% url 'message_templates' %}" data-tooltip="Message templates" {% if p == 'message_templates' %}aria-current="page"{% endif %}>{% icon 'mail' %}<span>Message templates</span></a>
+      <a href="{% url 'settings' %}" data-tooltip="Settings and health" {% if p == 'settings' %}aria-current="page"{% endif %}>{% icon 'settings' %}<span>Settings and health</span></a>
       {% endif %}
     </nav>
     {% endwith %}
-    <button class="nav-fold" type="button" data-nav-fold aria-label="Collapse menu">{% icon 'panel-left' %}<span>Collapse menu</span></button>
+    <button class="nav-fold" type="button" data-nav-fold data-tooltip="Collapse menu" aria-label="Collapse menu">{% icon 'panel-left' %}<span>Collapse menu</span></button>
   </aside>
   <div class="scrim" data-nav-close></div>
 
@@ -149,7 +149,7 @@ d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini
   {"t":"Centres","u":"{% url 'centres' %}","i":"building-2"},
   {"t":"Reports","u":"{% url 'reports' %}","i":"file-text"},
   {"t":"Equipment","u":"{% url 'equipment_list' %}","i":"scan-line"},{% endif %}
-  {% if request.user.is_admin %}{"t":"Masters and rules","u":"{% url 'admin:index' %}","i":"sliders-horizontal"},
+  {% if request.user.is_admin %}{"t":"Masters and rules","u":"{% url 'masters_hub' %}","i":"sliders-horizontal"},
   {"t":"Import from Excel","u":"{% url 'import_page' %}","i":"upload"},
   {"t":"Backups","u":"{% url 'backups' %}","i":"hard-drive"},
   {"t":"Message templates","u":"{% url 'message_templates' %}","i":"mail"},

@@ -249,6 +249,130 @@ def amc_due(centres=None, days=60, today=None):
     return out
 
 
+def pm_schedules_due(centres=None, today=None):
+    from .models import PreventiveMaintenance
+    today = today or timezone.localdate()
+    try:
+        qs = PreventiveMaintenance.objects.filter(
+            active=True, equipment__active=True
+        ).select_related("equipment__centre", "equipment__vendor", "assigned_to", "last_ticket")
+        if centres is not None:
+            qs = qs.filter(equipment__centre__in=centres)
+        out = []
+        for pm in qs.order_by("next_due_date", "equipment__name"):
+            days_left = (pm.next_due_date - today).days
+            pm.days_left = days_left
+            pm.days_overdue = abs(days_left) if days_left < 0 else 0
+            if days_left < 0:
+                pm.due_status = "overdue"
+            elif days_left <= pm.advance_notice_days:
+                pm.due_status = "due_soon"
+            else:
+                pm.due_status = "scheduled"
+            out.append(pm)
+        return out
+    except Exception:
+        return []
+
+
+def camc_uptime_penalties(equipment=None, centres=None, days=90, now=None):
+    """
+    Vendor CAMC Uptime Guarantee & Penalty Calculator.
+    Compares actual machine downtime against contractual uptime guarantees over a window (default 90 days),
+    and computes financial penalty deductions based on daily rates or pro-rata annual CAMC cost.
+    """
+    from .models import Equipment, DowntimeLog
+    now = now or timezone.now()
+    since = now - timedelta(days=days)
+    total_hours = round(days * 24.0, 1)
+    total_seconds = days * 86400
+
+    if equipment is not None:
+        qs = Equipment.objects.filter(pk=equipment.pk).select_related("centre", "vendor")
+    else:
+        qs = Equipment.objects.filter(active=True).select_related("centre", "vendor")
+        if centres is not None:
+            qs = qs.filter(centre__in=centres)
+
+    rows = []
+    for e in qs.order_by("centre__name", "name"):
+        logs = DowntimeLog.objects.filter(equipment=e).filter(Q(end__isnull=True) | Q(end__gte=since))
+        down_secs = sum(d.seconds(now, since) for d in logs)
+        down_hours = round(down_secs / 3600.0, 1)
+        uptime_pct = round(100.0 * (1.0 - min(down_secs, total_seconds) / total_seconds), 2)
+
+        guarantee_val = getattr(e, "uptime_guarantee_percent", None)
+        guarantee_pct = float(guarantee_val if guarantee_val is not None else 95.0)
+
+        allowable_down_hours = round(total_hours * (1.0 - guarantee_pct / 100.0), 1)
+        excess_down_hours = max(0.0, round(down_hours - allowable_down_hours, 1))
+        excess_days = round(excess_down_hours / 24.0, 2)
+
+        penalty_rate = float(getattr(e, "penalty_rate_per_day", 0.0) or 0.0)
+        camc_cost = float(getattr(e, "annual_camc_cost", 0.0) or 0.0)
+
+        if penalty_rate > 0:
+            penalty_amount = round(excess_days * penalty_rate, 2)
+            calc_basis = f"₹{penalty_rate:,.0f} / day excess"
+        elif camc_cost > 0:
+            penalty_amount = round((excess_down_hours / (365.0 * 24.0)) * camc_cost, 2)
+            calc_basis = f"Pro-rata of ₹{camc_cost:,.0f} CAMC"
+        else:
+            penalty_amount = 0.0
+            calc_basis = "No penalty rate configured"
+
+        if excess_down_hours > 0:
+            status = "penalty"
+            status_label = "Penalty Applicable"
+        elif allowable_down_hours > 0 and down_hours >= 0.75 * allowable_down_hours:
+            status = "warning"
+            status_label = "At Risk"
+        else:
+            status = "compliant"
+            status_label = "Compliant"
+
+        rows.append({
+            "equipment": e,
+            "vendor": e.vendor,
+            "centre": e.centre,
+            "guarantee_pct": guarantee_pct,
+            "uptime_pct": uptime_pct,
+            "down_hours": down_hours,
+            "allowable_down_hours": allowable_down_hours,
+            "excess_down_hours": excess_down_hours,
+            "excess_days": excess_days,
+            "penalty_rate": penalty_rate,
+            "camc_cost": camc_cost,
+            "penalty_amount": penalty_amount,
+            "calc_basis": calc_basis,
+            "status": status,
+            "status_label": status_label,
+            "is_down": logs.filter(end__isnull=True).exists(),
+        })
+
+    total_machines = len(rows)
+    penalized = sum(1 for r in rows if r["status"] == "penalty")
+    at_risk = sum(1 for r in rows if r["status"] == "warning")
+    total_penalty = sum(r["penalty_amount"] for r in rows)
+    total_excess_hours = round(sum(r["excess_down_hours"] for r in rows), 1)
+    avg_uptime = round(sum(r["uptime_pct"] for r in rows) / total_machines, 2) if total_machines else 100.0
+
+    return {
+        "rows": rows,
+        "days": days,
+        "total_hours": total_hours,
+        "summary": {
+            "total_machines": total_machines,
+            "penalized": penalized,
+            "at_risk": at_risk,
+            "compliant": total_machines - penalized - at_risk,
+            "total_penalty": total_penalty,
+            "total_excess_hours": total_excess_hours,
+            "avg_uptime": avg_uptime,
+        }
+    }
+
+
 # --------------------------------------------------------------------------
 # Weekly Management Summary Report
 # --------------------------------------------------------------------------

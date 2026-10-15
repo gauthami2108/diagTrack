@@ -23,6 +23,14 @@ def span(seconds):
     return _span(seconds or 0)
 
 
+@register.filter(name="abs")
+def abs_val(value):
+    try:
+        return abs(int(value))
+    except (ValueError, TypeError):
+        return value
+
+
 @register.simple_tag
 def icon(name, cls=""):
     return format_html('<svg class="i {}" aria-hidden="true"><use href="{}#{}"/></svg>', cls, static("icons.svg"), name)

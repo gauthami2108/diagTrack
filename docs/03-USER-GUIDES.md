@@ -27,6 +27,7 @@ administrator.
 | Look at a ticket without leaving a list | Click its row. It opens in a panel on the right. **Open ticket** shows the full page |
 | See your alerts | The bell at the top. The red number is how many you have not read |
 | Switch between light and dark | The moon or sun button at the top |
+| Collapse or expand the side menu | Click **Collapse menu** at the bottom of the sidebar. When collapsed, hover over any icon to see its label |
 | Get the side menu on a phone | The three lines at the top left |
 
 **Live updates & Pop-ups.** DiagTrack connects to a real-time Server-Sent Events stream (`/api/live/stream/`) with automatic fallback to polling. When a ticket that concerns you is raised, closed or escalated, or someone mentions you, a message slides in at the bottom right immediately, with a short sound for new tickets. Click **Open** to go to the ticket. Turn the sound off in the bell menu. The green **Live** dot at the top indicates an active live connection.
@@ -128,6 +129,8 @@ On list screens (**Assigned to me**, **Team queue**, **All tickets**), tick the 
 **Equipment tickets:** press **Log vendor call** when you call the service company (vendor, time, their complaint
 number), and **Engineer arrived** when the engineer comes. This measures the vendor's response time.
 
+**Preventive maintenance work orders:** DiagTrack automatically raises scheduled PM tickets for machines within their advance notice window (typically 7 days before due date). These tickets are tagged `[PM] <Equipment> - <Frequency>`, include the SOP checklist in the description, and route directly to the equipment department. When you complete the maintenance and click **Resolve**, DiagTrack automatically records the completion date and rolls the schedule forward to the next due date.
+
 **Board:** the same tickets as cards in four columns: To do, In progress, On hold, Resolved. Drag a card to the next
 column to start, hold or resolve it. The coloured edge shows the priority.
 
@@ -150,7 +153,7 @@ column to start, hold or resolve it. The coloured edge shows the priority.
 | Dashboard | Open tickets by centre, department, status, priority and age; raised and resolved each day; share resolved in time |
 | Centres | Every centre side by side: open, P1, late, machines down, raised, resolved, resolved in time, responded in time, average time to resolve, rating and uptime. Green is on target (90% or more), amber is watch (75 to 89%), red is below 75%. Click a number to open those tickets. **Excel** downloads the same figures |
 | Reports | Figures by centre, department and more, as Excel or PDF. Section 9 |
-| Equipment | Machines and uptime, repeat faults, vendor response times, AMC renewals |
+| Equipment | Machines and uptime, repeat faults, vendor response times, AMC renewals, PM calendar and CAMC uptime guarantees & penalties |
 
 Area managers are alerted on every new ticket at their centres. Management logins can see everything but cannot change
 tickets.

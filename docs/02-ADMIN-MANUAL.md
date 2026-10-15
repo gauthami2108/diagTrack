@@ -5,9 +5,7 @@ screen in the browser; no programming is needed.
 
 Sign in as an administrator. The side menu then shows extra items under **Administer**:
 
-- **Masters and rules**: the lists DiagTrack works from (centres, departments, categories, users, SLA times,
-  escalation rules, equipment, vendors). Every list has an **Add** button at the top right. Click a row to change it,
-  then press **Save** at the bottom.
+- **Masters and rules**: the unified native management hub with dedicated multi-line pill tabs for all 13 administrative entities: Centres, Departments, Categories & questions, SLA policies, Escalation rules, Users & access, Sign-in locks, Vendors, Equipment register, Preventive maintenance schedules, Sent alerts, Ticket history audit trail, and Vendor calls. Features native tables, instant auto-submitting filters, multi-column sorting, search, pagination, and modal quick-add dialogs in one cohesive interface.
 - **Import from Excel**: add or change centres, vendors, departments, people and equipment from one workbook.
 - **Backups**: backup folders, schedules, retention, Back up now, restores and moving to another server.
 - **Message templates**: the wording of email, SMS, WhatsApp and Telegram alerts, and which alerts go out on each channel.
@@ -139,23 +137,54 @@ used, alert these people. The starting rules:
 
 Untick **Active** to switch a rule off. Put P1,P2 in "Priorities" to make a rule apply only to those.
 
-## 6. Equipment, vendors, AMC and QR labels
+## 6. Equipment, vendors, AMC, PM calendar and CAMC guarantees
 
 *Masters and rules, Vendors:* the service companies, with contact person and phone.
 
-*Masters and rules, Equipment:* one row per machine per centre, with name, make, model, serial number, vendor and
-**AMC expiry date**.
+*Masters and rules, Equipment:* one row per machine per centre, with name, make, model, serial number, vendor,
+**AMC expiry date**, **Uptime guarantee %**, **Penalty rate per day**, and **Annual CAMC cost**.
 
 What DiagTrack does with them:
 
 | Feature | Where | What it does |
 | --- | --- | --- |
 | Downtime | Equipment, Machines | When staff tick "It is not working at all right now", the downtime clock starts. It stops when the ticket is resolved. Uptime is shown for 30 and 90 days |
+| Preventive Maintenance (PM) | Equipment, Preventive maintenance | Recurring maintenance calendar (monthly, quarterly, half-yearly, annual). Auto-generates tickets before deadlines and advances schedule upon resolution |
+| CAMC Uptime & Penalties | Equipment, CAMC uptime & penalties | Calculates contractual uptime guarantees (e.g. 95% or 98%), permissible downtime vs actual outage, and automatic penalty deduction summaries |
 | Vendor calls | Equipment ticket page | The team logs when they called the vendor and when the engineer arrived |
 | Vendor response | Equipment, Vendor response | Each vendor's calls and average time to arrive, last 90 days |
 | AMC renewals | Equipment, AMC renewals | Contracts ending soon. The equipment department head and administrators are alerted 60, 30 and 7 days before, and on the day it ends |
 | Repeat faults | Equipment, Repeat faults | Machines with 3 or more tickets in 90 days, worth a root-cause review |
 | QR labels | Equipment, Print QR labels | A printable sheet, one label per machine. Scanning a label with a phone opens Raise a ticket with the centre and machine already chosen |
+
+### Preventive Maintenance (PM) Calendar & Auto-Tickets
+1. **Adding a PM Schedule:** Open any machine's detail page under *Equipment*, scroll to *Preventive maintenance schedules*, and click *+ Add new PM schedule*.
+2. **Parameters:**
+   - **Title:** e.g., "Quarterly RF & Calibration Check" or "Monthly Helium Monitoring".
+   - **Frequency:** Monthly (1 mo), Quarterly (3 mo), Half-yearly (6 mo), or Annual (12 mo).
+   - **Target Due Date:** The initial target deadline.
+   - **Advance Notice:** Days prior to the due date when DiagTrack should automatically raise the ticket (default: 7 days).
+   - **Assigned Engineer / Agent:** Optional designated biomedical engineer. If left unassigned, routes according to the equipment team head / department rules.
+   - **Checklist / Service SOP:** Manufacturer checklist or calibration guidelines automatically included in the generated ticket body.
+3. **Automated Lifecycle:**
+   - The background worker evaluates active PM schedules daily and generates an automated ticket under category `Preventive Maintenance` (Priority P3, or P2 if already overdue).
+   - When the ticket is resolved, DiagTrack automatically sets `last_performed_at` to the resolution date and advances `next_due_date` by the schedule's frequency months.
+
+### Vendor CAMC Uptime Guarantees & Penalty Calculator
+1. **Contract Parameters on Equipment:**
+   - In *Masters and rules, Equipment*, configure:
+     - **Uptime guarantee %:** Contractual uptime SLA (default: 95.00%).
+     - **Penalty per day (₹):** Fixed deduction rate per 24 hours of excess downtime beyond allowable limits.
+     - **Annual CAMC cost (₹):** Contract value used for pro-rata penalty calculation if a daily rate is not specified.
+2. **Penalty Formula:**
+   - Total Available Hours: Total days × 24 hours.
+   - Permissible Downtime: Total hours × (1 - Guarantee % / 100).
+   - Excess Downtime Hours: max(0, Actual Outage Hours - Permissible Downtime).
+   - Excess Downtime Days: Excess Hours / 24.
+   - Penalty Amount:
+     - When daily penalty rate is set: Excess Days × Daily Penalty Rate.
+     - When annual CAMC cost is set: (Excess Hours / 8760) × Annual CAMC Cost.
+3. **Audit Screen:** Navigate to *Equipment → CAMC uptime & penalties* to inspect compliance across 30, 90, 180, or 365 days with instant deduction summaries for vendor invoices.
 
 For the QR labels, first fill in "address of this system" in Settings, then choose a centre on the Machines tab and
 press **Print QR labels**. Print on A4, cut along the dashed lines and stick one on each machine. Each machine's own

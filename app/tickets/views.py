@@ -11,16 +11,18 @@ from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import notify, reports, services, wording
-from .models import (HOLD_REASONS, OPEN_STATUSES, Category, Centre, Department, DowntimeLog, Equipment,
-                     Heartbeat, Notification, OutboundMessage, Priority, SiteSettings, Status, Ticket,
-                     MessageTemplate, TicketAttachment, TicketComment, User, Vendor, VendorCall)
+from .models import (HOLD_REASONS, OPEN_STATUSES, Category, CategoryField, Centre, Department, DowntimeLog, Equipment,
+                     EscalationRule, Heartbeat, Notification, OutboundMessage, PreventiveMaintenance, Priority,
+                     SignInLock, SiteSettings, SlaPolicy, Status, Ticket, MessageTemplate, TicketAttachment,
+                     TicketComment, TicketHistory, User, Vendor, VendorCall)
 
 
 def role_required(test):
@@ -468,27 +470,104 @@ def equipment_list(request):
         e.stats = reports.equipment_uptime(e)
         e.open_tickets = e.tickets.filter(status__in=OPEN_STATUSES).count()
     scope = None if user.sees_everything or not user.centres.exists() else user.centres.all()
-    tab = request.GET.get("tab") if request.GET.get("tab") in ("faults", "vendors", "amc") else "machines"
+    tab = request.GET.get("tab") if request.GET.get("tab") in ("faults", "vendors", "amc", "pm", "penalties") else "machines"
     visible = services.visible_tickets(user)
     faults = reports.repeat_faults(visible)
+    pm_list = reports.pm_schedules_due(scope)
+    penalty_days = int(request.GET["days"]) if request.GET.get("days") in ("30", "90", "180", "365") else 90
+    penalties = reports.camc_uptime_penalties(centres=scope, days=penalty_days)
     return render(request, "equipment_list.html", {
         "items": items, "centres": Centre.objects.filter(active=True), "q": q, "tab": tab,
         "down_count": sum(1 for e in items if e.stats["is_down"]),
         "faults": faults, "fault_ids": {f["equipment"].pk for f in faults},
         "vendors": reports.vendor_performance(centres=scope),
-        "amc": reports.amc_due(scope, max(SiteSettings.load().amc_alert_days, 30))})
+        "amc": reports.amc_due(scope, max(SiteSettings.load().amc_alert_days, 30)),
+        "pm_list": pm_list,
+        "pm_due_count": sum(1 for p in pm_list if p.due_status in ("overdue", "due_soon")),
+        "penalties": penalties,
+        "penalty_days": penalty_days})
 
 
 @not_requester
 def equipment_detail(request, pk):
     e = get_object_or_404(Equipment.objects.select_related("centre", "vendor"), pk=pk)
     tickets = services.visible_tickets(request.user).filter(equipment=e).order_by("-created_at")[:50]
+    today = timezone.localdate()
+    try:
+        pm_schedules = list(e.pm_schedules.filter(active=True).select_related("assigned_to", "last_ticket").order_by("next_due_date"))
+        for pm in pm_schedules:
+            pm.days_left = (pm.next_due_date - today).days
+            pm.days_overdue = abs(pm.days_left) if pm.days_left < 0 else 0
+            pm.due_status = "overdue" if pm.days_left < 0 else "due_soon" if pm.days_left <= pm.advance_notice_days else "scheduled"
+    except Exception:
+        pm_schedules = []
+
+    try:
+        penalties_data = reports.camc_uptime_penalties(equipment=e, days=90)
+        e_penalty = penalties_data["rows"][0] if penalties_data.get("rows") else None
+    except Exception:
+        e_penalty = None
+
+    agents = list(User.objects.filter(role__in=[User.AGENT, User.DEPT_HEAD], is_active=True))
+
     return render(request, "equipment_detail.html", {
         "e": e, "stats": reports.equipment_uptime(e), "stats90": reports.equipment_uptime(e, 90),
         "calls": VendorCall.objects.filter(ticket__equipment=e).select_related("vendor", "ticket")[:20],
         "amc_left": (e.amc_expiry - timezone.localdate()).days if e.amc_expiry else None,
         "tickets": tickets, "downtime": DowntimeLog.objects.filter(equipment=e).select_related("ticket")[:30],
-        "qr_target": _qr_target(request, e)})
+        "qr_target": _qr_target(request, e),
+        "pm_schedules": pm_schedules,
+        "penalty_stats": e_penalty,
+        "agents": agents})
+
+
+@not_requester
+@require_POST
+def equipment_pm_create(request, pk):
+    e = get_object_or_404(Equipment, pk=pk)
+    title = request.POST.get("title", "").strip()
+    freq = int(request.POST.get("frequency_months") or 3)
+    due_str = request.POST.get("next_due_date", "").strip()
+    notice = int(request.POST.get("advance_notice_days") or 7)
+    assigned_to_id = request.POST.get("assigned_to") or None
+    notes = request.POST.get("notes", "").strip()
+    if not title:
+        messages.error(request, "Enter a title for the PM schedule.")
+        return redirect("equipment_detail", pk=e.pk)
+    try:
+        next_due = datetime.strptime(due_str, "%Y-%m-%d").date()
+    except ValueError:
+        messages.error(request, "Enter a valid target due date.")
+        return redirect("equipment_detail", pk=e.pk)
+
+    assigned_to = User.objects.filter(pk=assigned_to_id, is_active=True).first() if assigned_to_id else None
+    pm = PreventiveMaintenance.objects.create(
+        equipment=e,
+        title=title,
+        frequency_months=freq,
+        next_due_date=next_due,
+        advance_notice_days=notice,
+        assigned_to=assigned_to,
+        notes=notes,
+    )
+    messages.success(request, f"Preventive maintenance schedule '{pm.title}' created.")
+    return redirect("equipment_detail", pk=e.pk)
+
+
+@not_requester
+@require_POST
+def pm_trigger_ticket(request, pk):
+    pm = get_object_or_404(PreventiveMaintenance, pk=pk)
+    if pm.last_ticket and pm.last_ticket.status in OPEN_STATUSES:
+        messages.warning(request, f"Ticket {pm.last_ticket.number} is already open for this PM schedule.")
+        return redirect("ticket_detail", number=pm.last_ticket.number)
+    services.run_pm_checks()
+    pm.refresh_from_db()
+    if pm.last_ticket:
+        messages.success(request, f"PM ticket {pm.last_ticket.number} generated.")
+        return redirect("ticket_detail", number=pm.last_ticket.number)
+    messages.info(request, "PM checks executed.")
+    return redirect("equipment_detail", pk=pm.equipment_id)
 
 
 # --------------------------------------------------------------------------
@@ -985,16 +1064,14 @@ def api_duplicates(request):
     equipment_id = request.GET.get("equipment", "").strip()
     q = request.GET.get("q", "").strip()
 
-    qs = services.visible_tickets(request.user).filter(status__in=OPEN_STATUSES)
-    matched = Ticket.objects.none()
+    q_filter = Q()
+    has_filter = False
 
-    if equipment_id:
-        try:
-            matched = matched | qs.filter(equipment_id=int(equipment_id))
-        except (ValueError, TypeError):
-            pass
+    if equipment_id and equipment_id.isdigit():
+        q_filter |= Q(equipment_id=int(equipment_id))
+        has_filter = True
 
-    if centre_id and len(q) >= 3:
+    if centre_id and centre_id.isdigit() and len(q) >= 3:
         try:
             cid = int(centre_id)
             words = [w for w in re.split(r"\s+", q) if len(w) >= 3]
@@ -1002,13 +1079,18 @@ def api_duplicates(request):
                 word_q = Q()
                 for w in words[:4]:
                     word_q |= Q(subject__icontains=w)
-                matched = matched | qs.filter(centre_id=cid).filter(word_q)
+                q_filter |= (Q(centre_id=cid) & word_q)
+                has_filter = True
         except (ValueError, TypeError):
             pass
 
+    if not has_filter:
+        return JsonResponse({"duplicates": []})
+
+    qs = services.visible_tickets(request.user).filter(status__in=OPEN_STATUSES).filter(q_filter)
     out = []
     seen = set()
-    for t in matched.select_related("centre", "department", "assignee", "equipment").order_by("-created_at")[:5]:
+    for t in qs.select_related("centre", "department", "assignee", "equipment").order_by("-created_at")[:5]:
         if t.pk in seen:
             continue
         seen.add(t.pk)
@@ -1186,3 +1268,618 @@ def metrics_view(request):
     resp = HttpResponse("\n".join(lines), content_type="text/plain; version=0.0.4; charset=utf-8")
     resp["Cache-Control"] = "no-cache"
     return resp
+
+
+
+# --------------------------------------------------------------------------
+# Masters and Rules Hub (Integrated Native UI)
+# --------------------------------------------------------------------------
+@admin_only
+def masters_hub(request):
+    tab = request.GET.get("tab") or "centres"
+    valid_tabs = (
+        "centres", "departments", "categories", "sla", "escalation",
+        "users", "locks", "vendors", "equipment", "pm",
+        "alerts", "history", "vendor_calls"
+    )
+    if tab not in valid_tabs:
+        tab = "centres"
+    q = request.GET.get("q", "").strip()
+    sort = request.GET.get("sort", "").strip()
+    status_filter = request.GET.get("status", "").strip()
+    centre_filter = request.GET.get("centre", "").strip()
+    dept_filter = request.GET.get("department", "").strip()
+    role_filter = request.GET.get("role", "").strip()
+    priority_filter = request.GET.get("priority", "").strip()
+    vendor_filter = request.GET.get("vendor", "").strip()
+    freq_filter = request.GET.get("frequency", "").strip()
+    mode_filter = request.GET.get("mode", "").strip()
+    basis_filter = request.GET.get("basis", "").strip()
+
+    ctx = {
+        "tab": tab,
+        "q": q,
+        "sort": sort,
+        "status_filter": status_filter,
+        "centre_filter": centre_filter,
+        "dept_filter": dept_filter,
+        "role_filter": role_filter,
+        "priority_filter": priority_filter,
+        "vendor_filter": vendor_filter,
+        "freq_filter": freq_filter,
+        "mode_filter": mode_filter,
+        "basis_filter": basis_filter,
+        "priorities": Priority.choices,
+        "centres_all": Centre.objects.filter(active=True).order_by("name"),
+        "departments_all": Department.objects.filter(active=True).order_by("name"),
+        "users_all": User.objects.filter(is_active=True).order_by("first_name", "username"),
+        "vendors_all": Vendor.objects.all().order_by("name"),
+        "equipment_all": Equipment.objects.filter(active=True).select_related("centre").order_by("centre__name", "name"),
+    }
+
+    if tab == "centres":
+        qs = Centre.objects.all().annotate(ticket_count=Count("tickets"), equipment_count=Count("equipment"))
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(code__icontains=q) | Q(city__icontains=q))
+        if status_filter == "active":
+            qs = qs.filter(active=True)
+        elif status_filter == "inactive":
+            qs = qs.filter(active=False)
+        if sort == "name_desc":
+            qs = qs.order_by("-name")
+        elif sort == "code":
+            qs = qs.order_by("code")
+        elif sort == "tickets":
+            qs = qs.order_by("-ticket_count", "name")
+        elif sort == "equipment":
+            qs = qs.order_by("-equipment_count", "name")
+        elif sort == "city":
+            qs = qs.order_by("city", "name")
+        else:
+            qs = qs.order_by("name")
+        ctx["centres"] = qs
+
+    elif tab == "departments":
+        qs = Department.objects.all().select_related("head").annotate(agent_count=Count("members"))
+        if q:
+            qs = qs.filter(name__icontains=q)
+        if status_filter == "active":
+            qs = qs.filter(active=True)
+        elif status_filter == "inactive":
+            qs = qs.filter(active=False)
+        if mode_filter:
+            qs = qs.filter(assignment_mode=mode_filter)
+        if request.GET.get("handles_equipment") == "1":
+            qs = qs.filter(handles_equipment=True)
+        if sort == "name_desc":
+            qs = qs.order_by("-name")
+        elif sort == "agents":
+            qs = qs.order_by("-agent_count", "name")
+        elif sort == "mode":
+            qs = qs.order_by("assignment_mode", "name")
+        else:
+            qs = qs.order_by("name")
+        ctx["departments"] = qs
+        ctx["assignment_modes"] = Department.MODES
+
+    elif tab == "categories":
+        qs = Category.objects.all().select_related("department").prefetch_related("fields")
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(department__name__icontains=q))
+        if dept_filter.isdigit():
+            qs = qs.filter(department_id=int(dept_filter))
+        if priority_filter:
+            qs = qs.filter(default_priority=priority_filter)
+        if status_filter == "active":
+            qs = qs.filter(active=True)
+        elif status_filter == "inactive":
+            qs = qs.filter(active=False)
+        if request.GET.get("asks_eq") == "1":
+            qs = qs.filter(asks_equipment=True)
+        if sort == "name_desc":
+            qs = qs.order_by("-name")
+        elif sort == "priority":
+            qs = qs.order_by("default_priority", "name")
+        elif sort == "department":
+            qs = qs.order_by("department__name", "name")
+        else:
+            qs = qs.order_by("department__name", "name")
+        ctx["categories"] = qs
+
+    elif tab == "sla":
+        qs = SlaPolicy.objects.all().select_related("department")
+        if q:
+            qs = qs.filter(Q(department__name__icontains=q) | Q(priority__icontains=q))
+        if dept_filter.isdigit():
+            qs = qs.filter(department_id=int(dept_filter))
+        elif dept_filter == "default":
+            qs = qs.filter(department__isnull=True)
+        if priority_filter:
+            qs = qs.filter(priority=priority_filter)
+        if sort == "response":
+            qs = qs.order_by("response_minutes")
+        elif sort == "resolution":
+            qs = qs.order_by("resolution_minutes")
+        elif sort == "priority":
+            qs = qs.order_by("priority", "department__name")
+        else:
+            qs = qs.order_by("department__name", "priority")
+        ctx["sla_policies"] = qs
+
+    elif tab == "escalation":
+        qs = EscalationRule.objects.all()
+        if q:
+            qs = qs.filter(name__icontains=q)
+        if basis_filter:
+            qs = qs.filter(basis=basis_filter)
+        if status_filter == "active":
+            qs = qs.filter(active=True)
+        elif status_filter == "disabled":
+            qs = qs.filter(active=False)
+        if sort == "name":
+            qs = qs.order_by("name")
+        elif sort == "percent_desc":
+            qs = qs.order_by("-percent")
+        elif sort == "basis":
+            qs = qs.order_by("basis", "percent")
+        else:
+            qs = qs.order_by("basis", "percent")
+        ctx["escalation_rules"] = qs
+
+    elif tab == "users":
+        qs = User.objects.all().prefetch_related("centres", "departments")
+        if q:
+            qs = qs.filter(Q(username__icontains=q) | Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(email__icontains=q) | Q(mobile__icontains=q))
+        if role_filter:
+            qs = qs.filter(role=role_filter)
+        if status_filter == "active":
+            qs = qs.filter(is_active=True)
+        elif status_filter == "inactive":
+            qs = qs.filter(is_active=False)
+        if centre_filter.isdigit():
+            qs = qs.filter(centres__id=int(centre_filter)).distinct()
+        if dept_filter.isdigit():
+            qs = qs.filter(departments__id=int(dept_filter)).distinct()
+        if sort == "name":
+            qs = qs.order_by("first_name", "last_name")
+        elif sort == "username":
+            qs = qs.order_by("username")
+        elif sort == "role":
+            qs = qs.order_by("role", "first_name")
+        else:
+            qs = qs.order_by("role", "first_name")
+        locks = {lock.key for lock in SignInLock.objects.filter(locked_until__gt=timezone.now())}
+        staff_list = list(qs)
+        for u in staff_list:
+            u.is_locked = f"user:{u.username}" in locks
+        ctx["staff"] = staff_list
+        ctx["roles"] = User.ROLES
+
+    elif tab == "locks":
+        qs = SignInLock.objects.all()
+        if q:
+            qs = qs.filter(Q(key__icontains=q) | Q(last_address__icontains=q))
+        now = timezone.now()
+        if status_filter == "paused":
+            qs = qs.filter(locked_until__gt=now)
+        elif status_filter == "counting":
+            qs = qs.filter(Q(locked_until__isnull=True) | Q(locked_until__lte=now))
+        if sort == "failures":
+            qs = qs.order_by("-failures")
+        elif sort == "recent":
+            qs = qs.order_by("-first_failure")
+        elif sort == "first":
+            qs = qs.order_by("first_failure")
+        else:
+            qs = qs.order_by("-locked_until", "-first_failure")
+        locks_list = list(qs)
+        for lock in locks_list:
+            lock.is_active_lock = bool(lock.locked_until and lock.locked_until > now)
+        ctx["locks"] = locks_list
+
+    elif tab == "vendors":
+        qs = Vendor.objects.all().annotate(equipment_count=Count("equipment"))
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(contact_person__icontains=q) | Q(phone__icontains=q))
+        if sort == "name_desc":
+            qs = qs.order_by("-name")
+        elif sort == "machines":
+            qs = qs.order_by("-equipment_count", "name")
+        else:
+            qs = qs.order_by("name")
+        ctx["vendors"] = qs
+
+    elif tab == "equipment":
+        qs = Equipment.objects.all().select_related("centre", "vendor")
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(make__icontains=q) | Q(model__icontains=q) | Q(serial_no__icontains=q) | Q(centre__name__icontains=q))
+        if centre_filter.isdigit():
+            qs = qs.filter(centre_id=int(centre_filter))
+        if vendor_filter.isdigit():
+            qs = qs.filter(vendor_id=int(vendor_filter))
+        if status_filter == "active":
+            qs = qs.filter(active=True)
+        elif status_filter == "retired":
+            qs = qs.filter(active=False)
+        today = timezone.localdate()
+        amc_filter = request.GET.get("amc", "").strip()
+        if amc_filter == "expired":
+            qs = qs.filter(amc_expiry__lt=today)
+        elif amc_filter == "soon":
+            qs = qs.filter(amc_expiry__gte=today, amc_expiry__lte=today + timedelta(days=30))
+        elif amc_filter == "active":
+            qs = qs.filter(amc_expiry__gt=today + timedelta(days=30))
+        ctx["amc_filter"] = amc_filter
+        if sort == "name_desc":
+            qs = qs.order_by("-name")
+        elif sort == "centre":
+            qs = qs.order_by("centre__name", "name")
+        elif sort == "amc":
+            qs = qs.order_by("amc_expiry", "name")
+        elif sort == "guarantee":
+            qs = qs.order_by("-uptime_guarantee_percent", "name")
+        elif sort == "penalty":
+            qs = qs.order_by("-penalty_rate_per_day", "name")
+        else:
+            qs = qs.order_by("centre__name", "name")
+        eq_list = list(qs)
+        for e in eq_list:
+            e.amc_left = (e.amc_expiry - today).days if e.amc_expiry else None
+        ctx["equipment"] = eq_list
+
+    elif tab == "pm":
+        qs = PreventiveMaintenance.objects.all().select_related("equipment__centre", "assigned_to", "last_ticket")
+        if q:
+            qs = qs.filter(Q(title__icontains=q) | Q(equipment__name__icontains=q) | Q(equipment__centre__name__icontains=q))
+        if centre_filter.isdigit():
+            qs = qs.filter(equipment__centre_id=int(centre_filter))
+        if freq_filter.isdigit():
+            qs = qs.filter(frequency_months=int(freq_filter))
+        if status_filter == "active":
+            qs = qs.filter(active=True)
+        elif status_filter == "disabled":
+            qs = qs.filter(active=False)
+        if sort == "due_desc":
+            qs = qs.order_by("-next_due_date", "equipment__name")
+        elif sort == "machine":
+            qs = qs.order_by("equipment__name", "next_due_date")
+        elif sort == "title":
+            qs = qs.order_by("title", "next_due_date")
+        else:
+            qs = qs.order_by("next_due_date", "equipment__name")
+        today = timezone.localdate()
+        pm_items = list(qs)
+        for pm in pm_items:
+            days_left = (pm.next_due_date - today).days
+            pm.days_left = days_left
+            pm.days_overdue = abs(days_left) if days_left < 0 else 0
+            pm.due_status = "overdue" if days_left < 0 else "due_soon" if days_left <= pm.advance_notice_days else "scheduled"
+        due_state = request.GET.get("due_state", "").strip()
+        ctx["due_state"] = due_state
+        if due_state == "overdue":
+            pm_items = [p for p in pm_items if p.due_status == "overdue"]
+        elif due_state == "due_soon":
+            pm_items = [p for p in pm_items if p.due_status == "due_soon"]
+        elif due_state == "scheduled":
+            pm_items = [p for p in pm_items if p.due_status == "scheduled"]
+        ctx["pm_list"] = pm_items
+        ctx["frequency_choices"] = PreventiveMaintenance.FREQUENCY_CHOICES
+
+    elif tab == "alerts":
+        qs = OutboundMessage.objects.all()
+        channel = request.GET.get("channel", "").strip()
+        if channel:
+            qs = qs.filter(channel=channel)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if q:
+            qs = qs.filter(Q(to__icontains=q) | Q(subject__icontains=q) | Q(body__icontains=q))
+        if sort == "old":
+            qs = qs.order_by("created_at")
+        elif sort == "attempts":
+            qs = qs.order_by("-attempts", "-created_at")
+        else:
+            qs = qs.order_by("-created_at")
+        page = Paginator(qs, 40).get_page(request.GET.get("page"))
+        ctx["page"] = page
+        ctx["channel"] = channel
+        ctx["channels"] = OutboundMessage.CHANNELS
+
+    elif tab == "history":
+        qs = TicketHistory.objects.all().select_related("ticket", "actor")
+        if q:
+            qs = qs.filter(Q(ticket__number__icontains=q) | Q(text__icontains=q) | Q(old__icontains=q) | Q(new__icontains=q) | Q(actor__username__icontains=q))
+        if sort == "old":
+            qs = qs.order_by("created_at")
+        else:
+            qs = qs.order_by("-created_at")
+        page = Paginator(qs, 50).get_page(request.GET.get("page"))
+        ctx["page"] = page
+
+    elif tab == "vendor_calls":
+        qs = VendorCall.objects.all().select_related("ticket", "vendor", "logged_by")
+        if q:
+            qs = qs.filter(Q(ticket__number__icontains=q) | Q(vendor__name__icontains=q) | Q(reference__icontains=q) | Q(engineer__icontains=q))
+        if vendor_filter.isdigit():
+            qs = qs.filter(vendor_id=int(vendor_filter))
+        if status_filter == "waiting":
+            qs = qs.filter(attended_at__isnull=True)
+        elif status_filter == "attended":
+            qs = qs.filter(attended_at__isnull=False)
+        if sort == "old":
+            qs = qs.order_by("called_at")
+        else:
+            qs = qs.order_by("-called_at")
+        page = Paginator(qs, 40).get_page(request.GET.get("page"))
+        ctx["page"] = page
+
+    return render(request, "masters_hub.html", ctx)
+
+
+@admin_only
+@require_POST
+def masters_action(request, section):
+    p = request.POST
+    do = p.get("do", "")
+    back = f"{reverse('masters_hub')}?tab={section}"
+
+    if section == "centres":
+        if do == "add":
+            name = p.get("name", "").strip()
+            code = p.get("code", "").strip().upper()
+            city = p.get("city", "").strip()
+            if not name or not code:
+                messages.error(request, "Centre name and short code are required.")
+                return redirect(back)
+            if not re.match(r"^[A-Z0-9]{2,5}$", code):
+                messages.error(request, "Short code must be 2 to 5 capital letters or digits.")
+                return redirect(back)
+            if Centre.objects.filter(code=code).exists():
+                messages.error(request, f"Centre with code '{code}' already exists.")
+                return redirect(back)
+            centre = Centre.objects.create(name=name, code=code, city=city)
+            messages.success(request, f"Centre '{centre.name}' ({centre.code}) created.")
+        elif do == "edit":
+            centre = get_object_or_404(Centre, pk=p.get("id") or 0)
+            centre.name = p.get("name", "").strip() or centre.name
+            centre.city = p.get("city", "").strip()
+            centre.active = p.get("active") == "on"
+            if not centre.tickets.exists() and p.get("code"):
+                new_code = p.get("code", "").strip().upper()
+                if re.match(r"^[A-Z0-9]{2,5}$", new_code):
+                    centre.code = new_code
+            centre.save()
+            messages.success(request, f"Centre '{centre.name}' updated.")
+
+    elif section == "departments":
+        if do == "add":
+            name = p.get("name", "").strip()
+            head_id = p.get("head") or None
+            mode = p.get("assignment_mode", Department.ROUND_ROBIN)
+            handles_eq = p.get("handles_equipment") == "on"
+            if not name:
+                messages.error(request, "Department name is required.")
+                return redirect(back)
+            if Department.objects.filter(name__iexact=name).exists():
+                messages.error(request, f"Department '{name}' already exists.")
+                return redirect(back)
+            if handles_eq:
+                Department.objects.filter(handles_equipment=True).update(handles_equipment=False)
+            Department.objects.create(name=name, head_id=head_id, assignment_mode=mode, handles_equipment=handles_eq)
+            messages.success(request, f"Department '{name}' created.")
+        elif do == "edit":
+            dept = get_object_or_404(Department, pk=p.get("id") or 0)
+            name = p.get("name", "").strip()
+            head_id = p.get("head") or None
+            mode = p.get("assignment_mode", Department.ROUND_ROBIN)
+            handles_eq = p.get("handles_equipment") == "on"
+            active = p.get("active") == "on"
+            if not name:
+                messages.error(request, "Department name is required.")
+                return redirect(back)
+            if handles_eq and not dept.handles_equipment:
+                Department.objects.filter(handles_equipment=True).update(handles_equipment=False)
+            dept.name, dept.head_id, dept.assignment_mode, dept.handles_equipment, dept.active = name, head_id, mode, handles_eq, active
+            dept.save()
+            messages.success(request, f"Department '{dept.name}' updated.")
+
+    elif section == "categories":
+        if do == "add":
+            name = p.get("name", "").strip()
+            dept_id = p.get("department") or None
+            prio = p.get("default_priority", Priority.P3)
+            asks_eq = p.get("asks_equipment") == "on"
+            if not name or not dept_id:
+                messages.error(request, "Name and Department are required.")
+                return redirect(back)
+            dept = get_object_or_404(Department, pk=dept_id)
+            if Category.objects.filter(department=dept, name__iexact=name).exists():
+                messages.error(request, f"Category '{name}' already exists in {dept.name}.")
+                return redirect(back)
+            cat = Category.objects.create(name=name, department=dept, default_priority=prio, asks_equipment=asks_eq)
+            messages.success(request, f"Category '{cat.name}' created.")
+        elif do == "add_field":
+            cat = get_object_or_404(Category, pk=p.get("category_id") or 0)
+            label = p.get("label", "").strip()
+            kind = p.get("kind", CategoryField.TEXT)
+            choices = p.get("choices", "").strip()
+            req = p.get("required") == "on"
+            if not label:
+                messages.error(request, "Question label is required.")
+                return redirect(back)
+            CategoryField.objects.create(category=cat, label=label, kind=kind, choices=choices, required=req, order=cat.fields.count())
+            messages.success(request, f"Question '{label}' added to {cat.name}.")
+        elif do == "edit":
+            cat = get_object_or_404(Category, pk=p.get("id") or 0)
+            cat.name = p.get("name", "").strip() or cat.name
+            cat.default_priority = p.get("default_priority", cat.default_priority)
+            cat.asks_equipment = p.get("asks_equipment") == "on"
+            cat.active = p.get("active") == "on"
+            cat.save()
+            messages.success(request, f"Category '{cat.name}' updated.")
+
+    elif section == "sla":
+        if do == "save":
+            dept_id = p.get("department") or None
+            prio = p.get("priority")
+            resp_m = int(p.get("response_minutes") or 60)
+            resol_m = int(p.get("resolution_minutes") or 1440)
+            if not prio:
+                messages.error(request, "Priority is required.")
+                return redirect(back)
+            dept = Department.objects.filter(pk=dept_id).first() if dept_id else None
+            policy, created = SlaPolicy.objects.update_or_create(
+                department=dept, priority=prio,
+                defaults={"response_minutes": resp_m, "resolution_minutes": resol_m}
+            )
+            messages.success(request, f"SLA policy for {dept.name if dept else 'All departments'} {prio} saved.")
+
+    elif section == "escalation":
+        if do == "add":
+            name = p.get("name", "").strip()
+            basis = p.get("basis", EscalationRule.RESOLUTION)
+            pct = int(p.get("percent") or 100)
+            prios = p.get("priorities", "").strip()
+            if not name:
+                messages.error(request, "Rule name is required.")
+                return redirect(back)
+            EscalationRule.objects.create(
+                name=name, basis=basis, percent=pct, priorities=prios,
+                notify_assignee=p.get("notify_assignee") == "on",
+                notify_dept_head=p.get("notify_dept_head") == "on",
+                notify_centre_manager=p.get("notify_centre_manager") == "on",
+                notify_area_manager=p.get("notify_area_manager") == "on",
+            )
+            messages.success(request, f"Escalation rule '{name}' created.")
+        elif do == "toggle":
+            rule = get_object_or_404(EscalationRule, pk=p.get("id") or 0)
+            rule.active = not rule.active
+            rule.save()
+            messages.success(request, f"Rule '{rule.name}' {'activated' if rule.active else 'deactivated'}.")
+
+    elif section == "users":
+        if do == "unlock":
+            username = p.get("username", "").strip()
+            from . import signin
+            signin.unlock(username=username)
+            messages.success(request, f"Sign-in lock lifted for {username}.")
+        elif do == "toggle_active":
+            target_user = get_object_or_404(User, pk=p.get("id") or 0)
+            if target_user.pk == request.user.pk:
+                messages.error(request, "You cannot deactivate your own account.")
+                return redirect(back)
+            target_user.is_active = not target_user.is_active
+            target_user.save()
+            messages.success(request, f"User {target_user.username} {'activated' if target_user.is_active else 'deactivated'}.")
+        elif do == "add":
+            username = p.get("username", "").strip().lower()
+            password = p.get("password", "").strip()
+            first_name = p.get("first_name", "").strip()
+            last_name = p.get("last_name", "").strip()
+            role = p.get("role", User.REQUESTER)
+            email = p.get("email", "").strip()
+            mobile = p.get("mobile", "").strip()
+            telegram_chat_id = p.get("telegram_chat_id", "").strip()
+            if not username or not password:
+                messages.error(request, "Username and password are required.")
+                return redirect(back)
+            if User.objects.filter(username=username).exists():
+                messages.error(request, f"Username '{username}' is already taken.")
+                return redirect(back)
+            new_u = User.objects.create_user(
+                username=username, password=password, first_name=first_name, last_name=last_name,
+                email=email, mobile=mobile, telegram_chat_id=telegram_chat_id, role=role
+            )
+            if role == User.ADMIN:
+                new_u.is_staff = new_u.is_superuser = True
+                new_u.save()
+            centres = p.getlist("centres")
+            if centres:
+                new_u.centres.set(centres)
+            departments = p.getlist("departments")
+            if departments:
+                new_u.departments.set(departments)
+            messages.success(request, f"User {new_u.display_name} (@{new_u.username}) created.")
+
+    elif section == "locks":
+        if do == "lift":
+            key = p.get("key", "").strip()
+            if key:
+                SignInLock.objects.filter(key=key).delete()
+                messages.success(request, f"Sign-in lock for {key} lifted.")
+
+    elif section == "vendors":
+        if do == "add":
+            name = p.get("name", "").strip()
+            contact = p.get("contact_person", "").strip()
+            phone = p.get("phone", "").strip()
+            email = p.get("email", "").strip()
+            notes = p.get("notes", "").strip()
+            if not name:
+                messages.error(request, "Vendor name is required.")
+                return redirect(back)
+            Vendor.objects.create(name=name, contact_person=contact, phone=phone, email=email, notes=notes)
+            messages.success(request, f"Vendor '{name}' added.")
+
+    elif section == "equipment":
+        if do == "add":
+            centre_id = p.get("centre") or None
+            name = p.get("name", "").strip()
+            make = p.get("make", "").strip()
+            model = p.get("model", "").strip()
+            serial_no = p.get("serial_no", "").strip()
+            vendor_id = p.get("vendor") or None
+            amc_expiry_str = p.get("amc_expiry", "").strip()
+            uptime_val = float(p.get("uptime_guarantee_percent") or 95.0)
+            penalty_val = float(p.get("penalty_rate_per_day") or 0.0)
+            camc_val = float(p.get("annual_camc_cost") or 0.0)
+            if not centre_id or not name:
+                messages.error(request, "Centre and equipment name are required.")
+                return redirect(back)
+            centre = get_object_or_404(Centre, pk=centre_id)
+            vendor = Vendor.objects.filter(pk=vendor_id).first() if vendor_id else None
+            amc_date = None
+            if amc_expiry_str:
+                try:
+                    amc_date = datetime.strptime(amc_expiry_str, "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+            eq = Equipment.objects.create(
+                centre=centre, name=name, make=make, model=model, serial_no=serial_no,
+                vendor=vendor, amc_expiry=amc_date, uptime_guarantee_percent=uptime_val,
+                penalty_rate_per_day=penalty_val, annual_camc_cost=camc_val
+            )
+            messages.success(request, f"Equipment '{eq.name}' ({centre.code}) created.")
+
+    elif section == "pm":
+        if do == "add":
+            eq_id = p.get("equipment") or None
+            title = p.get("title", "").strip()
+            freq = int(p.get("frequency_months") or 3)
+            next_due_str = p.get("next_due_date", "").strip()
+            notice = int(p.get("advance_notice_days") or 7)
+            assigned_id = p.get("assigned_to") or None
+            notes = p.get("notes", "").strip()
+            if not eq_id or not title or not next_due_str:
+                messages.error(request, "Equipment, title, and target due date are required.")
+                return redirect(back)
+            eq = get_object_or_404(Equipment, pk=eq_id)
+            try:
+                next_due = datetime.strptime(next_due_str, "%Y-%m-%d").date()
+            except ValueError:
+                messages.error(request, "Invalid due date.")
+                return redirect(back)
+            assignee = User.objects.filter(pk=assigned_id, is_active=True).first() if assigned_id else None
+            pm = PreventiveMaintenance.objects.create(
+                equipment=eq, title=title, frequency_months=freq, next_due_date=next_due,
+                advance_notice_days=notice, assigned_to=assignee, notes=notes
+            )
+            messages.success(request, f"PM schedule '{pm.title}' added for {eq.name}.")
+        elif do == "toggle":
+            pm = get_object_or_404(PreventiveMaintenance, pk=p.get("id") or 0)
+            pm.active = not pm.active
+            pm.save()
+            messages.success(request, f"PM schedule '{pm.title}' {'activated' if pm.active else 'deactivated'}.")
+
+    return redirect(back)
+

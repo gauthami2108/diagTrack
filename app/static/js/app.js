@@ -20,10 +20,24 @@
     const next = root.dataset.theme === "dark" ? "light" : "dark";
     root.dataset.theme = next; store.set("dt-theme", next);
   }));
+  const updateNavTooltips = () => {
+    const isMini = root.dataset.nav === "mini";
+    $$(".nav nav a").forEach(a => {
+      const label = a.querySelector("span")?.textContent.trim();
+      if (label) a.setAttribute("data-tooltip", label);
+    });
+    $$("[data-nav-fold]").forEach(b => {
+      const tip = isMini ? "Expand menu" : "Collapse menu";
+      b.setAttribute("data-tooltip", tip);
+      b.setAttribute("aria-label", tip);
+    });
+  };
+  updateNavTooltips();
   $$("[data-nav-fold]").forEach(b => b.addEventListener("click", () => {
     const mini = root.dataset.nav === "mini";
     if (mini) delete root.dataset.nav; else root.dataset.nav = "mini";
     store.set("dt-nav", mini ? "full" : "mini");
+    updateNavTooltips();
   }));
   $$("[data-nav-open]").forEach(b => b.addEventListener("click", () => document.body.classList.add("nav-open")));
   $$("[data-nav-close]").forEach(b => b.addEventListener("click", () => document.body.classList.remove("nav-open")));
