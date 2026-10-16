@@ -1492,3 +1492,156 @@ class Phase3Tests(Base):
         }, follow=True)
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(SlaPolicy.objects.filter(department=dept, priority="P2", response_minutes=25).exists())
+
+    def test_masters_hub_all_13_tabs_filters_and_sorting(self):
+        self.client.force_login(self.admin)
+        all_tabs = (
+            "centres", "departments", "categories", "sla", "escalation", "users",
+            "locks", "vendors", "equipment", "pm", "alerts", "history", "vendor_calls"
+        )
+        for tab in all_tabs:
+            resp = self.client.get(f"{reverse('masters_hub')}?tab={tab}")
+            self.assertEqual(resp.status_code, 200, f"Tab {tab} failed to render")
+
+        # Test search & filters on users tab
+        resp = self.client.get(f"{reverse('masters_hub')}?tab=users&q={self.req.username}&role=requester&status=active&sort=name")
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, self.req.first_name)
+
+        # Test filters on equipment tab
+        resp = self.client.get(f"{reverse('masters_hub')}?tab=equipment&q=MRI&status=active")
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "MRI 1.5T")
+
+        # Non-admin access check
+        self.client.force_login(self.req)
+        self.assertEqual(self.client.get(reverse("masters_hub")).status_code, 403)
+
+    def test_masters_edit_actions(self):
+        from .models import Vendor, PreventiveMaintenance, SignInLock
+        self.client.force_login(self.admin)
+
+        # 1. Edit Escalation Rule
+        rule = EscalationRule.objects.create(name="Pre-breach Alert", basis=EscalationRule.RESOLUTION, percent=75, active=True)
+        resp = self.client.post(reverse("masters_action", kwargs={"section": "escalation"}), {
+            "do": "edit", "id": rule.pk, "name": "Updated 80% Warning", "basis": EscalationRule.RESOLUTION,
+            "percent": "80", "priorities": "P1,P2", "notify_assignee": "on", "notify_dept_head": "on",
+            "notify_centre_manager": "on", "active": "on"
+        }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        rule.refresh_from_db()
+        self.assertEqual(rule.name, "Updated 80% Warning")
+        self.assertEqual(rule.percent, 80)
+        self.assertEqual(rule.priorities, "P1,P2")
+        self.assertTrue(rule.notify_centre_manager)
+
+        # 2. Edit User (details + password reset)
+        target_user = User.objects.create_user("test_tech", password="OldPassword123", role=User.AGENT,
+                                               first_name="Teja", email="old@example.com", mobile="9900000001")
+        resp = self.client.post(reverse("masters_action", kwargs={"section": "users"}), {
+            "do": "edit", "id": target_user.pk, "first_name": "Tejaswi", "last_name": "Rao",
+            "role": User.DEPT_HEAD, "email": "teja.rao@example.com", "mobile": "9900000002",
+            "telegram_chat_id": "12345678", "new_password": "NewSecretPassword@999",
+            "centres": [self.kkp.pk], "departments": [self.bio.pk], "active": "on"
+        }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        target_user.refresh_from_db()
+        self.assertEqual(target_user.first_name, "Tejaswi")
+        self.assertEqual(target_user.last_name, "Rao")
+        self.assertEqual(target_user.role, User.DEPT_HEAD)
+        self.assertEqual(target_user.email, "teja.rao@example.com")
+        self.assertEqual(target_user.mobile, "9900000002")
+        self.assertEqual(target_user.telegram_chat_id, "12345678")
+        self.assertTrue(target_user.check_password("NewSecretPassword@999"), "Password should be updated")
+        self.assertFalse(target_user.check_password("OldPassword123"), "Old password should no longer work")
+        self.assertIn(self.kkp, target_user.centres.all())
+        self.assertIn(self.bio, target_user.departments.all())
+
+        # 3. Edit Vendor
+        vendor = Vendor.objects.create(name="Wipro GE", contact_person="Ramesh", phone="9800000000")
+        resp = self.client.post(reverse("masters_action", kwargs={"section": "vendors"}), {
+            "do": "edit", "id": vendor.pk, "name": "GE HealthCare India", "contact_person": "Suresh Kumar",
+            "phone": "9811111111", "email": "service@gehealthcare.com", "notes": "24x7 critical SLA"
+        }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        vendor.refresh_from_db()
+        self.assertEqual(vendor.name, "GE HealthCare India")
+        self.assertEqual(vendor.contact_person, "Suresh Kumar")
+        self.assertEqual(vendor.phone, "9811111111")
+        self.assertEqual(vendor.email, "service@gehealthcare.com")
+
+        # 4. Edit Equipment
+        resp = self.client.post(reverse("masters_action", kwargs={"section": "equipment"}), {
+            "do": "edit", "id": self.mri.pk, "centre": self.sec.pk, "name": "MRI 3.0T Signa",
+            "make": "GE", "model": "Signa Pioneer", "serial_no": "MR-SN-9988", "vendor": vendor.pk,
+            "amc_expiry": "2027-12-31", "uptime_guarantee_percent": "98.5", "penalty_rate_per_day": "15000",
+            "annual_camc_cost": "750000", "active": "on"
+        }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.mri.refresh_from_db()
+        self.assertEqual(self.mri.centre, self.sec)
+        self.assertEqual(self.mri.name, "MRI 3.0T Signa")
+        self.assertEqual(self.mri.make, "GE")
+        self.assertEqual(self.mri.serial_no, "MR-SN-9988")
+        self.assertEqual(self.mri.vendor, vendor)
+        self.assertEqual(self.mri.uptime_guarantee_percent, 98.5)
+        self.assertEqual(self.mri.penalty_rate_per_day, 15000)
+
+        # 5. Edit PM Schedule
+        pm = PreventiveMaintenance.objects.create(equipment=self.mri, title="Quarterly Chiller Check",
+                                                  frequency_months=3, next_due_date=timezone.localdate())
+        resp = self.client.post(reverse("masters_action", kwargs={"section": "pm"}), {
+            "do": "edit", "id": pm.pk, "equipment": self.mri.pk, "title": "Bi-Monthly Helium & Chiller Inspection",
+            "frequency_months": "2", "next_due_date": "2026-12-15", "advance_notice_days": "14",
+            "assigned_to": self.naveen.pk, "notes": "Follow GE service checklist", "active": "on"
+        }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        pm.refresh_from_db()
+        self.assertEqual(pm.title, "Bi-Monthly Helium & Chiller Inspection")
+        self.assertEqual(pm.frequency_months, 2)
+        self.assertEqual(pm.advance_notice_days, 14)
+        self.assertEqual(pm.assigned_to, self.naveen)
+
+        # 6. Lift Sign-in Lock
+        lock = SignInLock.objects.create(key="user:lockeduser", failures=5,
+                                         locked_until=timezone.now() + timedelta(minutes=15),
+                                         last_address="192.168.1.100")
+        self.assertTrue(SignInLock.objects.filter(key="user:lockeduser").exists())
+        resp = self.client.post(reverse("masters_action", kwargs={"section": "locks"}),
+                                {"do": "lift", "key": lock.key}, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(SignInLock.objects.filter(key="user:lockeduser").exists())
+
+    def test_users_table_contact_column_displays_mobile_and_omits_telegram_and_email(self):
+        user_with_mobile = User.objects.create_user("user_with_mob", password="Demo@12345", role=User.AGENT,
+                                                    first_name="Ramesh", email="ramesh@hospital.org",
+                                                    mobile="+91 9123456789", telegram_chat_id="99887766")
+        self.client.force_login(self.admin)
+        resp = self.client.get(f"{reverse('masters_hub')}?tab=users")
+        self.assertEqual(resp.status_code, 200)
+
+        content = resp.content.decode()
+        # Mobile number must be rendered
+        self.assertIn("+91 9123456789", content)
+        # Telegram ID and green Telegram pill should NOT be rendered in the Contact column
+        self.assertNotIn("Telegram: 99887766", content)
+
+    def test_dynamic_copyright_footer_uses_configured_org_name_without_hardcoded_default(self):
+        settings_obj = SiteSettings.load()
+        settings_obj.org_name = "Global Diagnostic Imaging Ltd"
+        settings_obj.save()
+
+        # Check authenticated base template
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("home"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "&copy; 2026 Global Diagnostic Imaging Ltd. All Rights Reserved.")
+        self.assertNotContains(resp, "Pramodini Medicare Ltd")
+
+        # Check unauthenticated auth base template
+        self.client.logout()
+        resp = self.client.get(reverse("login"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "&copy; 2026 Global Diagnostic Imaging Ltd. All Rights Reserved.")
+        self.assertNotContains(resp, "Pramodini Medicare Ltd")
+
