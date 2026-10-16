@@ -80,12 +80,35 @@
       }
       $$(`[data-show="${n}"]`, d).forEach(t => { t.textContent = v; });
     });
+    $$("[data-filter-target]", d).forEach(input => {
+      input.value = "";
+      input.dispatchEvent(new Event("input"));
+    });
     d.showModal();
     const f = $("textarea, select, input:not([type=hidden])", d); if (f) f.focus();
   }));
   $$("[data-close]").forEach(b => b.addEventListener("click", () => b.closest("dialog").close()));
   $$("dialog.dialog").forEach(d => d.addEventListener("click", e => { if (e.target === d) d.close(); }));
   $$("[data-dismiss]").forEach(b => b.addEventListener("click", () => b.closest(".toast").remove()));
+
+  /* ---------- live search / filter for checkbox grids ---------- */
+  $$("[data-filter-target]").forEach(input => {
+    input.addEventListener("input", () => {
+      const target = document.getElementById(input.dataset.filterTarget);
+      if (!target) return;
+      const q = input.value.trim().toLowerCase();
+      const items = $$(".check-pill, label.check", target);
+      let matches = 0;
+      items.forEach(el => {
+        const text = el.textContent.toLowerCase();
+        const hit = !q || text.includes(q);
+        el.hidden = !hit;
+        if (hit) matches++;
+      });
+      const emptyMsg = target.querySelector(".check-grid-empty");
+      if (emptyMsg) emptyMsg.hidden = (matches > 0 || !q);
+    });
+  });
 
   /* ---------- reports: show the date boxes only for "Choose dates" ---------- */
   const rf = $("[data-report-form]");

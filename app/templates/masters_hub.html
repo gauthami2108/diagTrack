@@ -1019,47 +1019,67 @@
 </form></dialog>
 
 <!-- Add User -->
-<dialog class="dialog" id="dlg-add-user"><form method="post" action="{% url 'masters_action' 'users' %}">{% csrf_token %}
+<dialog class="dialog dialog-wide" id="dlg-add-user"><form method="post" action="{% url 'masters_action' 'users' %}">{% csrf_token %}
   <input type="hidden" name="do" value="add">
   <h2>Add user account</h2>
   <div class="field-row">
-    <label class="field"><span>Username</span><input type="text" name="username" required placeholder="e.g. ravi, priya"></label>
-    <label class="field"><span>Initial password</span><input type="password" name="password" required></label>
+    <label class="field"><span>First name</span><input type="text" name="first_name" required placeholder="First name"></label>
+    <label class="field"><span>Last name</span><input type="text" name="last_name" placeholder="Last name"></label>
   </div>
   <div class="field-row">
-    <label class="field"><span>First name</span><input type="text" name="first_name" required></label>
-    <label class="field"><span>Last name</span><input type="text" name="last_name"></label>
+    <label class="field"><span>Username</span><input type="text" name="username" required placeholder="e.g. ravi, priya" autocomplete="username"></label>
+    <label class="field"><span>Initial password</span><input type="password" name="password" required autocomplete="new-password"></label>
   </div>
-  <label class="field"><span>System role</span>
-    <select name="role">
-      {% for k, l in roles %}<option value="{{ k }}">{{ l }}</option>{% endfor %}
-    </select>
-  </label>
+  <div class="field-row">
+    <label class="field"><span>System role</span>
+      <select name="role">
+        {% for k, l in roles %}<option value="{{ k }}">{{ l }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Telegram Chat ID</span><input type="text" name="telegram_chat_id" placeholder="Personal or group Chat ID"></label>
+  </div>
   <div class="field-row">
     <label class="field"><span>Email</span><input type="email" name="email" placeholder="staff@pramodini.in"></label>
     <label class="field"><span>Mobile (SMS/WhatsApp)</span><input type="text" name="mobile" placeholder="919876543210"></label>
   </div>
-  <label class="field"><span>Telegram Chat ID</span><input type="text" name="telegram_chat_id" placeholder="Personal or group Chat ID"></label>
   
-  <p style="font-weight:600; font-size:0.85rem; margin-top:0.5rem; margin-bottom:0.25rem;">Centres covered (leave blank for all):</p>
-  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; max-height:100px; overflow-y:auto; padding:0.25rem; border:1px solid var(--line); border-radius:6px;">
-    {% for c in centres_all %}
-    <label class="check" style="margin:0;"><input type="checkbox" name="centres" value="{{ c.pk }}"><span>{{ c.name }} ({{ c.code }})</span></label>
-    {% endfor %}
+  <div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+      <div>
+        <span style="font-weight:600; font-size:0.85rem;">Centres covered</span>
+        <small class="muted" style="display:block; font-size:0.8rem;">Leave unselected to give access across all centres</small>
+      </div>
+      <input type="search" class="check-search" data-filter-target="add-user-centres" placeholder="Search centres..." aria-label="Search centres">
+    </div>
+    <div class="check-grid" id="add-user-centres">
+      {% for c in centres_all %}
+      <label class="check-pill" title="{{ c.name }} ({{ c.code }})"><input type="checkbox" name="centres" value="{{ c.pk }}"><span>{{ c.name }} ({{ c.code }})</span></label>
+      {% endfor %}
+      <div class="check-grid-empty" hidden>No centres match your search</div>
+    </div>
   </div>
 
-  <p style="font-weight:600; font-size:0.85rem; margin-top:0.5rem; margin-bottom:0.25rem;">Departments (for agents/heads):</p>
-  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; max-height:100px; overflow-y:auto; padding:0.25rem; border:1px solid var(--line); border-radius:6px;">
-    {% for d in departments_all %}
-    <label class="check" style="margin:0;"><input type="checkbox" name="departments" value="{{ d.pk }}"><span>{{ d.name }}</span></label>
-    {% endfor %}
+  <div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+      <div>
+        <span style="font-weight:600; font-size:0.85rem;">Assigned departments</span>
+        <small class="muted" style="display:block; font-size:0.8rem;">For agents and department heads</small>
+      </div>
+      <input type="search" class="check-search" data-filter-target="add-user-depts" placeholder="Search departments..." aria-label="Search departments">
+    </div>
+    <div class="check-grid" id="add-user-depts">
+      {% for d in departments_all %}
+      <label class="check-pill" title="{{ d.name }}"><input type="checkbox" name="departments" value="{{ d.pk }}"><span>{{ d.name }}</span></label>
+      {% endfor %}
+      <div class="check-grid-empty" hidden>No departments match your search</div>
+    </div>
   </div>
 
   <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create user</button></div>
 </form></dialog>
 
 <!-- Edit User -->
-<dialog class="dialog" id="dlg-edit-user"><form method="post" action="{% url 'masters_action' 'users' %}">{% csrf_token %}
+<dialog class="dialog dialog-wide" id="dlg-edit-user"><form method="post" action="{% url 'masters_action' 'users' %}">{% csrf_token %}
   <input type="hidden" name="do" value="edit">
   <input type="hidden" name="id">
   <h2>Edit user account: <span data-show-username style="font-family:var(--font-mono); color:var(--accent);"></span></h2>
@@ -1067,33 +1087,53 @@
     <label class="field"><span>First name</span><input type="text" name="first_name" required></label>
     <label class="field"><span>Last name</span><input type="text" name="last_name"></label>
   </div>
-  <label class="field"><span>System role</span>
-    <select name="role">
-      {% for k, l in roles %}<option value="{{ k }}">{{ l }}</option>{% endfor %}
-    </select>
-  </label>
+  <div class="field-row">
+    <label class="field"><span>System role</span>
+      <select name="role">
+        {% for k, l in roles %}<option value="{{ k }}">{{ l }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Telegram Chat ID</span><input type="text" name="telegram_chat_id" placeholder="Optional chat ID"></label>
+  </div>
   <div class="field-row">
     <label class="field"><span>Email</span><input type="email" name="email"></label>
     <label class="field"><span>Mobile (SMS/WhatsApp)</span><input type="text" name="mobile"></label>
   </div>
-  <label class="field"><span>Telegram Chat ID</span><input type="text" name="telegram_chat_id"></label>
-  <label class="field"><span>Reset password (leave blank to keep current)</span><input type="password" name="new_password" placeholder="Type new password only if changing"></label>
+  <label class="field"><span>Reset password (leave blank to keep current)</span><input type="password" name="new_password" placeholder="Type new password only if changing" autocomplete="new-password"></label>
 
-  <p style="font-weight:600; font-size:0.85rem; margin-top:0.5rem; margin-bottom:0.25rem;">Centres covered (leave blank for all):</p>
-  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; max-height:100px; overflow-y:auto; padding:0.25rem; border:1px solid var(--line); border-radius:6px;">
-    {% for c in centres_all %}
-    <label class="check" style="margin:0;"><input type="checkbox" name="centres" value="{{ c.pk }}"><span>{{ c.name }} ({{ c.code }})</span></label>
-    {% endfor %}
+  <div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+      <div>
+        <span style="font-weight:600; font-size:0.85rem;">Centres covered</span>
+        <small class="muted" style="display:block; font-size:0.8rem;">Leave unselected to give access across all centres</small>
+      </div>
+      <input type="search" class="check-search" data-filter-target="edit-user-centres" placeholder="Search centres..." aria-label="Search centres">
+    </div>
+    <div class="check-grid" id="edit-user-centres">
+      {% for c in centres_all %}
+      <label class="check-pill" title="{{ c.name }} ({{ c.code }})"><input type="checkbox" name="centres" value="{{ c.pk }}"><span>{{ c.name }} ({{ c.code }})</span></label>
+      {% endfor %}
+      <div class="check-grid-empty" hidden>No centres match your search</div>
+    </div>
   </div>
 
-  <p style="font-weight:600; font-size:0.85rem; margin-top:0.5rem; margin-bottom:0.25rem;">Departments (for agents/heads):</p>
-  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; max-height:100px; overflow-y:auto; padding:0.25rem; border:1px solid var(--line); border-radius:6px;">
-    {% for d in departments_all %}
-    <label class="check" style="margin:0;"><input type="checkbox" name="departments" value="{{ d.pk }}"><span>{{ d.name }}</span></label>
-    {% endfor %}
+  <div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+      <div>
+        <span style="font-weight:600; font-size:0.85rem;">Assigned departments</span>
+        <small class="muted" style="display:block; font-size:0.8rem;">For agents and department heads</small>
+      </div>
+      <input type="search" class="check-search" data-filter-target="edit-user-depts" placeholder="Search departments..." aria-label="Search departments">
+    </div>
+    <div class="check-grid" id="edit-user-depts">
+      {% for d in departments_all %}
+      <label class="check-pill" title="{{ d.name }}"><input type="checkbox" name="departments" value="{{ d.pk }}"><span>{{ d.name }}</span></label>
+      {% endfor %}
+      <div class="check-grid-empty" hidden>No departments match your search</div>
+    </div>
   </div>
 
-  <label class="check" style="margin-top:0.5rem;"><input type="checkbox" name="active"><span><b>Active user account</b></span></label>
+  <label class="check" style="margin-top:0.25rem;"><input type="checkbox" name="active"><span><b>Active user account</b></span></label>
 
   <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>
 </form></dialog>
