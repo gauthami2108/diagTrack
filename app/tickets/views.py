@@ -1751,6 +1751,26 @@ def masters_action(request, section):
                 notify_area_manager=p.get("notify_area_manager") == "on",
             )
             messages.success(request, f"Escalation rule '{name}' created.")
+        elif do == "edit":
+            rule = get_object_or_404(EscalationRule, pk=p.get("id") or 0)
+            name = p.get("name", "").strip()
+            basis = p.get("basis", EscalationRule.RESOLUTION)
+            pct = int(p.get("percent") or 100)
+            prios = p.get("priorities", "").strip()
+            if not name:
+                messages.error(request, "Rule name is required.")
+                return redirect(back)
+            rule.name = name
+            rule.basis = basis
+            rule.percent = pct
+            rule.priorities = prios
+            rule.notify_assignee = p.get("notify_assignee") == "on"
+            rule.notify_dept_head = p.get("notify_dept_head") == "on"
+            rule.notify_centre_manager = p.get("notify_centre_manager") == "on"
+            rule.notify_area_manager = p.get("notify_area_manager") == "on"
+            rule.active = p.get("active") == "on"
+            rule.save()
+            messages.success(request, f"Escalation rule '{rule.name}' updated.")
         elif do == "toggle":
             rule = get_object_or_404(EscalationRule, pk=p.get("id") or 0)
             rule.active = not rule.active
@@ -1800,6 +1820,39 @@ def masters_action(request, section):
             if departments:
                 new_u.departments.set(departments)
             messages.success(request, f"User {new_u.display_name} (@{new_u.username}) created.")
+        elif do == "edit":
+            target_user = get_object_or_404(User, pk=p.get("id") or 0)
+            first_name = p.get("first_name", "").strip()
+            last_name = p.get("last_name", "").strip()
+            role = p.get("role", target_user.role)
+            email = p.get("email", "").strip()
+            mobile = p.get("mobile", "").strip()
+            telegram_chat_id = p.get("telegram_chat_id", "").strip()
+            new_pw = p.get("new_password", "").strip()
+            active = p.get("active") == "on"
+
+            target_user.first_name = first_name
+            target_user.last_name = last_name
+            target_user.role = role
+            target_user.email = email
+            target_user.mobile = mobile
+            target_user.telegram_chat_id = telegram_chat_id
+            if target_user.pk != request.user.pk:
+                target_user.is_active = active
+            if role == User.ADMIN:
+                target_user.is_staff = target_user.is_superuser = True
+            elif target_user.is_superuser and role != User.ADMIN:
+                target_user.is_staff = target_user.is_superuser = False
+            if new_pw:
+                target_user.set_password(new_pw)
+                from . import signin
+                signin.invalidate_user_sessions(target_user)
+            target_user.save()
+            centres = p.getlist("centres")
+            target_user.centres.set(centres)
+            departments = p.getlist("departments")
+            target_user.departments.set(departments)
+            messages.success(request, f"User {target_user.display_name} (@{target_user.username}) updated.")
 
     elif section == "locks":
         if do == "lift":
@@ -1820,6 +1873,19 @@ def masters_action(request, section):
                 return redirect(back)
             Vendor.objects.create(name=name, contact_person=contact, phone=phone, email=email, notes=notes)
             messages.success(request, f"Vendor '{name}' added.")
+        elif do == "edit":
+            vendor = get_object_or_404(Vendor, pk=p.get("id") or 0)
+            name = p.get("name", "").strip()
+            contact = p.get("contact_person", "").strip()
+            phone = p.get("phone", "").strip()
+            email = p.get("email", "").strip()
+            notes = p.get("notes", "").strip()
+            if not name:
+                messages.error(request, "Vendor name is required.")
+                return redirect(back)
+            vendor.name, vendor.contact_person, vendor.phone, vendor.email, vendor.notes = name, contact, phone, email, notes
+            vendor.save()
+            messages.success(request, f"Vendor '{vendor.name}' updated.")
 
     elif section == "equipment":
         if do == "add":
@@ -1850,6 +1916,43 @@ def masters_action(request, section):
                 penalty_rate_per_day=penalty_val, annual_camc_cost=camc_val
             )
             messages.success(request, f"Equipment '{eq.name}' ({centre.code}) created.")
+        elif do == "edit":
+            eq = get_object_or_404(Equipment, pk=p.get("id") or 0)
+            centre_id = p.get("centre") or eq.centre_id
+            name = p.get("name", "").strip()
+            make = p.get("make", "").strip()
+            model = p.get("model", "").strip()
+            serial_no = p.get("serial_no", "").strip()
+            vendor_id = p.get("vendor") or None
+            amc_expiry_str = p.get("amc_expiry", "").strip()
+            uptime_val = float(p.get("uptime_guarantee_percent") or 95.0)
+            penalty_val = float(p.get("penalty_rate_per_day") or 0.0)
+            camc_val = float(p.get("annual_camc_cost") or 0.0)
+            active = p.get("active") == "on"
+            if not name:
+                messages.error(request, "Equipment name is required.")
+                return redirect(back)
+            centre = get_object_or_404(Centre, pk=centre_id)
+            vendor = Vendor.objects.filter(pk=vendor_id).first() if vendor_id else None
+            amc_date = None
+            if amc_expiry_str:
+                try:
+                    amc_date = datetime.strptime(amc_expiry_str, "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+            eq.centre = centre
+            eq.name = name
+            eq.make = make
+            eq.model = model
+            eq.serial_no = serial_no
+            eq.vendor = vendor
+            eq.amc_expiry = amc_date
+            eq.uptime_guarantee_percent = uptime_val
+            eq.penalty_rate_per_day = penalty_val
+            eq.annual_camc_cost = camc_val
+            eq.active = active
+            eq.save()
+            messages.success(request, f"Equipment '{eq.name}' updated.")
 
     elif section == "pm":
         if do == "add":
@@ -1875,6 +1978,34 @@ def masters_action(request, section):
                 advance_notice_days=notice, assigned_to=assignee, notes=notes
             )
             messages.success(request, f"PM schedule '{pm.title}' added for {eq.name}.")
+        elif do == "edit":
+            pm = get_object_or_404(PreventiveMaintenance, pk=p.get("id") or 0)
+            eq_id = p.get("equipment") or pm.equipment_id
+            title = p.get("title", "").strip()
+            freq = int(p.get("frequency_months") or 3)
+            next_due_str = p.get("next_due_date", "").strip()
+            notice = int(p.get("advance_notice_days") or 7)
+            assigned_id = p.get("assigned_to") or None
+            notes = p.get("notes", "").strip()
+            active = p.get("active") == "on"
+            if not title or not next_due_str:
+                messages.error(request, "Title and target due date are required.")
+                return redirect(back)
+            try:
+                next_due = datetime.strptime(next_due_str, "%Y-%m-%d").date()
+            except ValueError:
+                messages.error(request, "Invalid due date.")
+                return redirect(back)
+            pm.equipment_id = eq_id
+            pm.title = title
+            pm.frequency_months = freq
+            pm.next_due_date = next_due
+            pm.advance_notice_days = notice
+            pm.assigned_to_id = assigned_id
+            pm.notes = notes
+            pm.active = active
+            pm.save()
+            messages.success(request, f"PM schedule '{pm.title}' updated.")
         elif do == "toggle":
             pm = get_object_or_404(PreventiveMaintenance, pk=p.get("id") or 0)
             pm.active = not pm.active

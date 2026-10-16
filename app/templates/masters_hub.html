@@ -283,8 +283,16 @@
       {% if r.notify_area_manager %}<span class="loz">Area Mgr</span>{% endif %}
     </td>
     <td data-l="State">{% if r.active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Disabled</span>{% endif %}</td>
-    <td style="text-align:right;">
-      <form method="post" action="{% url 'masters_action' 'escalation' %}" style="display:inline;">{% csrf_token %}
+    <td style="text-align:right; white-space:nowrap;">
+      <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-rule"
+              data-set-id="{{ r.pk }}" data-set-name="{{ r.name }}" data-set-basis="{{ r.basis }}"
+              data-set-percent="{{ r.percent }}" data-set-priorities="{{ r.priorities }}"
+              data-set-notify_assignee="{% if r.notify_assignee %}on{% endif %}"
+              data-set-notify_dept_head="{% if r.notify_dept_head %}on{% endif %}"
+              data-set-notify_centre_manager="{% if r.notify_centre_manager %}on{% endif %}"
+              data-set-notify_area_manager="{% if r.notify_area_manager %}on{% endif %}"
+              data-set-active="{% if r.active %}on{% endif %}">Edit</button>
+      <form method="post" action="{% url 'masters_action' 'escalation' %}" style="display:inline; margin-left:4px;">{% csrf_token %}
         <input type="hidden" name="do" value="toggle">
         <input type="hidden" name="id" value="{{ r.pk }}">
         <button type="submit" class="btn btn-s btn-soft">{% if r.active %}Disable{% else %}Enable{% endif %}</button>
@@ -376,9 +384,17 @@
       {% endif %}
     </td>
     <td data-l="State">{% if u.is_active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Inactive</span>{% endif %}</td>
-    <td style="text-align:right;">
+    <td style="text-align:right; white-space:nowrap;">
+      <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-user"
+              data-set-id="{{ u.pk }}" data-set-username="{{ u.username }}"
+              data-set-first_name="{{ u.first_name }}" data-set-last_name="{{ u.last_name }}"
+              data-set-email="{{ u.email }}" data-set-mobile="{{ u.mobile }}"
+              data-set-telegram_chat_id="{{ u.telegram_chat_id }}" data-set-role="{{ u.role }}"
+              data-set-centres="{% for c in u.centres.all %}{{ c.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
+              data-set-departments="{% for d in u.departments.all %}{{ d.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
+              data-set-active="{% if u.is_active %}on{% endif %}">Edit</button>
       {% if u.pk != request.user.pk %}
-      <form method="post" action="{% url 'masters_action' 'users' %}" style="display:inline;">{% csrf_token %}
+      <form method="post" action="{% url 'masters_action' 'users' %}" style="display:inline; margin-left:4px;">{% csrf_token %}
         <input type="hidden" name="do" value="toggle_active">
         <input type="hidden" name="id" value="{{ u.pk }}">
         <button type="submit" class="btn btn-s btn-soft">{% if u.is_active %}Deactivate{% else %}Activate{% endif %}</button>
@@ -463,7 +479,7 @@
 
 {% if vendors %}
 <div class="table-wrap"><table class="table">
-  <thead><tr><th>Vendor Company</th><th>Contact Person</th><th>Phone</th><th>Email</th><th class="num-col">Machines Supported</th><th>Notes</th></tr></thead>
+  <thead><tr><th>Vendor Company</th><th>Contact Person</th><th>Phone</th><th>Email</th><th class="num-col">Machines Supported</th><th>Notes</th><th></th></tr></thead>
   <tbody>
   {% for v in vendors %}
   <tr>
@@ -473,6 +489,12 @@
     <td data-l="Email">{{ v.email|default:"-" }}</td>
     <td data-l="Machines" class="num-col"><b>{{ v.equipment_count }}</b></td>
     <td data-l="Notes"><small class="muted">{{ v.notes|default:"-" }}</small></td>
+    <td style="text-align:right;">
+      <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-vendor"
+              data-set-id="{{ v.pk }}" data-set-name="{{ v.name }}"
+              data-set-contact_person="{{ v.contact_person }}" data-set-phone="{{ v.phone }}"
+              data-set-email="{{ v.email }}" data-set-notes="{{ v.notes }}">Edit</button>
+    </td>
   </tr>
   {% endfor %}
   </tbody>
@@ -541,7 +563,19 @@
     <td data-l="Uptime SLA" class="num-col"><b>{{ e.uptime_guarantee_percent }}%</b></td>
     <td data-l="Penalty" class="num-col">{% if e.penalty_rate_per_day %}₹{{ e.penalty_rate_per_day|floatformat:0 }}/d{% else %}<span class="muted">-</span>{% endif %}</td>
     <td data-l="Status">{% if e.active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Retired</span>{% endif %}</td>
-    <td style="text-align:right;"><a class="btn btn-s btn-soft" href="{% url 'equipment_detail' e.pk %}">View</a></td>
+    <td style="text-align:right; white-space:nowrap;">
+      <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-equipment"
+              data-set-id="{{ e.pk }}" data-set-centre="{{ e.centre_id }}"
+              data-set-name="{{ e.name }}" data-set-make="{{ e.make }}"
+              data-set-model="{{ e.model }}" data-set-serial_no="{{ e.serial_no }}"
+              data-set-vendor="{{ e.vendor_id|default:'' }}"
+              data-set-amc_expiry="{{ e.amc_expiry|date:'Y-m-d'|default:'' }}"
+              data-set-uptime_guarantee_percent="{{ e.uptime_guarantee_percent }}"
+              data-set-penalty_rate_per_day="{{ e.penalty_rate_per_day|floatformat:0 }}"
+              data-set-annual_camc_cost="{{ e.annual_camc_cost|floatformat:0 }}"
+              data-set-active="{% if e.active %}on{% endif %}">Edit</button>
+      <a class="btn btn-s btn-soft" href="{% url 'equipment_detail' e.pk %}" style="margin-left:4px;">View</a>
+    </td>
   </tr>
   {% endfor %}
   </tbody>
@@ -551,7 +585,7 @@
 {% endif %}
 
 {% elif tab == 'pm' %}
-<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+<div class="filters" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:gap; gap:0.5rem;">
   <form method="get" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;" data-autosubmit>
     <input type="hidden" name="tab" value="pm">
     <input type="search" name="q" value="{{ q }}" placeholder="Search PM schedules..." aria-label="Search PM">
@@ -582,7 +616,7 @@
 
 {% if pm_list %}
 <div class="table-wrap"><table class="table">
-  <thead><tr><th>Machine &amp; Centre</th><th>Schedule Title</th><th>Frequency</th><th>Target Due Date</th><th>Status</th><th>Assigned Engineer</th><th>Last Ticket</th><th>State</th></tr></thead>
+  <thead><tr><th>Machine &amp; Centre</th><th>Schedule Title</th><th>Frequency</th><th>Target Due Date</th><th>Status</th><th>Assigned Engineer</th><th>Last Ticket</th><th>State</th><th></th></tr></thead>
   <tbody>
   {% for pm in pm_list %}
   <tr>
@@ -604,8 +638,17 @@
     </td>
     <td data-l="Engineer">{% if pm.assigned_to %}{{ pm.assigned_to.display_name }}{% else %}<span class="muted">Unassigned</span>{% endif %}</td>
     <td data-l="Ticket">{% if pm.last_ticket %}<a href="{% url 'ticket_detail' pm.last_ticket.number %}"><b>{{ pm.last_ticket.number }}</b></a>{% else %}<span class="muted">-</span>{% endif %}</td>
-    <td data-l="State">
-      <form method="post" action="{% url 'masters_action' 'pm' %}" style="display:inline;">{% csrf_token %}
+    <td data-l="State">{% if pm.active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Disabled</span>{% endif %}</td>
+    <td style="text-align:right; white-space:nowrap;">
+      <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-pm"
+              data-set-id="{{ pm.pk }}" data-set-equipment="{{ pm.equipment_id }}"
+              data-set-title="{{ pm.title }}" data-set-frequency_months="{{ pm.frequency_months }}"
+              data-set-next_due_date="{{ pm.next_due_date|date:'Y-m-d' }}"
+              data-set-advance_notice_days="{{ pm.advance_notice_days }}"
+              data-set-assigned_to="{{ pm.assigned_to_id|default:'' }}"
+              data-set-notes="{{ pm.notes }}"
+              data-set-active="{% if pm.active %}on{% endif %}">Edit</button>
+      <form method="post" action="{% url 'masters_action' 'pm' %}" style="display:inline; margin-left:4px;">{% csrf_token %}
         <input type="hidden" name="do" value="toggle">
         <input type="hidden" name="id" value="{{ pm.pk }}">
         <button type="submit" class="btn btn-s btn-soft">{% if pm.active %}Disable{% else %}Enable{% endif %}</button>
@@ -950,6 +993,31 @@
   <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create rule</button></div>
 </form></dialog>
 
+<!-- Edit Escalation Rule -->
+<dialog class="dialog" id="dlg-edit-rule"><form method="post" action="{% url 'masters_action' 'escalation' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="edit">
+  <input type="hidden" name="id">
+  <h2>Edit escalation rule</h2>
+  <label class="field"><span>Rule name</span><input type="text" name="name" required></label>
+  <div class="field-row">
+    <label class="field"><span>Clock basis</span>
+      <select name="basis">
+        <option value="resolution">Resolution time</option>
+        <option value="response">Response time</option>
+      </select>
+    </label>
+    <label class="field"><span>Percent of time used (%)</span><input type="number" name="percent" required></label>
+  </div>
+  <label class="field"><span>Apply to priorities (empty for all)</span><input type="text" name="priorities" placeholder="e.g. P1,P2"></label>
+  <p style="font-weight:600; font-size:0.85rem; margin-top:0.5rem;">Who should be alerted when triggered?</p>
+  <label class="check"><input type="checkbox" name="notify_assignee"><span><b>Assigned agent</b></span></label>
+  <label class="check"><input type="checkbox" name="notify_dept_head"><span><b>Department head</b></span></label>
+  <label class="check"><input type="checkbox" name="notify_centre_manager"><span><b>Centre manager</b></span></label>
+  <label class="check"><input type="checkbox" name="notify_area_manager"><span><b>Area manager</b></span></label>
+  <label class="check"><input type="checkbox" name="active"><span><b>Active rule</b></span></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>
+</form></dialog>
+
 <!-- Add User -->
 <dialog class="dialog" id="dlg-add-user"><form method="post" action="{% url 'masters_action' 'users' %}">{% csrf_token %}
   <input type="hidden" name="do" value="add">
@@ -990,6 +1058,46 @@
   <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create user</button></div>
 </form></dialog>
 
+<!-- Edit User -->
+<dialog class="dialog" id="dlg-edit-user"><form method="post" action="{% url 'masters_action' 'users' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="edit">
+  <input type="hidden" name="id">
+  <h2>Edit user account: <span data-show-username style="font-family:var(--font-mono); color:var(--accent);"></span></h2>
+  <div class="field-row">
+    <label class="field"><span>First name</span><input type="text" name="first_name" required></label>
+    <label class="field"><span>Last name</span><input type="text" name="last_name"></label>
+  </div>
+  <label class="field"><span>System role</span>
+    <select name="role">
+      {% for k, l in roles %}<option value="{{ k }}">{{ l }}</option>{% endfor %}
+    </select>
+  </label>
+  <div class="field-row">
+    <label class="field"><span>Email</span><input type="email" name="email"></label>
+    <label class="field"><span>Mobile (SMS/WhatsApp)</span><input type="text" name="mobile"></label>
+  </div>
+  <label class="field"><span>Telegram Chat ID</span><input type="text" name="telegram_chat_id"></label>
+  <label class="field"><span>Reset password (leave blank to keep current)</span><input type="password" name="new_password" placeholder="Type new password only if changing"></label>
+
+  <p style="font-weight:600; font-size:0.85rem; margin-top:0.5rem; margin-bottom:0.25rem;">Centres covered (leave blank for all):</p>
+  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; max-height:100px; overflow-y:auto; padding:0.25rem; border:1px solid var(--line); border-radius:6px;">
+    {% for c in centres_all %}
+    <label class="check" style="margin:0;"><input type="checkbox" name="centres" value="{{ c.pk }}"><span>{{ c.name }} ({{ c.code }})</span></label>
+    {% endfor %}
+  </div>
+
+  <p style="font-weight:600; font-size:0.85rem; margin-top:0.5rem; margin-bottom:0.25rem;">Departments (for agents/heads):</p>
+  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; max-height:100px; overflow-y:auto; padding:0.25rem; border:1px solid var(--line); border-radius:6px;">
+    {% for d in departments_all %}
+    <label class="check" style="margin:0;"><input type="checkbox" name="departments" value="{{ d.pk }}"><span>{{ d.name }}</span></label>
+    {% endfor %}
+  </div>
+
+  <label class="check" style="margin-top:0.5rem;"><input type="checkbox" name="active"><span><b>Active user account</b></span></label>
+
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>
+</form></dialog>
+
 <!-- Add Vendor -->
 <dialog class="dialog" id="dlg-add-vendor"><form method="post" action="{% url 'masters_action' 'vendors' %}">{% csrf_token %}
   <input type="hidden" name="do" value="add">
@@ -1002,6 +1110,21 @@
   <label class="field"><span>Email</span><input type="email" name="email" placeholder="e.g. service@vendor.com"></label>
   <label class="field"><span>Notes / Service SLA</span><textarea name="notes" rows="2" placeholder="Helpdesk number, escalation matrix..."></textarea></label>
   <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save vendor</button></div>
+</form></dialog>
+
+<!-- Edit Vendor -->
+<dialog class="dialog" id="dlg-edit-vendor"><form method="post" action="{% url 'masters_action' 'vendors' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="edit">
+  <input type="hidden" name="id">
+  <h2>Edit vendor</h2>
+  <label class="field"><span>Vendor company name</span><input type="text" name="name" required></label>
+  <div class="field-row">
+    <label class="field"><span>Contact person</span><input type="text" name="contact_person"></label>
+    <label class="field"><span>Phone</span><input type="text" name="phone"></label>
+  </div>
+  <label class="field"><span>Email</span><input type="email" name="email"></label>
+  <label class="field"><span>Notes / Service SLA</span><textarea name="notes" rows="2"></textarea></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>
 </form></dialog>
 
 <!-- Add Equipment -->
@@ -1036,6 +1159,40 @@
   <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create equipment</button></div>
 </form></dialog>
 
+<!-- Edit Equipment -->
+<dialog class="dialog" id="dlg-edit-equipment"><form method="post" action="{% url 'masters_action' 'equipment' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="edit">
+  <input type="hidden" name="id">
+  <h2>Edit equipment</h2>
+  <label class="field"><span>Centre</span>
+    <select name="centre" required>
+      {% for c in centres_all %}<option value="{{ c.pk }}">{{ c.name }} ({{ c.code }})</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field"><span>Equipment name</span><input type="text" name="name" required></label>
+  <div class="field-row">
+    <label class="field"><span>Make</span><input type="text" name="make"></label>
+    <label class="field"><span>Model</span><input type="text" name="model"></label>
+  </div>
+  <div class="field-row">
+    <label class="field"><span>Serial number</span><input type="text" name="serial_no"></label>
+    <label class="field"><span>Service vendor</span>
+      <select name="vendor">
+        <option value="">None</option>
+        {% for v in vendors_all %}<option value="{{ v.pk }}">{{ v.name }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <label class="field"><span>AMC / CAMC expiry date</span><input type="date" name="amc_expiry"></label>
+  <div class="field-row">
+    <label class="field"><span>Uptime guarantee %</span><input type="number" step="0.01" name="uptime_guarantee_percent"></label>
+    <label class="field"><span>Daily penalty rate (₹)</span><input type="number" step="100" name="penalty_rate_per_day"></label>
+  </div>
+  <label class="field"><span>Annual CAMC cost (₹)</span><input type="number" step="1000" name="annual_camc_cost"></label>
+  <label class="check"><input type="checkbox" name="active"><span><b>Active equipment</b></span></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>
+</form></dialog>
+
 <!-- Add PM Schedule -->
 <dialog class="dialog" id="dlg-add-pm"><form method="post" action="{% url 'masters_action' 'pm' %}">{% csrf_token %}
   <input type="hidden" name="do" value="add">
@@ -1065,6 +1222,39 @@
   </div>
   <label class="field"><span>SOP / Service points / Checklist</span><textarea name="notes" rows="3" placeholder="1. Helium pressure check&#10;2. Gradient coil verification..."></textarea></label>
   <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create PM schedule</button></div>
+</form></dialog>
+
+<!-- Edit PM Schedule -->
+<dialog class="dialog" id="dlg-edit-pm"><form method="post" action="{% url 'masters_action' 'pm' %}">{% csrf_token %}
+  <input type="hidden" name="do" value="edit">
+  <input type="hidden" name="id">
+  <h2>Edit preventive maintenance schedule</h2>
+  <label class="field"><span>Equipment</span>
+    <select name="equipment" required>
+      {% for e in equipment_all %}<option value="{{ e.pk }}">{{ e.name }} ({{ e.centre.code }})</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field"><span>Schedule title</span><input type="text" name="title" required></label>
+  <div class="field-row">
+    <label class="field"><span>Frequency</span>
+      <select name="frequency_months">
+        {% for m, label in frequency_choices %}<option value="{{ m }}">{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Target due date</span><input type="date" name="next_due_date" required></label>
+  </div>
+  <div class="field-row">
+    <label class="field"><span>Advance notice (days)</span><input type="number" name="advance_notice_days"></label>
+    <label class="field"><span>Assigned engineer</span>
+      <select name="assigned_to">
+        <option value="">Default (Biomedical team)</option>
+        {% for u in users_all %}<option value="{{ u.pk }}">{{ u.display_name }} ({{ u.role_label }})</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <label class="field"><span>SOP / Service points / Checklist</span><textarea name="notes" rows="3"></textarea></label>
+  <label class="check"><input type="checkbox" name="active"><span><b>Active schedule</b></span></label>
+  <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>
 </form></dialog>
 
 {% endblock %}

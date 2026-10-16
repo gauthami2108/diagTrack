@@ -69,7 +69,15 @@
     Object.entries(b.dataset).forEach(([k, v]) => {  // data-set-name="x" fills [name=name] and [data-show=name]
       if (!k.startsWith("set") || k.length < 4) return;
       const n = k.charAt(3).toLowerCase() + k.slice(4);
-      const input = d.querySelector(`[name="${n}"]`); if (input) input.value = v;
+      const inputs = d.querySelectorAll(`[name="${n}"]`);
+      if (inputs.length === 1 && inputs[0].type === "checkbox") {
+        inputs[0].checked = (v === "on" || v === "1" || v === "true");
+      } else if (inputs.length > 1 && inputs[0].type === "checkbox") {
+        const valSet = new Set((v || "").split(",").map(x => x.trim()));
+        inputs.forEach(cb => { cb.checked = valSet.has(cb.value); });
+      } else if (inputs.length) {
+        inputs[0].value = v;
+      }
       $$(`[data-show="${n}"]`, d).forEach(t => { t.textContent = v; });
     });
     d.showModal();
