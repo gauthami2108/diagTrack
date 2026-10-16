@@ -22,6 +22,7 @@
       <img class="auth-wordmark" src="{% if cfg.logo_wide %}{% url 'brand_logo_wide' %}{% else %}{% static 'img/brand-logo.png' %}{% endif %}" alt="{{ cfg.org_name }}">
       <p class="auth-product">DiagTrack, internal service desk</p>
       {% block card %}{% endblock %}
+      <p style="margin-top:22px; text-align:center; font-size:12px; color:var(--ink-3);">&copy; 2026{% if cfg.org_name %} {{ cfg.org_name }}{% endif %}. All Rights Reserved.</p>
     </div>
   </main>
 </body>

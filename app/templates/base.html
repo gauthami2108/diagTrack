@@ -113,6 +113,9 @@ d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini
       </div>{% endif %}
       {% block content %}{% endblock %}
     </main>
+    <footer class="app-footer">
+      <span>&copy; 2026{% if cfg.org_name %} {{ cfg.org_name }}{% endif %}. All Rights Reserved.</span>
+    </footer>
   </div>
 </div>
 

@@ -367,9 +367,11 @@
       {% else %}<span class="muted">-</span>{% endif %}
     </td>
     <td data-l="Contact">
-      {% if u.email %}<div>{{ u.email }}</div>{% endif %}
-      {% if u.mobile %}<small>{{ u.mobile }}</small>{% endif %}
-      {% if u.telegram_chat_id %}<br><small class="status status-up">Telegram: {{ u.telegram_chat_id }}</small>{% endif %}
+      {% if u.mobile %}
+        <div title="{{ u.email|default:'' }}">{{ u.mobile }}</div>
+      {% else %}
+        <span class="muted" title="{{ u.email|default:'' }}">-</span>
+      {% endif %}
     </td>
     <td data-l="Sign-in">
       {% if u.is_locked %}
@@ -1039,7 +1041,7 @@
     <label class="field"><span>Telegram Chat ID</span><input type="text" name="telegram_chat_id" placeholder="Personal or group Chat ID"></label>
   </div>
   <div class="field-row">
-    <label class="field"><span>Email</span><input type="email" name="email" placeholder="staff@pramodini.in"></label>
+    <label class="field"><span>Email</span><input type="email" name="email" placeholder="staff@hospital.org"></label>
     <label class="field"><span>Mobile (SMS/WhatsApp)</span><input type="text" name="mobile" placeholder="919876543210"></label>
   </div>
   
