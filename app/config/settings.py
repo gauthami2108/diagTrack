@@ -25,11 +25,15 @@ def env_list(name):
     return [v.strip() for v in env(name).split(",") if v.strip()]
 
 
+# Ensure these are False (or not present) when running without HTTPS:
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False
+
 SECRET_KEY = env("SECRET_KEY", "dev-only-change-me")
 DEBUG = env_bool("DEBUG", False)
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS") or ["*"]
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+#SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 
 INSTALLED_APPS = [
