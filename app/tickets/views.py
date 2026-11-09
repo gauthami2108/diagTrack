@@ -1318,7 +1318,7 @@ def masters_hub(request):
     }
 
     if tab == "centres":
-        qs = Centre.objects.all().annotate(ticket_count=Count("tickets"), equipment_count=Count("equipment"))
+        qs = Centre.objects.all().annotate(ticket_count=Count("tickets", distinct=True), equipment_count=Count("equipment", distinct=True))
         if q:
             qs = qs.filter(Q(name__icontains=q) | Q(code__icontains=q) | Q(city__icontains=q))
         if status_filter == "active":
