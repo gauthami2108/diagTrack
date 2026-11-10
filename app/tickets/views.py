@@ -247,7 +247,7 @@ def ticket_list(request):
     qs, state = _filtered(request)
     page = Paginator(qs, 25).get_page(request.GET.get("page"))
     ctx = {"page": page, "total": page.paginator.count, **state, **_filter_options(request.user),
-           "title": VIEWS[state["view"]]}
+           "title": VIEWS[state["view"]], "assign_people": services.assignable_people(request.user)}
     return render(request, "ticket_list.html", ctx)
 
 
@@ -388,6 +388,9 @@ def ticket_action(request, number, action):
             ok = "Comment updated."
         elif action == "assign":
             agent = get_object_or_404(User, pk=p.get("assignee") or 0, is_active=True)
+            if not services.is_assignable(agent, t):
+                raise services.NotAllowed(f"{agent.display_name} does not work on {t.department.name} "
+                                          f"tickets at {t.centre.name}.")
             services.assign(t, user, agent)
             ok = f"Assigned to {agent.display_name}."
         elif action == "hold":
@@ -1131,10 +1134,27 @@ def ticket_bulk(request):
     count = 0
     errors = 0
 
+    person, skipped, eligible_cache = None, {"perm": 0, "owned": 0, "fit": 0}, {}
+    if action == "assign_to":
+        person = User.objects.filter(pk=request.POST.get("bulk_assignee") or 0, is_active=True).first()
+        if person is None:
+            messages.error(request, "Choose who the tickets should be assigned to.")
+            return redirect(request.META.get("HTTP_REFERER") or "ticket_list")
+
     for t in tickets:
         allowed = services.allowed_actions(request.user, t)
         try:
-            if action == "assign_me":
+            if action == "assign_to":
+                if "assign" not in allowed:
+                    skipped["perm"] += 1
+                elif t.assignee_id:
+                    skipped["owned"] += 1
+                elif not services.is_assignable(person, t, eligible_cache):
+                    skipped["fit"] += 1
+                else:
+                    services.assign(t, request.user, person)
+                    count += 1
+            elif action == "assign_me":
                 if "assign_me" in allowed or "assign" in allowed:
                     services.assign(t, request.user, request.user, check=False)
                     count += 1
@@ -1172,10 +1192,21 @@ def ticket_bulk(request):
         except Exception:
             errors += 1
 
-    action_label = action.replace("_", " ")
-    msg = f"Applied \x27{action_label}\x27 to {count} ticket(s)."
-    if errors:
-        msg += f" ({errors} ticket(s) skipped due to permissions or status restrictions)."
+    if action == "assign_to":
+        msg = f"Assigned {count} ticket(s) to {person.display_name}."
+        reasons = (("owned", "already have an owner"),
+                   ("fit", f"are for a department or centre {person.display_name} does not cover"),
+                   ("perm", "you cannot assign (not your department, or no longer open)"))
+        why = "; ".join(f"{skipped[k]} {text}" for k, text in reasons if skipped[k])
+        if why:
+            msg += f" Skipped: {why}."
+        if errors:
+            msg += f" {errors} could not be changed."
+    else:
+        action_label = action.replace("_", " ")
+        msg = f"Applied \x27{action_label}\x27 to {count} ticket(s)."
+        if errors:
+            msg += f" ({errors} ticket(s) skipped due to permissions or status restrictions)."
 
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
         return JsonResponse({"ok": True, "count": count, "message": msg})

@@ -1720,3 +1720,81 @@ class DashboardCancelledTests(Base):
         self.client.force_login(self.it_head)
         self.assertEqual(self.client.get(reverse("dashboard")).context["d"]["cancelled"], 0)
         self.assertEqual(self.client.get(reverse("dashboard"), {"days": "90"}).context["d"]["cancelled"], 1)
+
+
+class BulkAssignToTests(Base):
+    """Bulk 'Assign to': follows the same role rules as the Assign box on a single ticket."""
+
+    def setUp(self):
+        self.t1, self.t2 = self.raise_ticket(), self.raise_ticket()
+        # IT auto-assigns by default; these tests are about tickets that are waiting for someone to pick them
+        Ticket.objects.filter(pk__in=[self.t1.pk, self.t2.pk]).update(assignee=None, status=Status.NEW)
+        self.t1.refresh_from_db(), self.t2.refresh_from_db()
+
+    def bulk(self, who, tickets, person):
+        self.client.force_login(who)
+        return self.client.post(reverse("ticket_bulk"), {
+            "bulk_action": "assign_to", "bulk_assignee": person.pk,
+            "ticket_numbers": ",".join(t.number for t in tickets)}, follow=True)
+
+    def test_department_head_assigns_unassigned_tickets(self):
+        resp = self.bulk(self.it_head, [self.t1, self.t2], self.ravi)
+        self.assertContains(resp, "Assigned 2 ticket(s) to Ravi.")
+        for t in (self.t1, self.t2):
+            t.refresh_from_db()
+            self.assertEqual((t.assignee, t.status), (self.ravi, "assigned"))
+        self.assertEqual(Notification.objects.filter(user=self.ravi, kind="assigned").count(), 2)
+
+    def test_agent_who_is_not_head_cannot_assign_to_others(self):
+        resp = self.bulk(self.farah, [self.t1], self.ravi)
+        self.assertContains(resp, "Assigned 0 ticket(s)")
+        self.t1.refresh_from_db()
+        self.assertIsNone(self.t1.assignee_id)
+
+    def test_person_from_another_department_is_refused(self):
+        resp = self.bulk(self.it_head, [self.t1], self.naveen)  # Naveen is a Biomedical agent
+        self.assertContains(resp, "does not cover")
+        self.t1.refresh_from_db()
+        self.assertIsNone(self.t1.assignee_id)
+
+    def test_requester_cannot_be_chosen(self):
+        resp = self.bulk(self.it_head, [self.t1], self.other)
+        self.assertContains(resp, "Assigned 0 ticket(s)")
+        self.t1.refresh_from_db()
+        self.assertIsNone(self.t1.assignee_id)
+
+    def test_tickets_that_already_have_an_owner_are_left_alone(self):
+        services.assign(self.t1, self.it_head, self.farah)
+        resp = self.bulk(self.it_head, [self.t1, self.t2], self.ravi)
+        self.assertContains(resp, "Assigned 1 ticket(s) to Ravi.")
+        self.assertContains(resp, "1 already have an owner")
+        self.t1.refresh_from_db()
+        self.assertEqual(self.t1.assignee, self.farah)
+
+    def test_agent_limited_to_other_centre_is_refused(self):
+        limited = User.objects.create_user("lim", password="x", role=User.AGENT, first_name="Lim")
+        limited.departments.set([self.it])
+        limited.centres.set([self.sec])  # works Secunderabad only; the tickets are at Kukatpally
+        resp = self.bulk(self.it_head, [self.t1], limited)
+        self.assertContains(resp, "does not cover")
+
+    def test_only_heads_see_the_option_and_people_are_offered_with_their_coverage(self):
+        self.client.force_login(self.it_head)
+        page = self.client.get(reverse("ticket_list"), {"view": "all"})
+        self.assertContains(page, 'value="assign_to"')
+        names = {p["name"] for p in page.context["assign_people"]}
+        self.assertTrue({"Ravi", "Farah", "Srinivas"} <= names)
+        self.assertNotIn("Naveen", names)  # Biomedical is not this head's department
+        self.client.force_login(self.farah)
+        page = self.client.get(reverse("ticket_list"), {"view": "all"})
+        self.assertNotContains(page, 'value="assign_to"')
+
+    def test_single_ticket_assign_also_checks_the_person(self):
+        self.client.force_login(self.it_head)
+        url = reverse("ticket_action", args=[self.t1.number, "assign"])
+        self.client.post(url, {"assignee": self.other.pk}, follow=True)  # a requester, via a crafted request
+        self.t1.refresh_from_db()
+        self.assertIsNone(self.t1.assignee_id)
+        self.client.post(url, {"assignee": self.ravi.pk}, follow=True)
+        self.t1.refresh_from_db()
+        self.assertEqual(self.t1.assignee, self.ravi)

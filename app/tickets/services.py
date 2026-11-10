@@ -166,6 +166,51 @@ def candidate_agents(department, centre):
     return [u for u in agents.order_by("id") if not u.centres.exists() or u.centres.filter(pk=centre.pk).exists()]
 
 
+def is_assignable(person, t, _cache=None):
+    """Can this person be given this ticket? Same rule as the Assign box on a ticket: the department head,
+    or an active agent of the department who covers the ticket's centre."""
+    if person is None or not person.is_active:
+        return False
+    if t.department.head_id == person.pk:
+        return True
+    key = (t.department_id, t.centre_id)
+    if _cache is not None and key in _cache:
+        return person in _cache[key]
+    agents = candidate_agents(t.department, t.centre)
+    if _cache is not None:
+        _cache[key] = agents
+    return person in agents
+
+
+def assignable_people(user):
+    """People the user may choose in the bulk 'Assign to' box, with where each can take tickets.
+    Only department heads and administrators assign to others; everyone else gets an empty list."""
+    if not (user.is_admin or user.role == User.DEPT_HEAD):
+        return []
+    depts = Department.objects.filter(active=True)
+    if not user.is_admin:
+        depts = depts.filter(Q(members=user) | Q(head=user)).distinct()
+    people = {}
+
+    def add(person, dept, centre_ids):
+        row = people.setdefault(person.pk, {"pk": person.pk, "name": person.display_name, "depts": [], "tokens": []})
+        if dept.name not in row["depts"]:
+            row["depts"].append(dept.name)
+        row["tokens"] += [f"{dept.pk}:{c}" for c in (centre_ids or ["*"])]
+
+    for d in depts.select_related("head"):
+        agents = User.objects.filter(role=User.AGENT, is_active=True, departments=d).prefetch_related("centres")
+        for a in agents:
+            add(a, d, [c.pk for c in a.centres.all()])
+        if d.head and d.head.is_active:
+            add(d.head, d, [])
+    out = sorted(people.values(), key=lambda r: r["name"].lower())
+    for r in out:
+        r["label"] = f"{r['name']} ({', '.join(r['depts'])})"
+        r["tokens"] = " ".join(r["tokens"])
+    return out
+
+
 def pick_assignee(department, centre):
     if department.assignment_mode == Department.MANUAL:
         return None

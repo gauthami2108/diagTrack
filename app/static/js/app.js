@@ -738,8 +738,30 @@
     const clearBtn = $("[data-bulk-clear]", bulkBar);
     const ticketsInput = $("[data-bulk-tickets-input]", bulkBar);
 
+    const actionSel = $("[data-bulk-action]", bulkBar);
+    const personSel = $("[data-bulk-assignee]", bulkBar);
+    // "Assign to": show the people box, and grey out anyone who cannot take every selected ticket.
+    const syncPeople = () => {
+      if (!personSel) return;
+      const on = actionSel.value === "assign_to";
+      personSel.hidden = !on; personSel.required = on;
+      if (!on) return;
+      const picked = Array.from(checkboxes).filter(cb => cb.checked);
+      let any = false;
+      Array.from(personSel.options).forEach(o => {
+        if (!o.dataset.tokens) return;
+        const tokens = o.dataset.tokens.split(" ");
+        const ok = picked.every(cb => tokens.includes(cb.dataset.dept + ":*") || tokens.includes(cb.dataset.dept + ":" + cb.dataset.centre));
+        o.disabled = !ok;
+        if (ok) any = true; else if (o.selected) personSel.value = "";
+      });
+      personSel.options[0].textContent = any ? "Choose person..." : "No one covers all selected";
+    };
+    if (actionSel) actionSel.addEventListener("change", syncPeople);
+
     const updateBulkBar = () => {
       const selected = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+      syncPeople();
       if (countEl) countEl.textContent = selected.length;
       if (ticketsInput) ticketsInput.value = selected.join(",");
       bulkBar.hidden = selected.length === 0;
