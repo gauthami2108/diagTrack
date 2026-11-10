@@ -45,7 +45,7 @@ class CategoryFieldInline(admin.TabularInline):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("name", "department", "default_priority", "asks_equipment", "active")
+    list_display = ("name", "department", "default_priority", "asks_equipment", "asks_description", "active")
     list_filter = ("department", "active")
     search_fields = ("name",)
     inlines = [CategoryFieldInline]

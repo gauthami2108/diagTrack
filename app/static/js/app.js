@@ -289,6 +289,12 @@
       route.hidden = !m;
       if (m) $("span", route).textContent = "Goes to " + m.department + ". Usual priority: " + m.priority + ".";
       block.hidden = !(m && m.equipment);
+      const describe = $("[data-describe]", raise);
+      if (describe) {
+        const on = !m || m.describe !== false;
+        describe.hidden = !on;
+        const ta = $("textarea", describe); ta.disabled = !on; ta.required = on;
+      }
       const keep = eq.value || eq.dataset.selected;
       eq.innerHTML = '<option value="">Choose the equipment</option>';
       (equip[centre.value] || []).forEach(x => {

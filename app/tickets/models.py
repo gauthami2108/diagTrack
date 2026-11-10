@@ -71,6 +71,10 @@ class Category(models.Model):
         "ask which equipment", default=False,
         help_text="Tick to show the equipment list when this category is chosen.",
     )
+    asks_description = models.BooleanField(
+        "ask 'What happened?'", default=True,
+        help_text="Untick to hide the free-text 'What happened?' box and use only this category's own questions.",
+    )
     active = models.BooleanField(default=True)
 
     class Meta:

@@ -81,7 +81,7 @@ def _raise_context(user, equipment=None):
     cats = Category.objects.filter(active=True, department__active=True).select_related("department").prefetch_related("fields")
     meta = {str(c.pk): {
         "department": c.department.name, "priority": c.get_default_priority_display(),
-        "equipment": c.asks_equipment,
+        "equipment": c.asks_equipment, "describe": c.asks_description,
         "fields": [{"id": f.pk, "label": f.label, "kind": f.kind, "choices": f.choice_list(), "required": f.required}
                    for f in c.fields.all()],
     } for c in cats}
@@ -123,7 +123,7 @@ def ticket_new(request):
             errors.append("Choose what the issue is about.")
         if not subject:
             errors.append("Write a short title.")
-        if not description:
+        if not description and not (category and not category.asks_description):
             errors.append("Describe what happened.")
         equipment, extra = None, {}
         if category and centre:
@@ -135,6 +135,9 @@ def ticket_new(request):
                     errors.append(f"Fill in: {f.label}.")
                 if value:
                     extra[f.label] = value
+            if not category.asks_description:
+                # No free-text box for this category: the answers to its own questions are the description.
+                description = "\n".join(f"{k}: {v}" for k, v in extra.items()) or category.name
         if not errors:
             t = services.create_ticket(
                 user, centre, category, subject, description, equipment=equipment,
@@ -1689,6 +1692,7 @@ def masters_action(request, section):
             dept_id = p.get("department") or None
             prio = p.get("default_priority", Priority.P3)
             asks_eq = p.get("asks_equipment") == "on"
+            asks_desc = p.get("asks_description") == "on"
             if not name or not dept_id:
                 messages.error(request, "Name and Department are required.")
                 return redirect(back)
@@ -1696,7 +1700,8 @@ def masters_action(request, section):
             if Category.objects.filter(department=dept, name__iexact=name).exists():
                 messages.error(request, f"Category '{name}' already exists in {dept.name}.")
                 return redirect(back)
-            cat = Category.objects.create(name=name, department=dept, default_priority=prio, asks_equipment=asks_eq)
+            cat = Category.objects.create(name=name, department=dept, default_priority=prio, asks_equipment=asks_eq,
+                                          asks_description=asks_desc)
             messages.success(request, f"Category '{cat.name}' created.")
         elif do == "add_field":
             cat = get_object_or_404(Category, pk=p.get("category_id") or 0)
@@ -1714,6 +1719,7 @@ def masters_action(request, section):
             cat.name = p.get("name", "").strip() or cat.name
             cat.default_priority = p.get("default_priority", cat.default_priority)
             cat.asks_equipment = p.get("asks_equipment") == "on"
+            cat.asks_description = p.get("asks_description") == "on"
             cat.active = p.get("active") == "on"
             cat.save()
             messages.success(request, f"Category '{cat.name}' updated.")

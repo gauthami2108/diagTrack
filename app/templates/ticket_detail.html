@@ -14,7 +14,7 @@
     <section class="block">
       <h2>Description</h2>
       <div class="rich">{{ t.description|rich }}</div>
-      {% if t.extra %}<dl class="facts">{% for k, v in t.extra.items %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
+      {% if t.extra and t.category.asks_description %}<dl class="facts">{% for k, v in t.extra.items %}<div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>{% endfor %}</dl>{% endif %}
       {% if files %}<h3>Attachments <span class="count">{{ files|length }}</span></h3><div class="thumbs">{% for f in files %}{% include "_file.html" %}{% endfor %}</div>{% endif %}
     </section>
 

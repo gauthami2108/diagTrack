@@ -57,6 +57,12 @@ class Command(BaseCommand):
                         CategoryField.objects.create(category=c, label="Error code or message", order=1)
                     if cname == "Computer or printer":
                         CategoryField.objects.create(category=c, label="Room or counter", order=1)
+                    if cname == "Billing software":
+                        # No free-text box: the two questions below are the whole description.
+                        c.asks_description = False
+                        c.save(update_fields=["asks_description"])
+                        CategoryField.objects.create(category=c, label="Bill Number", required=True, order=0)
+                        CategoryField.objects.create(category=c, label="Remarks", required=True, order=1)
             self.stdout.write("Created the starting departments and categories.")
         if not SlaPolicy.objects.exists():
             for prio, (resp, reso) in DEFAULT_SLA.items():

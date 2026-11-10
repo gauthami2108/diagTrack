@@ -1645,3 +1645,52 @@ class Phase3Tests(Base):
         self.assertContains(resp, "&copy; 2026 Global Diagnostic Imaging Ltd. All Rights Reserved.")
         self.assertNotContains(resp, "Pramodini Medicare Ltd")
 
+
+
+class CategoryWithoutDescriptionTests(Base):
+    """A category can drop the free-text 'What happened?' box and rely on its own questions."""
+
+    def setUp(self):
+        self.billing = Category.objects.get(name="Billing software")
+        self.bill_no = self.billing.fields.get(label="Bill Number")
+        self.remarks = self.billing.fields.get(label="Remarks")
+        self.client.force_login(self.req)
+
+    def post(self, **extra):
+        data = {"centre": self.kkp.pk, "category": self.billing.pk, "subject": "Bill Cancellation"}
+        data.update(extra)
+        return self.client.post(reverse("ticket_new"), data)
+
+    def test_migration_set_up_billing_software(self):
+        self.assertFalse(self.billing.asks_description)
+        self.assertTrue(self.bill_no.required and self.remarks.required)
+
+    def test_ticket_raised_without_a_description(self):
+        resp = self.post(**{f"field_{self.bill_no.pk}": "B-1001", f"field_{self.remarks.pk}": "Duplicate bill"})
+        t = Ticket.objects.get()
+        self.assertRedirects(resp, reverse("ticket_detail", args=[t.number]))
+        self.assertEqual(t.subject, "Bill Cancellation")
+        self.assertEqual(t.extra, {"Bill Number": "B-1001", "Remarks": "Duplicate bill"})
+        self.assertEqual(t.description, "Bill Number: B-1001\nRemarks: Duplicate bill")
+
+    def test_required_questions_are_still_enforced(self):
+        resp = self.post(**{f"field_{self.remarks.pk}": "Duplicate bill"})
+        self.assertContains(resp, "Fill in: Bill Number.")
+        self.assertFalse(Ticket.objects.exists())
+
+    def test_other_categories_still_need_a_description(self):
+        resp = self.client.post(reverse("ticket_new"), {"centre": self.kkp.pk, "category": self.printer.pk,
+                                                        "subject": "Printer"})
+        self.assertContains(resp, "Describe what happened.")
+
+    def test_form_tells_the_page_which_categories_hide_the_box(self):
+        page = self.client.get(reverse("ticket_new"))
+        self.assertContains(page, "data-describe")
+        self.assertEqual(page.context["meta"][str(self.billing.pk)]["describe"], False)
+        self.assertEqual(page.context["meta"][str(self.printer.pk)]["describe"], True)
+
+    def test_detail_page_does_not_repeat_the_answers(self):
+        self.post(**{f"field_{self.bill_no.pk}": "B-1001", f"field_{self.remarks.pk}": "Duplicate bill"})
+        t = Ticket.objects.get()
+        page = self.client.get(reverse("ticket_detail", args=[t.number]))
+        self.assertContains(page, "B-1001", count=1)

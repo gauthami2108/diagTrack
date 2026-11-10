@@ -185,7 +185,7 @@
     <td style="text-align:right;">
       <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-cat"
               data-set-id="{{ c.pk }}" data-set-name="{{ c.name }}" data-set-priority="{{ c.default_priority }}"
-              data-set-asks_equipment="{% if c.asks_equipment %}on{% endif %}" data-set-active="{% if c.active %}on{% endif %}">Edit</button>
+              data-set-asks_equipment="{% if c.asks_equipment %}on{% endif %}" data-set-asks_description="{% if c.asks_description %}on{% endif %}" data-set-active="{% if c.active %}on{% endif %}">Edit</button>
     </td>
   </tr>
   {% endfor %}
@@ -913,6 +913,7 @@
     </select>
   </label>
   <label class="check"><input type="checkbox" name="asks_equipment"><span><b>Ask which equipment</b><small>Tick to show machine selector when this category is picked.</small></span></label>
+  <label class="check"><input type="checkbox" name="asks_description" checked><span><b>Ask "What happened?"</b><small>Untick to hide that box and use only this category's own questions (for example Bill Number, Remarks).</small></span></label>
   <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Create category</button></div>
 </form></dialog>
 
@@ -928,6 +929,7 @@
     </select>
   </label>
   <label class="check"><input type="checkbox" name="asks_equipment"><span><b>Ask which equipment</b></span></label>
+  <label class="check"><input type="checkbox" name="asks_description"><span><b>Ask "What happened?"</b><small>Untick to use only this category's own questions.</small></span></label>
   <label class="check"><input type="checkbox" name="active" checked><span><b>Active</b></span></label>
   <div class="form-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>
 </form></dialog>
