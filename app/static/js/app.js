@@ -302,12 +302,14 @@
       });
       extra.innerHTML = "";
       ((m && m.fields) || []).forEach(f => {
-        const label = document.createElement("label"); label.className = "field";
+        const label = document.createElement("label"); label.className = "field" + (f.kind === "longtext" ? " field-wide" : "");
         const span = document.createElement("span"); span.textContent = f.label + (f.required ? "" : " (optional)"); label.appendChild(span);
         let input;
         if (f.kind === "choice") {
           input = document.createElement("select"); input.add(new Option("Choose", ""));
           f.choices.forEach(c => input.add(new Option(c, c)));
+        } else if (f.kind === "longtext") {
+          input = document.createElement("textarea"); input.rows = 5;
         } else { input = document.createElement("input"); input.type = f.kind === "number" ? "number" : "text"; }
         input.name = "field_" + f.id; input.required = f.required; input.value = posted[input.name] || "";
         label.appendChild(input); extra.appendChild(label);

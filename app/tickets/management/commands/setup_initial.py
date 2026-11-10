@@ -62,7 +62,7 @@ class Command(BaseCommand):
                         c.asks_description = False
                         c.save(update_fields=["asks_description"])
                         CategoryField.objects.create(category=c, label="Bill Number", required=True, order=0)
-                        CategoryField.objects.create(category=c, label="Remarks", required=True, order=1)
+                        CategoryField.objects.create(category=c, label="Remarks", kind="longtext", required=True, order=1)
             self.stdout.write("Created the starting departments and categories.")
         if not SlaPolicy.objects.exists():
             for prio, (resp, reso) in DEFAULT_SLA.items():

@@ -30,7 +30,6 @@
     </label>
     <label class="check"><input type="checkbox" name="equipment_down" {% if posted.equipment_down %}checked{% endif %}><span><b>It is not working at all right now</b><small>Starts the downtime clock for this equipment.</small></span></label>
   </div>
-  <div class="field-row" data-extra></div>
 
   <div class="callout callout-warn duplicates-box" data-duplicates-box hidden>
     {% icon 'triangle-alert' %}
@@ -42,6 +41,7 @@
   </div>
 
   <label class="field"><span>Short title</span><input type="text" name="subject" data-subject maxlength="160" required value="{{ posted.subject }}" placeholder="For example: Billing counter printer not printing"></label>
+  <div class="field-row" data-extra></div>
   <label class="field" data-describe><span>What happened?</span><textarea name="description" rows="5" required placeholder="What you saw, when it started, and anything you already tried.">{{ posted.description }}</textarea></label>
 
   <label class="check check-alert"><input type="checkbox" name="patient_impact" {% if posted.patient_impact %}checked{% endif %}><span><b>Patient services are stopped because of this</b><small>Marks the ticket P1 Critical and alerts the managers at once. Use only when patients cannot be served.</small></span></label>

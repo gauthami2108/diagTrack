@@ -87,8 +87,8 @@ class Category(models.Model):
 
 
 class CategoryField(models.Model):
-    TEXT, NUMBER, CHOICE = "text", "number", "choice"
-    KINDS = [(TEXT, "Text"), (NUMBER, "Number"), (CHOICE, "Pick from a list")]
+    TEXT, LONGTEXT, NUMBER, CHOICE = "text", "longtext", "number", "choice"
+    KINDS = [(TEXT, "Text"), (LONGTEXT, "Long text (big box)"), (NUMBER, "Number"), (CHOICE, "Pick from a list")]
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="fields")
     label = models.CharField(max_length=60, help_text="For example: Error code, Room number.")
     kind = models.CharField(max_length=10, choices=KINDS, default=TEXT)

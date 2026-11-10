@@ -453,6 +453,7 @@ a.band-cell:hover { background: var(--surface-2); text-decoration: none; }
 .has-error input, .has-error select { border-color: var(--bad) !important; }
 .field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .field-row:empty { display: none; }
+.field-row .field-wide { grid-column: 1 / -1; }
 .field-row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .form-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .route { display: flex; align-items: center; gap: 8px; color: var(--accent-text); background: var(--accent-soft); padding: 9px 12px; border-radius: 9px; font-size: 14px; margin-top: -4px; }

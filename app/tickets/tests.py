@@ -1664,6 +1664,7 @@ class CategoryWithoutDescriptionTests(Base):
     def test_migration_set_up_billing_software(self):
         self.assertFalse(self.billing.asks_description)
         self.assertTrue(self.bill_no.required and self.remarks.required)
+        self.assertEqual(self.remarks.kind, "longtext")  # Remarks gets the big box
 
     def test_ticket_raised_without_a_description(self):
         resp = self.post(**{f"field_{self.bill_no.pk}": "B-1001", f"field_{self.remarks.pk}": "Duplicate bill"})
