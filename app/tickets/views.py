@@ -209,7 +209,8 @@ def _filtered(request, default_open=True):
                        resolution_due__gte=now, resolution_due__lt=now + timedelta(hours=4))
     if g.get("unassigned"):
         qs = qs.filter(assignee__isnull=True)
-    for key, lookup in (("from", "created_at__date__gte"), ("to", "created_at__date__lte")):
+    for key, lookup in (("from", "created_at__date__gte"), ("to", "created_at__date__lte"),
+                        ("closed_from", "closed_at__date__gte")):
         try:
             if g.get(key):
                 qs = qs.filter(**{lookup: datetime.strptime(g[key], "%Y-%m-%d").date()})

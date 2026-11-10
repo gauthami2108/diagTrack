@@ -19,6 +19,7 @@
   <div class="band-cell {% if d.head.breached %}is-bad{% endif %}"><span class="band-n">{{ d.head.breached }}</span><span class="band-l">Past the deadline</span></div>
   <div class="band-cell"><span class="band-n">{{ d.raised }}</span><span class="band-l">Raised in {{ d.days }} days</span></div>
   <div class="band-cell"><span class="band-n">{{ d.resolved }}</span><span class="band-l">Resolved in {{ d.days }} days</span></div>
+  <a class="band-cell" href="{% url 'ticket_list' %}?view=all&state=any&status=cancelled&closed_from={{ d.since|date:'Y-m-d' }}{% if centre %}&centre={{ centre }}{% endif %}{% if department %}&department={{ department }}{% endif %}" title="Open the list of cancelled tickets"><span class="band-n">{{ d.cancelled }}</span><span class="band-l">Cancelled in {{ d.days }} days</span></a>
   <div class="band-cell {% if d.sla_pct is not None and d.sla_pct < 80 %}is-warn{% endif %}"><span class="band-n">{% if d.sla_pct is None %}-{% else %}{{ d.sla_pct }}%{% endif %}</span><span class="band-l">Resolved in time{% if d.sla_total %} ({{ d.sla_met }} of {{ d.sla_total }}){% endif %}</span></div>
   <div class="band-cell"><span class="band-n">{% if d.resp_pct is None %}-{% else %}{{ d.resp_pct }}%{% endif %}</span><span class="band-l">Responded in time</span></div>
 </section>

@@ -1695,3 +1695,28 @@ class CategoryWithoutDescriptionTests(Base):
         t = Ticket.objects.get()
         page = self.client.get(reverse("ticket_detail", args=[t.number]))
         self.assertContains(page, "B-1001", count=1)
+
+
+class DashboardCancelledTests(Base):
+    def test_cancelled_tickets_are_counted_and_linked(self):
+        keep, drop = self.raise_ticket(), self.raise_ticket()
+        services.cancel(drop, self.it_head, "Raised by mistake")
+        self.client.force_login(self.it_head)
+        page = self.client.get(reverse("dashboard"))
+        self.assertEqual(page.context["d"]["cancelled"], 1)
+        self.assertEqual(page.context["d"]["head"]["open"], 1)  # cancelled tickets are not "open"
+        self.assertContains(page, "Cancelled in 30 days")
+        link = reverse("ticket_list") + "?view=all&state=any&status=cancelled&closed_from="
+        self.assertContains(page, link)
+        # the link lists exactly the cancelled ticket
+        lst = self.client.get(reverse("ticket_list"), {"view": "all", "state": "any", "status": "cancelled",
+                                                      "closed_from": page.context["d"]["since"].isoformat()})
+        self.assertEqual([t.number for t in lst.context["page"]], [drop.number])
+
+    def test_old_cancellations_fall_outside_the_period(self):
+        t = self.raise_ticket()
+        services.cancel(t, self.it_head, "Duplicate")
+        Ticket.objects.filter(pk=t.pk).update(closed_at=timezone.now() - timedelta(days=45))
+        self.client.force_login(self.it_head)
+        self.assertEqual(self.client.get(reverse("dashboard")).context["d"]["cancelled"], 0)
+        self.assertEqual(self.client.get(reverse("dashboard"), {"days": "90"}).context["d"]["cancelled"], 1)

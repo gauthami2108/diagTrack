@@ -42,6 +42,7 @@ def dashboard(qs, days=30, now=None):
     status_counts = dict(open_qs.order_by().values_list("status").annotate(n=Count("id")))
     by_status = _bars([(labels[s], status_counts.get(s, 0), s) for s in OPEN_STATUSES], "status")
 
+    cancelled_n = qs.filter(status=Status.CANCELLED, closed_at__gte=since).count()
     done = period.filter(status__in=[Status.RESOLVED, Status.CLOSED])
     done_n = done.count()
     met = done.filter(resolution_breached=False).count()
@@ -69,6 +70,8 @@ def dashboard(qs, days=30, now=None):
         "head": headline(qs, now),
         "raised": period.count(),
         "resolved": done_n,
+        "cancelled": cancelled_n,
+        "since": timezone.localtime(since).date(),
         "sla_pct": round(100 * met / done_n) if done_n else None,
         "sla_met": met, "sla_total": done_n,
         "resp_pct": round(100 * resp_met / resp_n) if resp_n else None,
