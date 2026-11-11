@@ -1763,13 +1763,28 @@ class BulkAssignToTests(Base):
         self.t1.refresh_from_db()
         self.assertIsNone(self.t1.assignee_id)
 
-    def test_tickets_that_already_have_an_owner_are_left_alone(self):
+    def test_tickets_that_already_have_an_owner_can_be_moved(self):
         services.assign(self.t1, self.it_head, self.farah)
         resp = self.bulk(self.it_head, [self.t1, self.t2], self.ravi)
-        self.assertContains(resp, "Assigned 1 ticket(s) to Ravi.")
-        self.assertContains(resp, "1 already have an owner")
+        self.assertContains(resp, "Assigned 2 ticket(s) to Ravi.")
+        self.assertContains(resp, "1 moved from another person")
         self.t1.refresh_from_db()
-        self.assertEqual(self.t1.assignee, self.farah)
+        self.assertEqual(self.t1.assignee, self.ravi)
+        last = self.t1.history.filter(field="assignee").latest("id")
+        self.assertEqual((last.old, last.new), ("Farah", "Ravi"))  # the previous owner is on record
+
+    def test_moving_keeps_the_status_of_work_in_progress(self):
+        services.assign(self.t1, self.it_head, self.farah)
+        services.start_work(self.t1, self.farah)
+        self.bulk(self.it_head, [self.t1], self.ravi)
+        self.t1.refresh_from_db()
+        self.assertEqual((self.t1.assignee, self.t1.status), (self.ravi, Status.IN_PROGRESS))
+
+    def test_tickets_already_with_that_person_are_skipped(self):
+        services.assign(self.t1, self.it_head, self.ravi)
+        resp = self.bulk(self.it_head, [self.t1], self.ravi)
+        self.assertContains(resp, "Assigned 0 ticket(s)")
+        self.assertContains(resp, "1 are already assigned to Ravi")
 
     def test_agent_limited_to_other_centre_is_refused(self):
         limited = User.objects.create_user("lim", password="x", role=User.AGENT, first_name="Lim")

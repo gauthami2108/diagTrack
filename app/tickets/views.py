@@ -1134,7 +1134,7 @@ def ticket_bulk(request):
     count = 0
     errors = 0
 
-    person, skipped, eligible_cache = None, {"perm": 0, "owned": 0, "fit": 0}, {}
+    person, skipped, eligible_cache, moved = None, {"perm": 0, "same": 0, "fit": 0}, {}, 0
     if action == "assign_to":
         person = User.objects.filter(pk=request.POST.get("bulk_assignee") or 0, is_active=True).first()
         if person is None:
@@ -1147,13 +1147,15 @@ def ticket_bulk(request):
             if action == "assign_to":
                 if "assign" not in allowed:
                     skipped["perm"] += 1
-                elif t.assignee_id:
-                    skipped["owned"] += 1
+                elif t.assignee_id == person.pk:
+                    skipped["same"] += 1
                 elif not services.is_assignable(person, t, eligible_cache):
                     skipped["fit"] += 1
                 else:
-                    services.assign(t, request.user, person)
+                    had_owner = t.assignee_id is not None
+                    services.assign(t, request.user, person)  # the history keeps the previous owner
                     count += 1
+                    moved += had_owner
             elif action == "assign_me":
                 if "assign_me" in allowed or "assign" in allowed:
                     services.assign(t, request.user, request.user, check=False)
@@ -1194,7 +1196,9 @@ def ticket_bulk(request):
 
     if action == "assign_to":
         msg = f"Assigned {count} ticket(s) to {person.display_name}."
-        reasons = (("owned", "already have an owner"),
+        if moved:
+            msg += f" {moved} moved from another person."
+        reasons = (("same", f"are already assigned to {person.display_name}"),
                    ("fit", f"are for a department or centre {person.display_name} does not cover"),
                    ("perm", "you cannot assign (not your department, or no longer open)"))
         why = "; ".join(f"{skipped[k]} {text}" for k, text in reasons if skipped[k])
@@ -1210,7 +1214,7 @@ def ticket_bulk(request):
 
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
         return JsonResponse({"ok": True, "count": count, "message": msg})
-    messages.success(request, msg)
+    (messages.success if count else messages.warning)(request, msg)  # nothing changed: not a green success
     return redirect(request.META.get("HTTP_REFERER") or "ticket_list")
 
 
