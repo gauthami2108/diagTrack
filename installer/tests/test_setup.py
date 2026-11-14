@@ -141,3 +141,79 @@ class DockerSetupTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProgramSwitchTests(unittest.TestCase):
+    """Replacing the program folder must survive a folder that Windows briefly refuses to rename."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.program, self.source = root / "program", root / "source"
+        (self.program / "app").mkdir(parents=True)
+        (self.program / "app" / "VERSION").write_text("old")
+        (self.source / "app").mkdir(parents=True)
+        (self.source / "app" / "VERSION").write_text("new")
+        (self.source / "installer" / "windows").mkdir(parents=True)
+        (self.source / "installer" / "windows" / "DiagTrackService.exe").write_text("exe")
+        for patch in (mock.patch.object(windows, "PROGRAM", self.program), mock.patch.object(windows.time, "sleep"),
+                      mock.patch.object(windows.ui, "log")):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def refuse(self, times):
+        real, calls = Path.rename, {"n": 0}
+
+        def rename(path, target):
+            calls["n"] += 1
+            if calls["n"] <= times:
+                raise PermissionError(5, "Access is denied")
+            return real(path, target)
+        return mock.patch.object(Path, "rename", rename)
+
+    def version(self, folder):
+        return (self.program / folder / "VERSION").read_text()
+
+    def test_normal_switch_keeps_the_old_version_as_previous(self):
+        windows.copy_program(self.source)
+        self.assertEqual((self.version("app"), self.version("app.previous")), ("new", "old"))
+
+    def test_briefly_locked_folder_is_retried(self):
+        with self.refuse(2):
+            windows.copy_program(self.source)
+        self.assertEqual(self.version("app"), "new")
+
+    def test_folder_that_stays_locked_gives_a_clear_message_and_changes_nothing(self):
+        with self.refuse(99):
+            with self.assertRaises(ui.Failed) as ctx:
+                windows.copy_program(self.source)
+        self.assertEqual(ctx.exception.code, "DT-U05")
+        self.assertIn("Close every window", ctx.exception.todo)
+        self.assertEqual(self.version("app"), "old")  # the installed version is untouched
+
+    def test_failure_after_the_old_folder_moved_puts_it_back(self):
+        real, calls = Path.rename, {"n": 0}
+
+        def rename(path, target):
+            calls["n"] += 1
+            if path.name == "app.new":
+                raise PermissionError(5, "Access is denied")
+            return real(path, target)
+        with mock.patch.object(Path, "rename", rename):
+            with self.assertRaises(ui.Failed):
+                windows.copy_program(self.source)
+        self.assertEqual(self.version("app"), "old")
+
+    def test_failed_update_starts_the_installed_version_again(self):
+        with mock.patch.object(windows, "load_state", return_value={"port": 80, "version": "1"}), \
+                mock.patch.object(windows.ui, "yes", return_value=True), \
+                mock.patch.object(windows, "manage", return_value=mock.Mock(returncode=0, stdout="")), \
+                mock.patch.object(windows, "DATA", self.program / "data"), \
+                mock.patch.object(windows, "stop_service") as stop, \
+                mock.patch.object(windows, "start_service") as start, \
+                mock.patch.object(windows, "copy_program", side_effect=ui.Failed("DT-U05", "locked")):
+            with self.assertRaises(ui.Failed):
+                windows.update(self.source)
+        stop.assert_called_once()
+        start.assert_called_once_with(80)

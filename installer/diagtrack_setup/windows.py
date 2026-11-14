@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -328,17 +329,57 @@ def create_database(pg, super_pw, db_pw):
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "media", "status", "staticfiles", "db.sqlite3", "*.log")
 
 
+def _remove_tree(path):
+    """Delete a folder, including files marked read-only."""
+    def clear(func, target, _exc):
+        try:
+            os.chmod(target, stat.S_IWRITE)
+            func(target)
+        except OSError:
+            pass
+    shutil.rmtree(path, onerror=clear)
+
+
+def _rename(src, dst, what, tries=8, wait=5):
+    """Rename a folder. Windows refuses ("Access is denied") while anything is using a file inside it: a window
+    opened in that folder, an editor, File Explorer or the antivirus scanning the files that were just copied.
+    The last two let go within seconds, so try again a few times before giving up."""
+    for attempt in range(tries):
+        try:
+            src.rename(dst)
+            return
+        except OSError as exc:
+            if attempt == tries - 1:
+                raise Failed("DT-U05", f"Windows would not let setup {what}.", str(exc).strip().splitlines()[0],
+                             f"Close every window, editor and File Explorer that is open inside {PROGRAM}, "
+                             "then run setup again. It carries on from here.")
+            ui.log(f"Could not rename {src} ({exc}); trying again in {wait} seconds.")
+            time.sleep(wait)
+
+
 def copy_program(source):
     """Copy the new version beside the old one, then switch, keeping the old one as app.previous."""
     PROGRAM.mkdir(parents=True, exist_ok=True)
     new = PROGRAM / "app.new"
-    shutil.rmtree(new, ignore_errors=True)
+    if new.exists():
+        _remove_tree(new)
     shutil.copytree(Path(source) / "app", new, ignore=IGNORE)
     current, previous = PROGRAM / "app", PROGRAM / "app.previous"
     if current.exists():
-        shutil.rmtree(previous, ignore_errors=True)
-        current.rename(previous)
-    new.rename(current)
+        if previous.exists():
+            _remove_tree(previous)
+        if previous.exists():
+            raise Failed("DT-U05", "Setup could not remove the old copy of the program.",
+                         f"A file inside {previous} is in use.",
+                         f"Close every window, editor and File Explorer that is open inside {PROGRAM}, "
+                         f"or delete the folder {previous} yourself, then run setup again.")
+        _rename(current, previous, "set the current program aside")
+    try:
+        _rename(new, current, "put the new program in place")
+    except Failed:
+        if previous.exists() and not current.exists():
+            previous.rename(current)  # never leave DiagTrack without a program folder
+        raise
     for name in ("installer",):
         target = PROGRAM / name
         if Path(source).resolve() != PROGRAM.resolve():
@@ -723,7 +764,16 @@ def update(source):
     steps.ok(f"Backup made: {pre[1] if pre else 'yes'}")
     steps.start("files", 3)
     stop_service()
-    copy_program(source)
+    try:
+        copy_program(source)
+    except Exception:
+        # Nothing was switched, so the installed version is still complete: bring it back for the staff.
+        ui.say("The files could not be switched. Starting the installed version again...")
+        try:
+            start_service(port)
+        except Failed:
+            ui.say(ui.red("It did not start; after fixing the problem, run setup and choose Repair."))
+        raise
     install_packages("DT-U02")
     steps.ok()
     try:
