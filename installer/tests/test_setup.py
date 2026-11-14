@@ -1,6 +1,7 @@
 """Tests of the setup program that run on any system (python -m unittest discover installer/tests)."""
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -184,13 +185,56 @@ class ProgramSwitchTests(unittest.TestCase):
             windows.copy_program(self.source)
         self.assertEqual(self.version("app"), "new")
 
-    def test_folder_that_stays_locked_gives_a_clear_message_and_changes_nothing(self):
-        with self.refuse(99):
-            with self.assertRaises(ui.Failed) as ctx:
+    @staticmethod
+    def python_mirror(src, dst, what):
+        """Stands in for robocopy /MIR, which only exists on Windows."""
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+
+    def test_folder_that_stays_locked_is_updated_in_place(self):
+        with self.refuse(99), mock.patch.object(windows, "_mirror", self.python_mirror):
+            windows.copy_program(self.source)
+        self.assertEqual((self.version("app"), self.version("app.previous")), ("new", "old"))
+        self.assertTrue((self.program / "DiagTrackService.exe").exists())  # the rest of the switch still ran
+
+    def test_in_place_update_that_fails_midway_puts_the_old_files_back(self):
+        def mirror(src, dst, what):
+            if src.name == "app.new":
+                (dst / "VERSION").write_text("half-copied")
+                raise windows.Failed("DT-U05", "locked file")
+            self.python_mirror(src, dst, what)
+        with self.refuse(99), mock.patch.object(windows, "_mirror", mirror):
+            with self.assertRaises(ui.Failed):
                 windows.copy_program(self.source)
-        self.assertEqual(ctx.exception.code, "DT-U05")
-        self.assertIn("Close every window", ctx.exception.todo)
-        self.assertEqual(self.version("app"), "old")  # the installed version is untouched
+        self.assertEqual(self.version("app"), "old")
+
+    def test_nothing_changes_when_even_the_safety_copy_cannot_be_made(self):
+        def mirror(src, dst, what):
+            raise windows.Failed("DT-U05", "locked file")
+        with self.refuse(99), mock.patch.object(windows, "_mirror", mirror):
+            with self.assertRaises(ui.Failed):
+                windows.copy_program(self.source)
+        self.assertEqual(self.version("app"), "old")
+
+    def test_robocopy_exit_codes(self):
+        ok = mock.Mock(returncode=1, stdout="", stderr="")  # 1 = files were copied
+        bad = mock.Mock(returncode=8, stdout="ERROR 32 ... x.py: being used by another process", stderr="")
+        with mock.patch.object(windows, "run", return_value=ok) as run:
+            windows._mirror(Path("a"), Path("b"), "copy")
+            self.assertEqual(run.call_args[0][0][:4], ["robocopy", Path("a"), Path("b"), "/MIR"])
+        with mock.patch.object(windows, "run", return_value=bad):
+            with self.assertRaises(ui.Failed) as ctx:
+                windows._mirror(Path("a"), Path("b"), "copy")
+        self.assertIn("x.py", ctx.exception.cause)
+
+    def test_restore_previous_falls_back_to_copying_files(self):
+        (self.program / "app.previous").mkdir()
+        (self.program / "app.previous" / "VERSION").write_text("old")
+        (self.program / "app" / "VERSION").write_text("broken")
+        with self.refuse(99), mock.patch.object(windows, "_mirror", self.python_mirror):
+            windows.restore_previous()
+        self.assertEqual(self.version("app"), "old")
 
     def test_failure_after_the_old_folder_moved_puts_it_back(self):
         real, calls = Path.rename, {"n": 0}

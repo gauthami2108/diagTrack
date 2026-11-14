@@ -373,13 +373,63 @@ def copy_program(source):
                          f"A file inside {previous} is in use.",
                          f"Close every window, editor and File Explorer that is open inside {PROGRAM}, "
                          f"or delete the folder {previous} yourself, then run setup again.")
-        _rename(current, previous, "set the current program aside")
+        try:
+            _rename(current, previous, "set the current program aside", tries=3)
+        except Failed:
+            # Something has the folder itself open (a window, Explorer, a scanner). Copying the files inside it
+            # still works, so update them in place instead of renaming the folder.
+            ui.log("The program folder cannot be renamed; updating the files inside it instead.")
+            _update_in_place(new, current, previous)
+            _finish_copy(source)
+            return
     try:
         _rename(new, current, "put the new program in place")
     except Failed:
         if previous.exists() and not current.exists():
             previous.rename(current)  # never leave DiagTrack without a program folder
         raise
+    _finish_copy(source)
+
+
+def _mirror(src, dst, what):
+    """Make dst identical to src, file by file (robocopy). Works while a window or Explorer has the folder open;
+    only a file that is itself in use can stop it, and robocopy's report then names that file."""
+    proc = run(["robocopy", src, dst, "/MIR", "/R:3", "/W:3", "/NP", "/NFL", "/NDL"], what, "DT-U05", check=False)
+    if proc.returncode >= 8:  # robocopy: 0 to 7 means success, in various degrees
+        tail = "\n".join(((proc.stdout or "") + (proc.stderr or "")).strip().splitlines()[-6:])
+        raise Failed("DT-U05", f"Setup could not {what}.", ui.redact(tail) or f"robocopy exit code {proc.returncode}",
+                     f"Close the program that is using the file named above (or restart the server), "
+                     f"then run setup again. The installed version is unchanged.")
+
+
+def _update_in_place(new, current, previous):
+    _mirror(current, previous, "keep a copy of the installed version")
+    try:
+        _mirror(new, current, "copy the new version over the installed one")
+    except Failed:
+        try:
+            _mirror(previous, current, "put the installed version back")
+        except Failed:
+            pass
+        raise
+    try:
+        _remove_tree(new)
+    except OSError:
+        pass
+
+
+def restore_previous():
+    """Put app.previous back as the program folder after a failed update (by rename, or file by file)."""
+    current, previous, failed = PROGRAM / "app", PROGRAM / "app.previous", PROGRAM / "app.failed"
+    try:
+        shutil.rmtree(failed, ignore_errors=True)
+        current.rename(failed)
+        previous.rename(current)
+    except OSError:
+        _mirror(previous, current, "put the previous version back")
+
+
+def _finish_copy(source):
     for name in ("installer",):
         target = PROGRAM / name
         if Path(source).resolve() != PROGRAM.resolve():
@@ -788,10 +838,7 @@ def update(source):
     except Failed as f:
         ui.say(ui.red(f"The update failed: {f.what}. Putting the previous version back..."))
         stop_service()
-        failed = PROGRAM / "app.failed"
-        shutil.rmtree(failed, ignore_errors=True)
-        (PROGRAM / "app").rename(failed)
-        (PROGRAM / "app.previous").rename(PROGRAM / "app")
+        restore_previous()
         install_packages("DT-U04")
         if pre:
             manage(["restore", "--dest", pre[0], "--name", pre[1], "--yes"], "Restoring the backup made before the update",
