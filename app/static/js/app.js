@@ -556,7 +556,7 @@
     escalation: ["Escalation", "triangle-alert"], assigned: ["Assigned to you", "user-plus"], reply: ["New reply", "message-square"],
     note: ["Internal note", "lock"], mention: ["You were mentioned", "message-square"], reopened: ["Reopened", "rotate-ccw"],
     transferred: ["Transferred", "arrow-right-left"], priority: ["Priority changed", "flag"], hold: ["On hold", "pause"],
-    started: ["Work started", "play"], cancelled: ["Cancelled", "x"], amc: ["AMC renewal", "wrench"], vendor: ["Vendor", "wrench"],
+    started: ["Work started", "play"], cancelled: ["Cancelled", "x"], amc: ["AMC renewal", "wrench"], insurance: ["Insurance", "shield-check"], vendor: ["Vendor", "wrench"],
   };
   const dismiss = (el) => { el.classList.add("is-leaving"); setTimeout(() => el.remove(), 260); };
   const popup = (n) => {
@@ -583,7 +583,7 @@
     a.innerHTML = `<span class="k k-${esc(n.kind)}" aria-hidden="true"></span><span>${esc(n.title)}</span><small>now</small>`;
     alertList.prepend(a);
   };
-  const POP_KINDS = ["raised", "closed", "escalation", "assigned", "mention", "reopened", "amc", "backupfail", "backuplate", "signinlock"];
+  const POP_KINDS = ["raised", "closed", "escalation", "assigned", "mention", "reopened", "amc", "insurance", "backupfail", "backuplate", "signinlock"];
   const poll = () => {
     if (document.visibilityState !== "visible" && !("Notification" in window && Notification.permission === "granted")) return;
     fetch("/api/live/?after=" + last, { credentials: "same-origin", headers: { "X-Requested-With": "fetch" } })

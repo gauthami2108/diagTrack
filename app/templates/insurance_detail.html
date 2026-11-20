@@ -28,7 +28,7 @@
           {% if p.premium is not None %}<div><dt>Premium</dt><dd>₹{{ p.premium|floatformat:0 }}</dd></div>{% endif %}
         {% endif %}
         <div><dt>Responsible</dt><dd>{% if p.responsible %}{{ p.responsible.display_name }}{% else %}<span class="muted">Not set</span>{% endif %}</dd></div>
-        <div><dt>First reminder</dt><dd>{{ soon }} days before expiry{% if not p.remind_days %} <small class="muted">(from Settings)</small>{% endif %}, then 30 and 7 days before, and on the day</dd></div>
+        <div><dt>Reminders</dt><dd>{% for s in stages %}{% if s > 0 %}{{ s }} days before{% elif s == 0 %}on the expiry date{% else %}the day after if not renewed{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not p.remind_days %} <small class="muted">(first one from Settings)</small>{% endif %}</dd></div>
       </dl>
       {% if p.notes %}<p class="panel-note">{{ p.notes|linebreaksbr }}</p>{% endif %}
     </section>

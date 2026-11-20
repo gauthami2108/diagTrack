@@ -809,7 +809,7 @@ a.band-cell:hover { background: var(--surface-2); text-decoration: none; }
 .popup-ic { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
 .popup.k-closed .popup-ic, .popup.k-resolved .popup-ic { background: var(--good-soft); color: var(--good); }
 .popup.k-escalation .popup-ic, .popup.is-urgent .popup-ic { background: var(--bad-soft); color: var(--bad); }
-.popup.k-amc .popup-ic, .popup.k-hold .popup-ic { background: var(--warn-soft); color: var(--warn); }
+.popup.k-amc .popup-ic, .popup.k-insurance .popup-ic, .popup.k-hold .popup-ic { background: var(--warn-soft); color: var(--warn); }
 .popup-kind { font-size: 12px; color: var(--ink-3); font-weight: 500; }
 .popup.is-urgent .popup-kind { color: var(--bad); }
 .popup b { display: block; font-weight: 600; font-size: 14px; line-height: 1.35; margin-top: 1px; }

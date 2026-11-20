@@ -279,9 +279,18 @@ one of their centres, without money figures. Everyone else does not see the Insu
 Professional indemnity, Medical malpractice, Vehicle, Cyber, Other) is on the **Cover types** tab. Add your own, rename
 one or switch one off; policies already recorded keep their type.
 
-**Expiring soon.** A policy shows as Expiring soon when it is within the first-reminder number of days of its expiry.
-That number is set under Settings, General (**warn about insurance expiry**, 60 days to begin with), and can be changed for
-one policy with its **First reminder** box. **Excel** downloads the list as filtered on screen.
+**Reminders.** Once a day DiagTrack checks every policy that is not renewed or cancelled. It sends an alert at the first
+reminder (60 days before expiry to begin with), then 30 days and 7 days before, on the expiry date, and once more the
+day after if the policy has not been renewed. The first number is set under Settings, General (**warn about insurance
+expiry**) and can be changed for one policy with its **First reminder** box; a policy with 14 there gets 14, 7, 0 and the
+day after, nothing earlier. Alerts go to the administrators, the manager of each centre the policy covers (for a policy
+covering all centres, administrators only) and the person responsible, if one is chosen. They appear in the bell and
+by email, SMS, WhatsApp and Telegram as switched on under Settings; the wording is under **Message templates**
+(**Insurance ending**). Each reminder is sent once. Changing the expiry date starts the reminders again, and Renew starts a
+new policy with its own reminders. A policy recorded more than 30 days after it ended is not announced.
+
+A policy shows as **Expiring soon** once it is within its first-reminder number of days of expiry. **Excel** downloads the
+list as filtered on screen.
 
 ## 8. Message templates
 
