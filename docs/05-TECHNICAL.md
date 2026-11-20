@@ -55,6 +55,7 @@ Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_P
 | `tickets/views_backup.py` | The Backups page; it only queues jobs and reads state |
 | `tickets/signin.py` | Wrong-password lock-out, active session invalidation (`invalidate_user_sessions`), the sign-in forms for main and admin login |
 | `tickets/bulk_import.py`, `tickets/views_import.py` | Import from Excel: the workbook with current data, row checks across sheets, one-transaction apply; the upload, preview and import screen |
+| `tickets/views_insurance.py` | The Insurance register (Oversee > Insurance): list and filters, add, edit, renew, documents, cover types, Excel export; file checks and who-sees-what rules |
 | `tickets/wording.py` | Events, placeholders, built-in wording and the template renderer for email, SMS, WhatsApp and Telegram |
 | `tickets/reports.py` | Home, dashboard, centre matrix, equipment figures, PM schedule status, CAMC penalty calculation, and weekly management summary report generation |
 | `tickets/exports.py` | The Reports screen and the Excel workbook |
@@ -79,6 +80,7 @@ The setup program lives outside `app/`, in `installer/`: `setup.py` and the `dia
 | Category, CategoryField | Routing, default priority, extra questions per category |
 | User | Custom user: role, mobile, `telegram_chat_id`, photo, centres (M2M), departments (M2M) |
 | Vendor, Equipment | Equipment register with contractual `uptime_guarantee_percent`, `penalty_rate_per_day`, and `annual_camc_cost`; `amc_alert_for` and `amc_alert_stage` make each AMC warning go out once |
+| InsuranceCoverType, InsurancePolicy, InsuranceDocument | The insurance register. A policy has a cover type, any number of centres (none = all centres or head office), insurer, policy number, start and expiry dates, optional `sum_insured` and `premium`, an optional responsible person, an optional `remind_days` (first reminder; empty uses the Settings number), optional covered machines, and `renewed` / `cancelled` flags. Renewing creates the next policy with `renewed_from` set and marks the old one `renewed`. Documents (PDF, JPG, PNG, WebP, 20 MB each) are stored under `insurance/` in the media folder, so backups include them |
 | PreventiveMaintenance | Recurring calibration and PM schedules linked to equipment; tracks `frequency_months`, `last_performed_at`, `next_due_date`, and auto-generated `last_ticket` |
 | DowntimeLog | Downtime per equipment ticket |
 | VendorCall | Vendor called for a ticket: called and attended times, reference, engineer |
@@ -179,6 +181,7 @@ import, and are removed after it or after a day.
 
 | URL | Returns |
 | --- | --- |
+| `/insurance/` | Insurance register, `?tab=types` for cover types (administrators), `/insurance/export.xlsx`, `/insurance/<id>/`, `/insurance/files/<id>/` for documents. Administrators and management see everything; centre and area managers only their own centres' policies and never the money figures |
 | `/masters/` | Dedicated native Masters and rules management hub with quick-add dialogs and quick statistics (administrators) |
 | `/api/live/stream/` | Server-Sent Events (SSE) event stream for instant ticket and notification pushes |
 | `/api/live/?after=<id>` | New alerts for the signed-in person since that id, the unread count and the newest id (polling fallback) |

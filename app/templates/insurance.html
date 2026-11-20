@@ -1,0 +1,69 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Insurance{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Insurance</h1><p class="sub">Every policy, by centre and type of cover, with its dates and documents.{% if not request.user.sees_everything %} You see the policies of your own centres.{% endif %}</p></div>
+  <div class="head-actions">
+    {% if tab == 'policies' %}<a class="btn" href="{% url 'insurance_export' %}?{{ request.GET.urlencode }}">{% icon 'download' %}Excel</a>{% endif %}
+    {% if can_edit %}<a class="btn btn-primary" href="{% url 'insurance_new' %}">{% icon 'circle-plus' %}Add policy</a>{% endif %}
+  </div>
+</div>
+
+<section class="band" aria-label="Summary">
+  <div class="band-cell"><span class="band-n">{{ current_count }}</span><span class="band-l">Current policies</span></div>
+  <div class="band-cell {% if expiring_count %}is-warn{% endif %}"><span class="band-n">{{ expiring_count }}</span><span class="band-l">Expiring soon</span></div>
+  <div class="band-cell {% if expired_count %}is-bad{% endif %}"><span class="band-n">{{ expired_count }}</span><span class="band-l">Expired, not renewed</span></div>
+  {% if money and tab == 'policies' %}<div class="band-cell"><span class="band-n">₹{{ total_sum|floatformat:0 }}</span><span class="band-l">Sum insured, as listed</span></div>{% endif %}
+</section>
+
+{% if can_edit %}<div class="tabs" role="tablist">
+  <a role="tab" href="?tab=policies" {% if tab == 'policies' %}aria-selected="true"{% endif %}>Policies</a>
+  <a role="tab" href="?tab=types" {% if tab == 'types' %}aria-selected="true"{% endif %}>Cover types</a>
+</div>{% endif %}
+
+{% if tab == 'policies' %}
+<form class="filters" method="get" data-autosubmit>
+  <input type="search" name="q" value="{{ f.q }}" placeholder="Insurer or policy number" aria-label="Search policies">
+  <select name="centre" aria-label="Centre"><option value="">All centres</option>
+    {% if request.user.sees_everything %}<option value="0" {% if f.centre == '0' %}selected{% endif %}>Policies for all centres</option>{% endif %}
+    {% for c in centres %}<option value="{{ c.pk }}" {% if f.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <select name="cover" aria-label="Type of cover"><option value="">All types of cover</option>{% for t in cover_types %}<option value="{{ t.pk }}" {% if f.cover == t.pk|stringformat:"s" %}selected{% endif %}>{{ t.name }}</option>{% endfor %}</select>
+  <select name="status" aria-label="Status">{% for v, l in status_filters %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+</form>
+{% if rows %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Cover</th><th>Where</th><th>Insurer</th><th>Started</th><th>Expires</th><th>Status</th>{% if money %}<th class="num-col">Sum insured</th>{% endif %}</tr></thead>
+  <tbody>{% for p in rows %}
+  <tr data-href="{% url 'insurance_detail' p.pk %}">
+    <td class="cell-title"><a href="{% url 'insurance_detail' p.pk %}">{{ p.cover_type.name }}</a><small>{{ p.policy_number }}</small></td>
+    <td data-l="Where">{{ p.location }}</td>
+    <td data-l="Insurer">{{ p.insurer }}</td>
+    <td data-l="Started">{{ p.start_date|date:"d M Y" }}</td>
+    <td data-l="Expires">{{ p.expiry_date|date:"d M Y" }}<br>{% include "_ins_when.html" %}</td>
+    <td data-l="Status">{% include "_ins_status.html" %}</td>
+    {% if money %}<td data-l="Sum insured" class="num-col">{% if p.sum_insured is not None %}₹{{ p.sum_insured|floatformat:0 }}{% else %}<span class="muted">-</span>{% endif %}</td>{% endif %}
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'shield-check' %}<h2>No policies found</h2><p>{% if can_edit %}Use Add policy to record the first one, or change the filters above.{% else %}Nothing matches. Change the filters, or ask the administrator to add the policy.{% endif %}</p></div>
+{% endif %}
+
+{% else %}
+<p class="sub tab-intro">The types of cover offered when adding a policy. Rename a type or switch it off here; policies already recorded keep their type.</p>
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Name</th><th>Active</th><th></th></tr></thead>
+  <tbody>{% for t in all_types %}
+  <tr><td colspan="3"><form method="post" action="{% url 'insurance_types_action' %}" class="inline-row">{% csrf_token %}
+    <input type="hidden" name="action" value="save"><input type="hidden" name="pk" value="{{ t.pk }}">
+    <input type="text" name="name" value="{{ t.name }}" maxlength="80" aria-label="Name" required>
+    <label class="chip-check"><input type="checkbox" name="active" {% if t.active %}checked{% endif %}><span>Active</span></label>
+    <button class="btn btn-s" type="submit">Save</button>
+  </form></td></tr>{% endfor %}</tbody>
+</table></div>
+<form class="form-card" method="post" action="{% url 'insurance_types_action' %}" style="margin-top:18px">{% csrf_token %}
+  <input type="hidden" name="action" value="add">
+  <label class="field"><span>Add a type of cover</span><input type="text" name="name" maxlength="80" placeholder="For example: Fire, Marine transit, Directors liability" required></label>
+  <div class="form-foot"><button class="btn btn-primary" type="submit">Add</button></div>
+</form>
+{% endif %}
+{% endblock %}

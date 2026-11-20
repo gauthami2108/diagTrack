@@ -1157,3 +1157,14 @@ textarea.mono, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Conso
 .bulk-form { display: flex; align-items: center; margin: 0; }
 .bulk-actions-group { display: flex; align-items: center; gap: 8px; }
 .bulk-actions-group select { background: #1e293b; color: #f8fafc; border: 1px solid #334155; padding: 6px 12px; border-radius: 99px; font-size: 13px; }
+
+/* Insurance */
+.ins-chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 99px; font-size: 12.5px; font-weight: 600; white-space: nowrap; background: var(--accent-soft); color: var(--accent-text); }
+.ins-active { background: var(--good-soft); color: var(--good); }
+.ins-expiring { background: var(--warn-soft); color: var(--warn); }
+.ins-expired { background: var(--bad-soft); color: var(--bad); }
+.ins-renewed, .ins-cancelled { background: var(--line-2); color: var(--ink-2); }
+.band-cell.is-warn .band-n { color: var(--warn); }
+.inline-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.inline-row input[type="text"] { flex: 1; min-width: 200px; }
+.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }

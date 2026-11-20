@@ -6,6 +6,7 @@ screen in the browser; no programming is needed.
 Sign in as an administrator. The side menu then shows extra items under **Administer**:
 
 - **Masters and rules**: the unified native management hub with dedicated multi-line pill tabs for all 13 administrative entities: Centres, Departments, Categories & questions, SLA policies, Escalation rules, Users & access, Sign-in locks, Vendors, Equipment register, Preventive maintenance schedules, Sent alerts, Ticket history audit trail, and Vendor calls. Features native tables, instant auto-submitting filters, multi-column sorting, search, pagination, and modal quick-add dialogs in one cohesive interface.
+- **Insurance** (under **Oversee**, also open to management and to centre and area managers for their own centres): every insurance policy with its dates and documents. See section 7a.
 - **Import from Excel**: add or change centres, vendors, departments, people and equipment from one workbook.
 - **Backups**: backup folders, schedules, retention, Back up now, restores and moving to another server.
 - **Message templates**: the wording of email, SMS, WhatsApp and Telegram alerts, and which alerts go out on each channel.
@@ -253,6 +254,34 @@ account; the provider guides you through both.
 4. Turn on the **Telegram alerts** switch, save, and press **Send me a test Telegram**.
 5. *Note on Telegram anti-spam policy:* A Telegram bot cannot message a user or group until the user opens the bot in Telegram and clicks **Start** (or sends `/start`). For group chats, add the bot as a group member first.
 6. Individual users can also specify their personal Telegram Chat ID in **My profile** and test delivery using the **Test Telegram alert** button.
+
+## 7a. Insurance
+
+Open **Insurance** under **Oversee**. Each row is one policy: the type of cover (Fire, Building, Equipment and so on),
+where it applies, the insurer, the dates and the status: Active, Expiring soon, Expired, Renewed or Cancelled.
+
+**Adding a policy** (administrators only). Choose **Add policy**. The type of cover, insurer, policy number, start date,
+expiry date and at least one document are required. Choose one centre, several centres (hold Ctrl, or Command on a Mac),
+or none for a policy that covers every centre or the head office. Documents may be PDF, JPG, PNG or WebP, up to 20 MB
+each; add more later for endorsements or receipts. Every policy keeps at least one document.
+
+**Renewing.** Open the policy and choose **Renew**. The new policy starts the day after the old one ends and runs a year;
+change whatever differs and add the new document. The old policy is kept and marked Renewed, so the history stays.
+A policy cancelled before its end is marked with the Cancelled tick on its Edit page.
+
+**Sum insured and premium** are optional, and are shown only to administrators and management. Untick
+**Show sum insured and premium on the Insurance page** under Settings, General, to hide them everywhere.
+
+**Who sees what.** Administrators and management see every policy. Centre and area managers see policies that include
+one of their centres, without money figures. Everyone else does not see the Insurance item.
+
+**Cover types.** The list (Fire, Building, Equipment / machinery breakdown, Contents / stock, Burglary, Public liability,
+Professional indemnity, Medical malpractice, Vehicle, Cyber, Other) is on the **Cover types** tab. Add your own, rename
+one or switch one off; policies already recorded keep their type.
+
+**Expiring soon.** A policy shows as Expiring soon when it is within the first-reminder number of days of its expiry.
+That number is set under Settings, General (**warn about insurance expiry**, 60 days to begin with), and can be changed for
+one policy with its **First reminder** box. **Excel** downloads the list as filtered on screen.
 
 ## 8. Message templates
 

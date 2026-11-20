@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}{% if new %}Add policy{% else %}Edit policy{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{% if old %}Renew policy{% elif new %}Add policy{% else %}Edit policy{% endif %}</h1>
+  <p class="sub">{% if old %}Renewing {{ old.cover_type.name }} {{ old.policy_number }}. The dates move forward a year; change anything that differs on the new policy. The old policy is marked Renewed when you save.{% else %}Dates and the policy document are required.{% endif %}</p></div></div>
+<form class="form-card" method="post" enctype="multipart/form-data" novalidate>
+  {% csrf_token %}
+  {% if old %}<input type="hidden" name="renew" value="{{ old.pk }}">{% endif %}
+  {% if problems or form.errors %}<div class="callout callout-bad" role="alert">{% icon 'circle-alert' %}<div><strong>The policy was not saved.</strong><ul>{% for e in problems %}<li>{{ e }}</li>{% endfor %}{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% if form.errors and not problems %}<p class="sub">Check the marked fields below.</p>{% endif %}</div></div>{% endif %}
+  <div class="field-row">{% include "_field.html" with f=form.cover_type %}{% include "_field.html" with f=form.centres %}</div>
+  <div class="field-row">{% include "_field.html" with f=form.insurer %}{% include "_field.html" with f=form.policy_number %}</div>
+  {% include "_field.html" with f=form.contact %}
+  <div class="field-row">{% include "_field.html" with f=form.start_date %}{% include "_field.html" with f=form.expiry_date %}</div>
+  {% if money %}<div class="field-row">{% include "_field.html" with f=form.sum_insured %}{% include "_field.html" with f=form.premium %}</div>{% endif %}
+  <div class="field-row">{% include "_field.html" with f=form.responsible %}{% include "_field.html" with f=form.remind_days %}</div>
+  {% include "_field.html" with f=form.equipment %}
+  {% include "_field.html" with f=form.notes %}
+  {% if not new %}<label class="check"><input type="checkbox" name="cancelled" {% if form.cancelled.value %}checked{% endif %}><span><b>{{ form.cancelled.label|capfirst }}</b><small>{{ form.cancelled.help_text }}</small></span></label>{% endif %}
+
+  <div class="field"><span>Policy documents{% if new %} (required){% endif %}</span>
+    <label class="drop" data-drop>
+      <input type="file" name="files" multiple accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp">
+      {% icon 'upload' %}<span><b>Add the policy, schedule, endorsements or premium receipt</b><small>PDF, JPG, PNG or WebP. Up to {{ max_mb }} MB each. You can choose several files.</small></span>
+    </label>
+    <ul class="file-list" data-file-list></ul>
+    {% if not new and p.documents.exists %}<small class="muted">{{ p.documents.count }} file{{ p.documents.count|pluralize }} already attached. New files are added to them.</small>{% endif %}
+  </div>
+
+  <div class="form-foot"><a class="btn" href="{% if new %}{% url 'insurance_list' %}{% else %}{% url 'insurance_detail' p.pk %}{% endif %}">Cancel</a><button class="btn btn-primary" type="submit">{% if old %}Save renewal{% else %}Save policy{% endif %}</button></div>
+</form>
+{% endblock %}

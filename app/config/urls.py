@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth import views as auth
 from django.urls import path
 
-from tickets import views, views_backup, views_import
+from tickets import views, views_backup, views_import, views_insurance
 from tickets.signin import SignInForm
 
 handler403 = "tickets.views.error_403"
@@ -23,6 +23,16 @@ urlpatterns = [
     path("equipment/<int:pk>/", views.equipment_detail, name="equipment_detail"),
     path("equipment/<int:pk>/pm/new/", views.equipment_pm_create, name="equipment_pm_create"),
     path("equipment/pm/<int:pk>/ticket/", views.pm_trigger_ticket, name="pm_trigger_ticket"),
+    path("insurance/", views_insurance.insurance_list, name="insurance_list"),
+    path("insurance/new/", views_insurance.insurance_new, name="insurance_new"),
+    path("insurance/export.xlsx", views_insurance.insurance_export, name="insurance_export"),
+    path("insurance/types/", views_insurance.insurance_types_action, name="insurance_types_action"),
+    path("insurance/files/<int:pk>/", views_insurance.insurance_doc, name="insurance_doc"),
+    path("insurance/files/<int:pk>/delete/", views_insurance.insurance_doc_delete, name="insurance_doc_delete"),
+    path("insurance/<int:pk>/", views_insurance.insurance_detail, name="insurance_detail"),
+    path("insurance/<int:pk>/edit/", views_insurance.insurance_edit, name="insurance_edit"),
+    path("insurance/<int:pk>/delete/", views_insurance.insurance_delete, name="insurance_delete"),
+    path("insurance/<int:pk>/files/", views_insurance.insurance_doc_add, name="insurance_doc_add"),
     path("dashboard/", views.dashboard, name="dashboard"),
     path("alerts/", views.notifications, name="notifications"),
     path("alerts/<int:pk>/", views.notification_open, name="notification_open"),
