@@ -56,7 +56,7 @@ Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_P
 | `tickets/signin.py` | Wrong-password lock-out, active session invalidation (`invalidate_user_sessions`), the sign-in forms for main and admin login |
 | `tickets/bulk_import.py`, `tickets/views_import.py` | Import from Excel: the workbook with current data, row checks across sheets, one-transaction apply; the upload, preview and import screen |
 | `services.insurance_checks` | Daily insurance reminders, run by the worker next to `amc_checks`: stages from `insurance_stages(first)` (first reminder, 30, 7, 0 and -1 days), once each per expiry date (`alert_for`, `alert_stage`, stored +2); to administrators, the centre managers of the policy's centres and the responsible person; kind `insurance` |
-| `tickets/views_insurance.py` | The Insurance register (Oversee > Insurance): list and filters, coverage grid (`_gaps`: centres by `InsuranceCoverType.core`, best live policy per cell), add, edit, renew, documents, cover types, Excel export; file checks and who-sees-what rules |
+| `tickets/views_insurance.py` | The Insurance register (Oversee > Insurance): `machine_policies` for the equipment page panel, list and filters (grouped query, so ordering is explicit), coverage grid (`_gaps`: centres by `InsuranceCoverType.core`, best live policy per cell), add, edit, renew, documents, cover types, Excel export; file checks and who-sees-what rules |
 | `tickets/wording.py` | Events, placeholders, built-in wording and the template renderer for email, SMS, WhatsApp and Telegram |
 | `tickets/reports.py` | Home, dashboard, centre matrix, equipment figures, PM schedule status, CAMC penalty calculation, and weekly management summary report generation |
 | `tickets/exports.py` | The Reports screen and the Excel workbook |
@@ -172,7 +172,8 @@ confirm view lifts the pause.
 sheet is accepted for People), skips empty rows, and checks every row against the database plus the rows of the same
 file, so references across sheets work. Each row becomes new, change, same or error. `apply()` runs only when there
 are no errors, inside one transaction, in the order centres, vendors, departments, people, department heads,
-equipment. Uploads wait in `STATUS_DIR/imports/<token>.xlsx` between the check and the import, are checked again on
+equipment, insurance policies (matched by insurer, policy number and start date; centres `All` or empty on a new row means
+no centres, i.e. all centres; documents are not imported). Uploads wait in `STATUS_DIR/imports/<token>.xlsx` between the check and the import, are checked again on
 import, and are removed after it or after a day.
 
 **Uploaded files** are served by Django only to people who may see the ticket, with

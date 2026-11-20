@@ -1824,7 +1824,7 @@ from datetime import date as _ins_date
 
 from django.core.files.uploadedfile import SimpleUploadedFile as _InsFile
 
-from .models import InsuranceCoverType, InsurancePolicy
+from .models import InsuranceCoverType, InsuranceDocument, InsurancePolicy
 
 
 def _pdf(name="policy.pdf"):
@@ -2322,3 +2322,263 @@ class InsuranceGridTests(Base):
         t.refresh_from_db()
         self.assertFalse(t.core)
         self.assertTrue(t.active)
+
+
+class InsuranceLinkTests(Base):
+    """Phase 4: the machine page panel, the unlinked machines column and the 'No document' marker."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
+        self.eq_cover = InsuranceCoverType.objects.get(name="Equipment / machinery breakdown")
+        self.today = timezone.localdate()
+
+    def policy(self, centres, days, machines=(), **kw):
+        p = InsurancePolicy.objects.create(cover_type=self.eq_cover, insurer="New India",
+                                           policy_number=kw.pop("number", f"EQ-{days}"),
+                                           start_date=self.today - timedelta(days=300),
+                                           expiry_date=self.today + timedelta(days=days), **kw)
+        p.centres.set(centres)
+        p.equipment.set(machines)
+        return p
+
+    def machine_page(self, user):
+        self.client.force_login(user)
+        return self.client.get(reverse("equipment_detail", args=[self.mri.pk]))
+
+    def test_the_machine_page_says_until_when_it_is_insured(self):
+        p = self.policy([self.kkp], 200, [self.mri], sum_insured=7654321, premium=12345)
+        page = self.machine_page(self.admin)
+        self.assertContains(page, "Insured until")
+        self.assertContains(page, f"{p.expiry_date:%d %b %Y}")
+        self.assertContains(page, reverse("insurance_detail", args=[p.pk]))
+        self.assertNotContains(page, "7654321")  # no money figures on the machine page
+        self.assertNotContains(page, "12345")
+
+    def test_expiring_and_ended_cover_is_flagged_and_old_policies_are_left_out(self):
+        self.policy([self.kkp], 20, [self.mri], number="SOON")
+        self.policy([self.kkp], -4, [self.mri], number="ENDED")
+        self.policy([self.kkp], 300, [self.mri], number="GONE", cancelled=True)
+        self.policy([self.kkp], 300, [self.mri], number="DONE", renewed=True)
+        page = self.machine_page(self.admin)
+        self.assertContains(page, "20 days left")
+        self.assertContains(page, "Insurance ended")
+        self.assertEqual({p.policy_number for p in page.context["insurance"]}, {"SOON", "ENDED"})
+
+    def test_no_policy_says_so(self):
+        self.assertContains(self.machine_page(self.admin), "No insurance policy lists this machine")
+
+    def test_only_people_who_may_see_insurance_get_the_panel(self):
+        self.policy([self.kkp], 200, [self.mri])
+        self.policy([self.sec], 200, [self.mri], number="OTHER-CENTRE")
+        self.assertIsNotNone(self.machine_page(self.cm).context["insurance"])
+        self.assertEqual({p.policy_number for p in self.machine_page(self.cm).context["insurance"]}, {"EQ-200"})
+        self.assertIsNone(self.machine_page(self.ravi).context["insurance"])  # an agent
+        self.assertNotContains(self.machine_page(self.ravi), "Insured until")
+
+    def test_grid_counts_machines_not_linked_to_a_current_policy(self):
+        self.client.force_login(self.admin)
+
+        def row():
+            page = self.client.get(reverse("insurance_list"), {"tab": "gaps"})
+            return next(r for r in page.context["gap_rows"] if r["centre"] == self.kkp)
+
+        total = row()["machines"]
+        self.assertGreaterEqual(total, 1)
+        self.assertEqual(row()["unlinked"], total)
+        p = self.policy([self.kkp], 200, [self.mri])
+        self.assertEqual(row()["unlinked"], total - 1)
+        p.expiry_date = self.today - timedelta(days=1)
+        p.save()
+        self.assertEqual(row()["unlinked"], total)  # an ended policy no longer counts
+
+    def test_policies_without_a_document_are_marked(self):
+        self.policy([self.kkp], 200, number="BARE")
+        with_doc = self.policy([self.kkp], 100, number="HASDOC")
+        InsuranceDocument.objects.create(policy=with_doc, file="insurance/x.pdf", name="x.pdf", size=1)
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("insurance_list"))
+        self.assertEqual({p.policy_number: p.doc_count for p in page.context["rows"]}, {"BARE": 0, "HASDOC": 1})
+        self.assertContains(page, "No document", count=1)
+
+
+class InsuranceImportTests(Base):
+    """Phase 4: the Insurance sheet of the Excel import."""
+
+    def setUp(self):
+        self.fire = InsuranceCoverType.objects.get(name="Fire")
+        self.building = InsuranceCoverType.objects.get(name="Building")
+
+    def book(self):
+        from openpyxl import load_workbook
+        from . import bulk_import
+        return load_workbook(_io.BytesIO(bulk_import.workbook()))
+
+    def save(self, wb):
+        out = _io.BytesIO()
+        wb.save(out)
+        return out.getvalue()
+
+    def add(self, wb, row, sheet="Insurance"):
+        ws = wb[sheet]
+        heads = [c.value.rstrip(" *") for c in ws[1]]
+        ws.append([row.get(h, "") for h in heads])
+
+    def row(self, **over):
+        base = {"Cover type": "Fire", "Centres": "KKP", "Insurer": "New India", "Policy number": "F-100",
+                "Start date": "01-04-2026", "Expiry date": "31-03-2027"}
+        base.update(over)
+        return base
+
+    def read(self, wb):
+        from . import bulk_import
+        return bulk_import.read(self.save(wb))
+
+    def errors(self, plan):
+        return [e for r in plan.errors for e in r.errors]
+
+    def test_the_workbook_has_the_sheet_and_reads_back_unchanged(self):
+        from . import bulk_import
+        boss = User.objects.create_user("accts", password="Demo@12345", role=User.AGENT)
+        a = InsurancePolicy.objects.create(cover_type=self.fire, insurer="New India", policy_number="0012/34",
+                                           start_date=_ins_date(2026, 4, 1), expiry_date=_ins_date(2027, 3, 31),
+                                           sum_insured=5000000, premium=42500.5, responsible=boss, remind_days=45,
+                                           contact="Ravi 9876543210")
+        a.centres.set([self.kkp, self.sec])
+        b = InsurancePolicy.objects.create(cover_type=self.building, insurer="Oriental", policy_number="B-9",
+                                           start_date=_ins_date(2026, 1, 1), expiry_date=_ins_date(2026, 12, 31),
+                                           renewed=True)
+        self.assertIn("Insurance", bulk_import.ORDER)
+        wb = self.book()
+        self.assertIn("Insurance", wb.sheetnames)
+        plan = self.read(wb)
+        self.assertEqual(plan.errors, [])
+        self.assertTrue(plan.empty)
+        self.assertEqual(plan.counts("Insurance")["same"], 2)
+
+    def test_new_policies_are_added_with_their_centres_and_responsible_person(self):
+        from . import bulk_import
+        User.objects.create_user("accts", password="Demo@12345", role=User.AGENT)
+        wb = self.book()
+        self.add(wb, self.row(**{"Centres": "KKP, SEC", "Sum insured": "₹50,00,000", "Premium": 42000.0,
+                                 "Responsible (user name)": "accts", "First reminder (days)": 45.0,
+                                 "Broker or agent": "Ravi 9876543210"}))
+        self.add(wb, self.row(**{"Cover type": "building", "Centres": "All", "Policy number": "B-1"}))
+        self.add(wb, self.row(**{"Cover type": "Building", "Centres": "", "Policy number": "B-2"}))
+        plan = self.read(wb)
+        self.assertEqual(self.errors(plan), [])
+        counts, _ = bulk_import.apply(plan)
+        self.assertEqual(counts["Insurance"]["new"], 3)
+        f = InsurancePolicy.objects.get(policy_number="F-100")
+        self.assertEqual({c.code for c in f.centres.all()}, {"KKP", "SEC"})
+        self.assertEqual((f.cover_type, f.insurer, f.start_date, f.expiry_date), (self.fire, "New India",
+                                                                                    _ins_date(2026, 4, 1), _ins_date(2027, 3, 31)))
+        self.assertEqual((int(f.sum_insured), int(f.premium), f.remind_days, f.responsible.username, f.contact),
+                         (5000000, 42000, 45, "accts", "Ravi 9876543210"))
+        self.assertEqual(f.documents.count(), 0)  # documents are added on the policy's page
+        for n in ("B-1", "B-2"):
+            p = InsurancePolicy.objects.get(policy_number=n)
+            self.assertEqual(p.centres.count(), 0)
+            self.assertEqual(p.location, "All centres")
+
+    def test_an_existing_policy_is_found_by_insurer_number_and_start_date_and_changed(self):
+        from . import bulk_import
+        p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="New India", policy_number="F-100",
+                                           start_date=_ins_date(2026, 4, 1), expiry_date=_ins_date(2027, 3, 31),
+                                           premium=1000)
+        p.centres.set([self.kkp])
+        wb = self.book()
+        ws = wb["Insurance"]
+        heads = [c.value.rstrip(" *") for c in ws[1]]
+        ws.cell(2, heads.index("Expiry date") + 1, "30-06-2027")
+        ws.cell(2, heads.index("Centres") + 1, "KKP, SEC")
+        ws.cell(2, heads.index("Cancelled") + 1, "Yes")
+        plan = self.read(wb)
+        self.assertEqual(self.errors(plan), [])
+        r = plan.rows["Insurance"][0]
+        self.assertEqual(r.action, "change")
+        self.assertTrue({"expiry date", "centres", "cancelled"} <= set(r.changes))
+        bulk_import.apply(plan)
+        p.refresh_from_db()
+        self.assertEqual(p.expiry_date, _ins_date(2027, 6, 30))
+        self.assertTrue(p.cancelled)
+        self.assertEqual({c.code for c in p.centres.all()}, {"KKP", "SEC"})
+        self.assertEqual(InsurancePolicy.objects.count(), 1)
+
+    def test_the_same_number_with_another_start_date_is_a_new_policy(self):
+        from . import bulk_import
+        InsurancePolicy.objects.create(cover_type=self.fire, insurer="New India", policy_number="F-100",
+                                       start_date=_ins_date(2025, 4, 1), expiry_date=_ins_date(2026, 3, 31))
+        wb = self.book()
+        self.add(wb, self.row())
+        plan = self.read(wb)
+        self.assertEqual(plan.counts("Insurance")["new"], 1)
+        bulk_import.apply(plan)
+        self.assertEqual(InsurancePolicy.objects.filter(policy_number="F-100").count(), 2)
+
+    def test_renewed_flag_stops_a_policy_counting(self):
+        from . import bulk_import
+        wb = self.book()
+        self.add(wb, self.row(**{"Renewed": "Yes"}))
+        bulk_import.apply(self.read(wb))
+        self.assertTrue(InsurancePolicy.objects.get().renewed)
+
+    def test_rows_may_refer_to_a_centre_and_person_added_in_the_same_file(self):
+        from . import bulk_import
+        wb = self.book()
+        self.add(wb, {"Code": "MDP", "Name": "Madhapur"}, "Centres")
+        self.add(wb, {"User name": "newbie", "Role": "Agent"}, "People")
+        self.add(wb, self.row(**{"Centres": "MDP", "Responsible (user name)": "newbie"}))
+        plan = self.read(wb)
+        self.assertEqual(self.errors(plan), [])
+        bulk_import.apply(plan)
+        p = InsurancePolicy.objects.get()
+        self.assertEqual([c.code for c in p.centres.all()], ["MDP"])
+        self.assertEqual(p.responsible.username, "newbie")
+
+    def test_every_kind_of_mistake_is_reported_and_nothing_is_saved(self):
+        from . import bulk_import
+        wb = self.book()
+        self.add(wb, self.row(**{"Cover type": "Marine"}))
+        self.add(wb, self.row(**{"Policy number": "F-2", "Start date": "soon"}))
+        self.add(wb, self.row(**{"Policy number": "F-3", "Expiry date": "01-01-2026"}))  # before the start
+        self.add(wb, self.row(**{"Policy number": "F-4", "Centres": "ZZZ"}))
+        self.add(wb, self.row(**{"Policy number": "F-5", "Responsible (user name)": "nobody"}))
+        self.add(wb, self.row(**{"Policy number": "F-6", "Sum insured": "lots"}))
+        self.add(wb, self.row(**{"Policy number": "F-7", "First reminder (days)": 0}))
+        self.add(wb, self.row(**{"Policy number": "F-8", "Expiry date": ""}))
+        self.add(wb, self.row(**{"Policy number": "", "Insurer": ""}))
+        self.add(wb, self.row(**{"Policy number": "F-9", "Cancelled": "maybe"}))
+        plan = self.read(wb)
+        text = " ".join(self.errors(plan))
+        for part in ("no type called 'Marine'", "Start date", "before the start date", "no centre with the code ZZZ",
+                     "no user called 'nobody'", "is not an amount", "between 1 and 365", "Expiry date is empty",
+                     "Insurer is empty", "Policy number is empty", "Use Yes or No"):
+            self.assertIn(part, text)
+        self.assertEqual(len(plan.errors), 10)
+        with self.assertRaises(ValueError):
+            bulk_import.apply(plan)
+        self.assertEqual(InsurancePolicy.objects.count(), 0)
+
+    def test_the_same_policy_twice_in_one_file_is_an_error(self):
+        wb = self.book()
+        self.add(wb, self.row())
+        self.add(wb, self.row())
+        self.assertIn("Same as row", " ".join(self.errors(self.read(wb))))
+
+    def test_an_older_workbook_without_the_sheet_still_imports(self):
+        wb = self.book()
+        del wb["Insurance"]
+        plan = self.read(wb)
+        self.assertEqual(plan.errors, [])
+        self.assertIn("Insurance", plan.missing_sheets)
+
+    def test_the_import_page_accepts_the_file_and_shows_the_sheet(self):
+        admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
+        self.client.force_login(admin)
+        wb = self.book()
+        self.add(wb, self.row())
+        up = _InsFile("book.xlsx", self.save(wb), content_type="application/octet-stream")
+        page = self.client.post(reverse("import_page"), {"step": "check", "file": up})
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Insurance")
+        self.assertContains(page, "Fire F-100")

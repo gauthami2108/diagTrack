@@ -7,7 +7,7 @@ Sign in as an administrator. The side menu then shows extra items under **Admini
 
 - **Masters and rules**: the unified native management hub with dedicated multi-line pill tabs for all 13 administrative entities: Centres, Departments, Categories & questions, SLA policies, Escalation rules, Users & access, Sign-in locks, Vendors, Equipment register, Preventive maintenance schedules, Sent alerts, Ticket history audit trail, and Vendor calls. Features native tables, instant auto-submitting filters, multi-column sorting, search, pagination, and modal quick-add dialogs in one cohesive interface.
 - **Insurance** (under **Oversee**, also open to management and to centre and area managers for their own centres): every insurance policy with its dates and documents. See section 7a.
-- **Import from Excel**: add or change centres, vendors, departments, people and equipment from one workbook.
+- **Import from Excel**: add or change centres, vendors, departments, people, equipment and insurance policies from one workbook.
 - **Backups**: backup folders, schedules, retention, Back up now, restores and moving to another server.
 - **Message templates**: the wording of email, SMS, WhatsApp and Telegram alerts, and which alerts go out on each channel.
 - **Settings and health**: alerts, mail server, Telegram bot, scheduled reports, branding, and a check that the system is healthy.
@@ -275,6 +275,15 @@ A policy cancelled before its end is marked with the Cancelled tick on its Edit 
 **Who sees what.** Administrators and management see every policy. Centre and area managers see policies that include
 one of their centres, without money figures. Everyone else does not see the Insurance item.
 
+**Machines.** On a policy's Edit page, tick the machines it covers under **Machines covered**. Each machine's page then has an
+**Insurance** panel saying "Insured until ..." (and flagging cover that ends soon or has ended), visible to administrators,
+management and the managers of that centre. The Coverage grid has a last column, **Machines not linked**, counting the
+active machines at each centre that are not listed on any current policy. A blanket equipment policy may cover machines
+without listing them, so treat the column as a prompt, not a verdict.
+
+**No document.** A policy added on screen always has a document. A policy loaded from Excel does not until you add one, and
+the list marks it **No document**.
+
 **Coverage grid.** The **Coverage grid** tab shows the centres down the side and the types of cover every centre should have
 across the top. Each cell says how long the cover runs, that it ends soon, that it has expired, or that it is missing, so
 a centre with no fire cover stands out at once. The number on the tab counts missing and expired cells. A policy for all
@@ -434,11 +443,11 @@ Below them, **Tasks** shows what is running and the results of recent backups, c
 
 ## 14. Import from Excel
 
-*Administer, Import from Excel.* For adding or changing many centres, vendors, departments, people and machines at
-once, for example when setting up all the centres, or when a new centre opens with its staff and equipment.
+*Administer, Import from Excel.* For adding or changing many centres, vendors, departments, people, machines and insurance
+policies at once, for example when setting up all the centres, or when a new centre opens with its staff and equipment.
 
 1. Press **Download the workbook**. It already holds everything in DiagTrack: one sheet each for Centres, Vendors,
-   Departments, People and Equipment, and a **Read me** sheet that explains every column.
+   Departments, People, Equipment and Insurance, and a **Read me** sheet that explains every column.
 2. In Excel, add new rows at the bottom of a sheet, or change existing rows. Columns marked * must be filled.
    Drop-down lists offer the roles, the assignment modes and Yes/No.
 3. Save the file and upload it on the same page, then press **Check the file**. DiagTrack lists, for each sheet,
@@ -449,10 +458,11 @@ once, for example when setting up all the centres, or when a new centre opens wi
 | Rule | Detail |
 | --- | --- |
 | Empty cells | Leave the current value as it is. A new row with an empty cell starts empty |
-| Matching | Centres by code, vendors and departments by name, people by user name, machines by centre and serial number (or centre and name when there is no serial number) |
+| Matching | Centres by code, vendors and departments by name, people by user name, machines by centre and serial number (or centre and name when there is no serial number), insurance policies by insurer, policy number and start date |
 | Across sheets | A person may be given a centre or department added in the same file; a department's head may be a person added in the same file |
 | Lists | A person's centres are codes separated by commas, for example `KKP, BJH`, or `All`. Departments likewise, by name |
 | Removing | Rows cannot be deleted by import. Set **Active** to **No** |
 | New people | Use **Initial password**, or leave it empty: DiagTrack makes a password and shows it once, after the import. Print that page or copy the passwords, and ask each person to change theirs under **My profile** |
 | Existing people | Initial password is ignored. Set a new password under Masters and rules, Users |
 | Dates | Day-month-year, for example 31-03-2027, or an Excel date |
+| Insurance | One row per policy. **Cover type** must be a name from the Cover types tab. **Centres** are codes separated by commas, or `All` (also when left empty on a new row) for every centre or the head office. Put **Yes** under **Renewed** for a policy a later one has replaced, so it sends no reminders. Policy documents cannot come from Excel: add them on each policy's page. Until then the policy shows **No document** in the list |

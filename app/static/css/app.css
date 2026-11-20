@@ -1171,3 +1171,5 @@ textarea.mono, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Conso
 .ins-none { background: var(--bad); color: #fff; }
 .grid-table td small { display: block; margin-top: 2px; }
 .count-bad { background: var(--bad-soft); color: var(--bad); }
+.grid-table th, .grid-table td { padding-left: 12px; padding-right: 12px; }
+.grid-table th { white-space: normal; vertical-align: bottom; }

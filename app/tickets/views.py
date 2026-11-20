@@ -516,8 +516,10 @@ def equipment_detail(request, pk):
         e_penalty = None
 
     agents = list(User.objects.filter(role__in=[User.AGENT, User.DEPT_HEAD], is_active=True))
+    from .views_insurance import machine_policies  # here, because views_insurance imports from this module
 
     return render(request, "equipment_detail.html", {
+        "insurance": machine_policies(request.user, e),
         "e": e, "stats": reports.equipment_uptime(e), "stats90": reports.equipment_uptime(e, 90),
         "calls": VendorCall.objects.filter(ticket__equipment=e).select_related("vendor", "ticket")[:20],
         "amc_left": (e.amc_expiry - timezone.localdate()).days if e.amc_expiry else None,
