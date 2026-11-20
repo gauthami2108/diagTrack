@@ -20,7 +20,7 @@ your own server, natively on Windows or in Docker; ticket data never leaves the 
 - Dedicated native Masters and rules management hub (`/masters/`) with multi-line pill navigation across all 13 admin tables, auto-submitting filters, multi-column sorting, and modal dialogs.
 - Board, dashboard, search and jump (Ctrl K), ticket preview, light and dark themes, Pramodini logo and colours.
 - Insurance register: every policy by centre and type of cover (fire, building, equipment and more) with start and expiry dates, uploaded documents, renewal history, and sum insured and premium for administrators and management only.
-- Import from Excel: centres, vendors, departments, people and equipment from one workbook, checked before saving.
+- Import from Excel: centres, vendors, departments, people, equipment and insurance policies from one workbook, checked before saving.
 - Sign-in pauses after repeated wrong passwords, and active session termination across other devices on password change or from profile.
 - Historical ticket archiving (`manage.py archive_tickets`) for long-term data retention.
 - Encrypted backups to one or more folders on a schedule, checks and monthly test restores, one-click restore, and

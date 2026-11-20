@@ -1,5 +1,5 @@
 """
-Bulk import from Excel: centres, vendors, departments, people and equipment in one workbook.
+Bulk import from Excel: centres, vendors, departments, people, equipment and insurance policies in one workbook.
 
 The workbook that DiagTrack hands out (workbook()) already holds the current data, so the same file is used to add
 new rows and to change existing ones. read() checks every row of every sheet before anything is saved: a
@@ -11,20 +11,23 @@ Rules for each cell:
   - Yes/No columns accept Yes, No, Y, N, True, False, 1, 0
   - lists (a person's centres or departments) are separated by commas; "All" for centres means every centre
   - rows are matched to what exists by: centre code, vendor name, department name, user name, and for
-    equipment the centre plus serial number (or the centre plus name when there is no serial number)
+    equipment the centre plus serial number (or the centre plus name when there is no serial number), and for
+    insurance policies the insurer plus policy number plus start date
+  - insurance documents cannot come from Excel: they are added on each policy's page afterwards
 """
 import io
 import re
 import secrets
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
 
-from .models import Centre, Department, Equipment, User, Vendor
+from .models import Centre, Department, Equipment, InsuranceCoverType, InsurancePolicy, User, Vendor
 
 ROLE_NAMES = {
     "requester": User.REQUESTER, "agent": User.AGENT, "department head": User.DEPT_HEAD, "head": User.DEPT_HEAD,
@@ -87,8 +90,26 @@ SHEETS = {
         ("AMC expiry date", "amc_expiry", False, "A date, for example 31-03-2027"),
         ("Active", "active", False, "Yes or No"),
     ],
+    "Insurance": [
+        ("Cover type", "cover_type", True, "A type from the Cover types tab of the Insurance page, for example Fire. "
+                                           "Policy documents cannot come from Excel: add them on each policy's page"),
+        ("Centres", "centres", False, "Centre codes separated by commas. All (or empty on a new row) for a policy "
+                                      "that covers every centre or the head office"),
+        ("Insurer", "insurer", True, ""),
+        ("Policy number", "policy_number", True, "With the insurer and the start date it tells policies apart. "
+                                                 "Keep those three as they are to change an existing policy"),
+        ("Start date", "start_date", True, "A date, for example 01-04-2026"),
+        ("Expiry date", "expiry_date", True, "A date, for example 31-03-2027"),
+        ("Broker or agent", "contact", False, "Name and phone number"),
+        ("Sum insured", "sum_insured", False, "Rupees, for example 5000000. Shown to administrators and management only"),
+        ("Premium", "premium", False, "Rupees"),
+        ("Responsible (user name)", "responsible", False, "Also receives the expiry reminders"),
+        ("First reminder (days)", "remind_days", False, "Days before expiry. Empty uses the Settings number"),
+        ("Renewed", "renewed", False, "Yes when a later policy has replaced this one: it then sends no reminders"),
+        ("Cancelled", "cancelled", False, "Yes if the policy was cancelled before it ended"),
+    ],
 }
-ORDER = ["Centres", "Vendors", "Departments", "People", "Equipment"]
+ORDER = ["Centres", "Vendors", "Departments", "People", "Equipment", "Insurance"]
 
 
 class ImportFileError(Exception):
@@ -160,6 +181,18 @@ def _date(v):
         except ValueError:
             pass
     raise ValueError(f"'{t}' is not a date. Use day-month-year, for example 31-03-2027.")
+
+
+def _money(text, digits):
+    """Rupees as a Decimal, or ValueError. `digits` is the number of whole-rupee digits the field can hold."""
+    t = re.sub(r"(?i)[₹,\s]|rs\.?", "", text)
+    try:
+        d = Decimal(t)
+    except InvalidOperation:
+        raise ValueError(f"'{text}' is not an amount. Use a number of rupees, for example 5000000.") from None
+    if not d.is_finite() or d < 0 or d >= Decimal(10) ** digits:
+        raise ValueError("The amount is not valid.")
+    return d.quantize(Decimal("0.01"))
 
 
 def _list(text):
@@ -373,6 +406,83 @@ def _check(plan):
     seen_twice("Equipment", lambda r: (_text(r.values.get("centre")).upper(),
                                        _text(r.values.get("serial_no")).lower() or _text(r.values.get("name")).lower()))
 
+    covers = {t.name.lower(): t for t in InsuranceCoverType.objects.all()}
+    policies = list(InsurancePolicy.objects.select_related("cover_type", "responsible").prefetch_related("centres"))
+    for r in plan.rows["Insurance"]:
+        if r.action == "error":
+            continue
+        v = {k: _text(x) for k, x in r.values.items()}
+        insurer, number = v.get("insurer", ""), v.get("policy_number", "")
+        r.label = f"{v.get('cover_type', '')} {number}".strip()
+        cover = covers.get(v.get("cover_type", "").lower())
+        if not v.get("cover_type"):
+            r.errors.append("Cover type is empty.")
+        elif not cover:
+            r.errors.append(f"Cover type: no type called '{v['cover_type']}'. Add it on the Cover types tab of the "
+                            "Insurance page, or use one of the names there.")
+        if not insurer:
+            r.errors.append("Insurer is empty.")
+        if not number:
+            r.errors.append("Policy number is empty.")
+        dates = {}
+        for key, label in (("start_date", "Start date"), ("expiry_date", "Expiry date")):
+            if v.get(key):
+                try:
+                    dates[key] = _date(r.values[key])
+                except ValueError as exc:
+                    r.errors.append(f"{label}: {exc}")
+        if not v.get("start_date"):
+            r.errors.append("Start date is empty.")
+        existing = None
+        if insurer and number and dates.get("start_date"):
+            existing = next((p for p in policies if p.insurer.lower() == insurer.lower()
+                             and p.policy_number.lower() == number.lower() and p.start_date == dates["start_date"]), None)
+        if not v.get("expiry_date") and not existing:
+            r.errors.append("Expiry date is empty.")
+        end = dates.get("expiry_date") or (existing.expiry_date if existing else None)
+        if end and dates.get("start_date") and end < dates["start_date"]:
+            r.errors.append("The expiry date is before the start date.")
+        fields = {"insurer": insurer, "policy_number": number, "contact": v.get("contact"), **dates}
+        for key, label, digits in (("sum_insured", "Sum insured", 12), ("premium", "Premium", 10)):
+            if v.get(key):
+                try:
+                    fields[key] = _money(v[key], digits)
+                except ValueError as exc:
+                    r.errors.append(f"{label}: {exc}")
+        if v.get("remind_days"):
+            if v["remind_days"].isdigit() and 1 <= int(v["remind_days"]) <= 365:
+                fields["remind_days"] = int(v["remind_days"])
+            else:
+                r.errors.append("First reminder: use a whole number of days between 1 and 365.")
+        if v.get("responsible"):
+            who = v["responsible"].lower()
+            if who not in users and who not in new_users:
+                r.errors.append(f"Responsible: no user called '{v['responsible']}'.")
+            r.values["_responsible"] = who
+        if v.get("centres"):
+            codes = [c.upper() for c in _list(v["centres"])]
+            if [c.lower() for c in codes] == ["all"]:
+                codes = []
+            bad = [c for c in codes if c not in centres and c not in new_centres]
+            if bad:
+                r.errors.append(f"Centres: no centre with the code {', '.join(bad)}.")
+            r.values["_centres"] = codes
+        elif not existing:
+            r.values["_centres"] = []  # a new policy with no centres named covers all centres
+        r.values["_cover"] = v.get("cover_type", "").lower()
+        _compare(r, existing, fields, v, ("renewed", "cancelled"))
+        if existing and not r.errors:
+            if cover and existing.cover_type_id != cover.pk:
+                r.changes.append("cover type")
+            if v.get("responsible") and (not existing.responsible or existing.responsible.username.lower() != v["responsible"].lower()):
+                r.changes.append("responsible")
+            if "_centres" in r.values and sorted(c.code for c in existing.centres.all()) != sorted(r.values["_centres"]):
+                r.changes.append("centres")
+            if r.changes and r.action == "same":
+                r.action = "change"
+    seen_twice("Insurance", lambda r: (_text(r.values.get("insurer")).lower(), _text(r.values.get("policy_number")).lower(),
+                                       _text(r.values.get("start_date"))))
+
     for s in ORDER:
         for r in plan.rows[s]:
             if r.errors:
@@ -474,6 +584,21 @@ def apply(plan):
             Equipment.objects.create(centre=centres[r.values["_centre"]], **f)
         elif r.action == "change":
             _update(r.obj, f)
+    covers = {t.name.lower(): t for t in InsuranceCoverType.objects.all()}
+    for r in plan.rows["Insurance"]:
+        if r.action not in ("new", "change"):
+            continue
+        f = dict(r.values["_fields"])
+        f["cover_type"] = covers[r.values["_cover"]]
+        if r.values.get("_responsible"):
+            f["responsible"] = users[r.values["_responsible"]]
+        if r.action == "new":
+            p = InsurancePolicy.objects.create(**f)
+        else:
+            p = r.obj
+            _update(p, f)
+        if "_centres" in r.values:
+            p.centres.set([centres[c] for c in r.values["_centres"]])
     return {s: plan.counts(s) for s in ORDER}, passwords
 
 
@@ -541,7 +666,7 @@ def workbook():
         for j, (_, key, _, _) in enumerate(cols, start=1):
             letter = ws.cell(row=1, column=j).column_letter
             choices = None
-            if key in ("active", "is_active", "handles_equipment"):
+            if key in ("active", "is_active", "handles_equipment", "renewed", "cancelled"):
                 choices = '"Yes,No"'
             elif key == "role":
                 choices = '"' + ",".join(ROLE_LABEL.values()) + '"'
@@ -551,10 +676,10 @@ def workbook():
                 dv = DataValidation(type="list", formula1=choices, allow_blank=True)
                 dv.add(f"{letter}2:{letter}{last}")
                 ws.add_data_validation(dv)
-            if key == "amc_expiry":
+            if key in ("amc_expiry", "start_date", "expiry_date"):
                 for i in range(2, len(data[sheet]) + 2):
                     ws.cell(row=i, column=j).number_format = "DD-MM-YYYY"
-            if key in ("mobile", "serial_no", "phone", "code"):
+            if key in ("mobile", "serial_no", "phone", "code", "policy_number"):
                 for i in range(2, last + 1):
                     ws.cell(row=i, column=j).number_format = "@"  # text, so Excel keeps leading zeros
     out = io.BytesIO()
@@ -585,4 +710,13 @@ def _current_rows():
                        "serial_no": e.serial_no, "vendor": e.vendor.name if e.vendor else "",
                        "amc_expiry": e.amc_expiry, "active": _yn(e.active)}
                       for e in Equipment.objects.select_related("centre", "vendor").order_by("centre__code", "name")],
+        "Insurance": [{"cover_type": p.cover_type.name, "centres": ", ".join(c.code for c in p.centres.all()) or "All",
+                       "insurer": p.insurer, "policy_number": p.policy_number, "start_date": p.start_date,
+                       "expiry_date": p.expiry_date, "contact": p.contact,
+                       "sum_insured": float(p.sum_insured) if p.sum_insured is not None else None,
+                       "premium": float(p.premium) if p.premium is not None else None,
+                       "responsible": p.responsible.username if p.responsible else "", "remind_days": p.remind_days,
+                       "renewed": _yn(p.renewed), "cancelled": _yn(p.cancelled)}
+                      for p in InsurancePolicy.objects.select_related("cover_type", "responsible")
+                      .prefetch_related("centres").order_by("cover_type__name", "expiry_date")],
     }

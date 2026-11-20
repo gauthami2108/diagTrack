@@ -2,7 +2,7 @@
 {% block title %}Import from Excel{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Import from Excel</h1><p class="sub">Add or change centres, vendors, departments, people and equipment in one go. Nothing is saved until you have seen what will change.</p></div>
+  <div><h1>Import from Excel</h1><p class="sub">Add or change centres, vendors, departments, people, equipment and insurance policies in one go. Nothing is saved until you have seen what will change.</p></div>
   <div class="head-actions"><a class="btn" href="{% url 'import_workbook' %}">{% icon 'download' %}Download the workbook</a></div>
 </div>
 
@@ -58,7 +58,7 @@
   <section class="panel">
     <header><h2>How it works</h2></header>
     <ol class="im-steps">
-      <li><b>Download the workbook.</b> It already holds everything in DiagTrack, one sheet each for centres, vendors, departments, people and equipment. The first sheet explains every column.</li>
+      <li><b>Download the workbook.</b> It already holds everything in DiagTrack, one sheet each for centres, vendors, departments, people, equipment and insurance policies. The first sheet explains every column.</li>
       <li><b>Add or change rows in Excel.</b> New rows go at the bottom. An empty cell leaves the current value alone. To retire something, set Active to No.</li>
       <li><b>Upload it here.</b> DiagTrack checks every row and shows what will be added and changed, and any rows to fix. Nothing is saved yet.</li>
       <li><b>Press Import.</b> Everything is saved together. New people without a password get one, shown once.</li>

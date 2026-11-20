@@ -36,7 +36,7 @@
   <thead><tr><th>Cover</th><th>Where</th><th>Insurer</th><th>Started</th><th>Expires</th><th>Status</th>{% if money %}<th class="num-col">Sum insured</th>{% endif %}</tr></thead>
   <tbody>{% for p in rows %}
   <tr data-href="{% url 'insurance_detail' p.pk %}">
-    <td class="cell-title"><a href="{% url 'insurance_detail' p.pk %}">{{ p.cover_type.name }}</a><small>{{ p.policy_number }}</small></td>
+    <td class="cell-title"><a href="{% url 'insurance_detail' p.pk %}">{{ p.cover_type.name }}</a><small>{{ p.policy_number }}{% if not p.doc_count %} <span class="warn-text">No document</span>{% endif %}</small></td>
     <td data-l="Where">{{ p.location }}</td>
     <td data-l="Insurer">{{ p.insurer }}</td>
     <td data-l="Started">{{ p.start_date|date:"d M Y" }}</td>
@@ -50,16 +50,17 @@
 {% endif %}
 
 {% elif tab == 'gaps' %}
-<p class="sub tab-intro">Which centres have which cover. The columns are the types marked <b>expected at every centre</b>{% if can_edit %} on the Cover types tab{% endif %}. A policy for all centres counts for every centre. Missing or expired cover shows in red.</p>
+<p class="sub tab-intro">Which centres have which cover. The columns are the types marked <b>expected at every centre</b>{% if can_edit %} on the Cover types tab{% endif %}. A policy for all centres counts for every centre. Missing or expired cover shows in red. A machine counts as linked when it is listed on a current policy; a blanket equipment policy may cover machines without listing them.</p>
 {% if gap_rows and gap_types %}
 <div class="table-wrap"><table class="table grid-table">
-  <thead><tr><th>Centre</th>{% for t in gap_types %}<th>{{ t.name }}</th>{% endfor %}</tr></thead>
+  <thead><tr><th>Centre</th>{% for t in gap_types %}<th>{{ t.name }}</th>{% endfor %}<th>Machines not linked</th></tr></thead>
   <tbody>{% for r in gap_rows %}<tr>
     <td class="cell-title">{{ r.centre.name }}</td>
     {% for c in r.cells %}<td data-l="{{ c.type.name }}">
       {% if c.state == 'none' %}<span class="ins-chip ins-none">Missing</span>
       {% else %}{% if c.link %}<a href="{% url 'insurance_detail' c.policy.pk %}">{% endif %}<span class="ins-chip ins-{{ c.state }}">{% if c.state == 'expired' %}Expired {{ c.policy.expiry_date|date:"d M Y" }}{% elif c.state == 'expiring' %}Ends {{ c.policy.expiry_date|date:"d M Y" }}{% else %}Until {{ c.policy.expiry_date|date:"d M Y" }}{% endif %}</span>{% if c.link %}</a>{% endif %}{% if c.everywhere %}<small class="muted">all centres</small>{% endif %}{% endif %}
     </td>{% endfor %}
+    <td data-l="Machines not linked">{% if not r.machines %}<span class="muted">No machines</span>{% elif r.unlinked %}<span class="warn-text">{{ r.unlinked }} of {{ r.machines }}</span>{% else %}All {{ r.machines }} linked{% endif %}</td>
   </tr>{% endfor %}</tbody>
 </table></div>
 {% elif not gap_types %}

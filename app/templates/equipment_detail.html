@@ -123,6 +123,13 @@
       </tbody></table>{% else %}<p class="empty">No vendor calls logged.</p>{% endif %}
     </section>
 
+    {% if insurance is not None %}<section class="panel"><header><h2>Insurance</h2></header>
+      {% if insurance %}<ul class="plain">{% for p in insurance %}
+        <li><a href="{% url 'insurance_detail' p.pk %}">{{ p.cover_type.name }}</a> <small class="muted">{{ p.insurer }}, {{ p.policy_number }}</small><br>
+          {% if p.days_left < 0 %}<span class="bad-text">Insurance ended {{ p.expiry_date|date:"d M Y" }}</span>{% else %}Insured until <b>{{ p.expiry_date|date:"d M Y" }}</b>{% if p.status == 'expiring' %} <span class="warn-text">({{ p.days_left }} days left)</span>{% endif %}{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="empty">No insurance policy lists this machine. Tick it on the policy's Edit page, under Machines covered.</p>{% endif %}
+    </section>{% endif %}
+
     <section class="panel"><header><h2>Service vendor &amp; CAMC SLA</h2></header>
       {% if e.vendor %}<dl class="kv">
         <div><dt>Vendor</dt><dd>{{ e.vendor.name }}</dd></div>

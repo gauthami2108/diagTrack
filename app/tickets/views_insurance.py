@@ -14,7 +14,7 @@ from datetime import date, timedelta
 
 from django import forms
 from django.contrib import messages
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -137,7 +137,7 @@ def _filtered(request):
     g = request.GET
     f = {"q": g.get("q", "").strip(), "centre": g.get("centre", ""), "cover": g.get("cover", ""),
          "status": g.get("status", "") if g.get("status", "") in dict(STATUS_FILTERS) else ""}
-    qs = _scoped(request.user)
+    qs = _scoped(request.user).annotate(doc_count=Count("documents", distinct=True)).order_by("expiry_date", "insurer", "pk")  # a grouped query ignores the model's own ordering
     if f["q"]:
         qs = qs.filter(Q(insurer__icontains=f["q"]) | Q(policy_number__icontains=f["q"]) |
                        Q(contact__icontains=f["q"]) | Q(notes__icontains=f["q"]))
@@ -199,6 +199,11 @@ def _gaps(user, centres, cfg):
     for p in live:
         p.centre_ids = {c.pk for c in p.centres.all()}
     visible = set(_scoped(user).values_list("pk", flat=True))
+    linked = set(InsurancePolicy.equipment.through.objects.filter(
+        insurancepolicy_id__in=[p.pk for p in live if p.expiry_date >= today]).values_list("equipment_id", flat=True))
+    machines = {}
+    for e in Equipment.objects.filter(active=True, centre__in=centres):
+        machines.setdefault(e.centre_id, []).append(e.pk)
     rows, gaps = [], 0
     for c in centres:
         cells = []
@@ -213,7 +218,9 @@ def _gaps(user, centres, cfg):
                 gaps += 1
             cells.append({"type": t, "state": state, "policy": best, "everywhere": bool(best and not best.centre_ids),
                           "link": bool(best and best.pk in visible)})
-        rows.append({"centre": c, "cells": cells})
+        ids = machines.get(c.pk, [])
+        rows.append({"centre": c, "cells": cells, "machines": len(ids),
+                     "unlinked": sum(1 for i in ids if i not in linked)})
     return {"gap_types": types, "gap_rows": rows, "gap_total": gaps}
 
 
@@ -352,6 +359,19 @@ def insurance_doc(request, pk):
         return _safe(FileResponse(d.file.open("rb"), filename=d.name, as_attachment=not (d.is_image or d.name.lower().endswith(".pdf"))))
     except FileNotFoundError:
         raise Http404
+
+
+def machine_policies(user, equipment):
+    """The current policies that list this machine, for its page. None when the person may not see insurance."""
+    if not (user.sees_everything or user.role in (User.CENTRE_MANAGER, User.AREA_MANAGER)):
+        return None
+    cfg = SiteSettings.load()
+    today = timezone.localdate()
+    rows = list(_scoped(user).filter(equipment=equipment, cancelled=False, renewed=False))
+    for p in rows:
+        p.status = p.status_on(today, _soon(p, cfg))
+        p.days_left = (p.expiry_date - today).days
+    return rows
 
 
 # --------------------------------------------------------------------------
