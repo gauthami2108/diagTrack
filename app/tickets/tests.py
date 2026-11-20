@@ -2227,3 +2227,98 @@ class InsuranceReminderTests(Base):
         page = self.client.get(reverse("message_templates"), {"event": "insurance"})
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, "Insurance ending")
+
+
+class InsuranceGridTests(Base):
+    def setUp(self):
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
+        self.types = {n: InsuranceCoverType.objects.get(name=n) for n in ("Fire", "Building", "Cyber")}
+        self.today = timezone.localdate()
+
+    def policy(self, cover, centres, days, **kw):
+        p = InsurancePolicy.objects.create(
+            cover_type=self.types[cover], insurer="New India", policy_number=kw.pop("number", f"{cover}-{days}"),
+            start_date=self.today - timedelta(days=300), expiry_date=self.today + timedelta(days=days), **kw)
+        p.centres.set(centres)
+        return p
+
+    def grid(self, user=None, **params):
+        self.client.force_login(user or self.admin)
+        page = self.client.get(reverse("insurance_list"), {"tab": "gaps", **params})
+        self.assertEqual(page.status_code, 200)
+        return page
+
+    def cell(self, page, centre, cover):
+        row = next(r for r in page.context["gap_rows"] if r["centre"] == centre)
+        return next(c for c in row["cells"] if c["type"].name == cover)
+
+    def test_columns_are_the_types_marked_expected_and_active(self):
+        page = self.grid()
+        names = {t.name for t in page.context["gap_types"]}
+        self.assertEqual(names, {"Fire", "Building", "Equipment / machinery breakdown", "Contents / stock"})
+        InsuranceCoverType.objects.filter(name="Contents / stock").update(active=False)
+        InsuranceCoverType.objects.filter(name="Cyber").update(core=True)
+        names = {t.name for t in self.grid().context["gap_types"]}
+        self.assertEqual(names, {"Fire", "Building", "Equipment / machinery breakdown", "Cyber"})
+
+    def test_covered_expiring_expired_and_missing(self):
+        self.policy("Fire", [self.kkp], 200)
+        self.policy("Building", [self.kkp], 20)
+        self.policy("Fire", [self.sec], -10)
+        page = self.grid()
+        self.assertEqual(self.cell(page, self.kkp, "Fire")["state"], "active")
+        self.assertEqual(self.cell(page, self.kkp, "Building")["state"], "expiring")
+        self.assertEqual(self.cell(page, self.sec, "Fire")["state"], "expired")
+        self.assertEqual(self.cell(page, self.sec, "Building")["state"], "none")
+        self.assertContains(page, "Missing")
+
+    def test_a_policy_for_all_centres_covers_every_centre(self):
+        self.policy("Building", [], 200)
+        page = self.grid()
+        for c in (self.kkp, self.sec):
+            cell = self.cell(page, c, "Building")
+            self.assertEqual(cell["state"], "active")
+            self.assertTrue(cell["everywhere"])
+
+    def test_the_longest_running_policy_counts_and_old_ones_do_not(self):
+        self.policy("Fire", [self.kkp], 30, number="OLD")
+        self.policy("Fire", [self.kkp], 300, number="NEWER")
+        self.policy("Fire", [self.kkp], 400, number="RENEWED", renewed=True)
+        self.policy("Fire", [self.kkp], 500, number="CANCELLED", cancelled=True)
+        self.assertEqual(self.cell(self.grid(), self.kkp, "Fire")["policy"].policy_number, "NEWER")
+
+    def test_gap_count_is_on_the_tab_and_counts_missing_and_expired(self):
+        n_centres, n_types = Centre.objects.filter(active=True).count(), 4
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("insurance_list"))
+        self.assertEqual(page.context["gap_total"], n_centres * n_types)
+        self.policy("Fire", [self.kkp], 200)
+        self.policy("Fire", [self.sec], -3)
+        page = self.client.get(reverse("insurance_list"))
+        self.assertEqual(page.context["gap_total"], n_centres * n_types - 1)  # kkp fire covered; sec fire expired still a gap
+
+    def test_managers_see_only_their_centres_and_no_links_to_policies_they_cannot_open(self):
+        self.policy("Fire", [self.kkp], 200)
+        self.policy("Building", [], 200)  # all centres: counts as cover, but a manager may not open it
+        page = self.grid(self.cm)  # Imran: Kukatpally only
+        self.assertEqual([r["centre"] for r in page.context["gap_rows"]], [self.kkp])
+        self.assertTrue(self.cell(page, self.kkp, "Fire")["link"])
+        building = self.cell(page, self.kkp, "Building")
+        self.assertEqual(building["state"], "active")
+        self.assertFalse(building["link"])
+        self.assertNotContains(page, "Secunderabad")
+
+    def test_requesters_cannot_open_the_grid(self):
+        self.client.force_login(self.req)
+        self.assertEqual(self.client.get(reverse("insurance_list"), {"tab": "gaps"}).status_code, 403)
+
+    def test_cover_types_can_be_marked_expected(self):
+        self.client.force_login(self.admin)
+        url = reverse("insurance_types_action")
+        self.client.post(url, {"action": "add", "name": "Directors liability", "core": "on"})
+        t = InsuranceCoverType.objects.get(name="Directors liability")
+        self.assertTrue(t.core)
+        self.client.post(url, {"action": "save", "pk": t.pk, "name": t.name, "active": "on"})  # core unticked
+        t.refresh_from_db()
+        self.assertFalse(t.core)
+        self.assertTrue(t.active)

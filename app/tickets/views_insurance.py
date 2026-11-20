@@ -163,7 +163,7 @@ def _filtered(request):
 def insurance_list(request):
     user = request.user
     cfg = SiteSettings.load()
-    tab = "types" if request.GET.get("tab") == "types" else "policies"
+    tab = request.GET.get("tab") if request.GET.get("tab") in ("gaps", "types") else "policies"
     if tab == "types" and not user.is_admin:
         return redirect("insurance_list")
     money = _show_money(user, cfg)
@@ -182,9 +182,44 @@ def insurance_list(request):
         ctx.update(rows=rows, f=f,
                    total_sum=sum((p.sum_insured or 0) for p in rows) if money else None,
                    total_premium=sum((p.premium or 0) for p in rows) if money else None)
+    elif tab == "gaps":
+        ctx.update(_gaps(user, centres, cfg))
     else:
         ctx["all_types"] = InsuranceCoverType.objects.all()
+    ctx.setdefault("gap_total", _gap_count(user, centres, cfg))
     return render(request, "insurance.html", ctx)
+
+
+def _gaps(user, centres, cfg):
+    """Centres as rows, the cover types marked 'expected at every centre' as columns."""
+    today = timezone.localdate()
+    types = list(InsuranceCoverType.objects.filter(core=True, active=True))
+    live = list(InsurancePolicy.objects.filter(cancelled=False, renewed=False)
+                .select_related("cover_type").prefetch_related("centres"))
+    for p in live:
+        p.centre_ids = {c.pk for c in p.centres.all()}
+    visible = set(_scoped(user).values_list("pk", flat=True))
+    rows, gaps = [], 0
+    for c in centres:
+        cells = []
+        for t in types:
+            best = None
+            for p in live:
+                if p.cover_type_id == t.pk and (not p.centre_ids or c.pk in p.centre_ids):
+                    if best is None or p.expiry_date > best.expiry_date:
+                        best = p
+            state = best.status_on(today, _soon(best, cfg)) if best else "none"
+            if state in ("none", "expired"):
+                gaps += 1
+            cells.append({"type": t, "state": state, "policy": best, "everywhere": bool(best and not best.centre_ids),
+                          "link": bool(best and best.pk in visible)})
+        rows.append({"centre": c, "cells": cells})
+    return {"gap_types": types, "gap_rows": rows, "gap_total": gaps}
+
+
+def _gap_count(user, centres, cfg):
+    """The number shown on the Coverage grid tab: missing or expired cover across the centres in view."""
+    return _gaps(user, centres, cfg)["gap_total"]
 
 
 # --------------------------------------------------------------------------
@@ -342,7 +377,7 @@ def insurance_types_action(request):
         elif InsuranceCoverType.objects.filter(name__iexact=name).exclude(pk=t.pk).exists():
             messages.error(request, f"'{name}' already exists.")
         else:
-            t.name, t.active = name[:80], bool(p.get("active"))
+            t.name, t.core, t.active = name[:80], bool(p.get("core")), bool(p.get("active"))
             t.save()
             messages.success(request, "Saved.")
     return redirect("/insurance/?tab=types")
