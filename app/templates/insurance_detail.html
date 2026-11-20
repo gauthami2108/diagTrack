@@ -1,0 +1,61 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}{{ p.cover_type.name }} insurance{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>{{ p.cover_type.name }}</h1><p class="sub">{{ p.insurer }}, policy {{ p.policy_number }}. {{ p.location }}.</p></div>
+  <div class="head-actions">{% include "_ins_status.html" %}
+    {% if can_edit %}
+      {% if p.current %}<a class="btn" href="{% url 'insurance_new' %}?renew={{ p.pk }}">{% icon 'rotate-ccw' %}Renew</a>{% endif %}
+      <a class="btn" href="{% url 'insurance_edit' p.pk %}">Edit</a>
+      <form method="post" action="{% url 'insurance_delete' p.pk %}">{% csrf_token %}<button class="btn btn-ghost btn-quiet-bad" type="submit" data-confirm="Delete this policy and its documents? This cannot be undone. To keep the history, use Renew or mark it cancelled instead.">Delete</button></form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="stack">
+    <section class="panel"><header><h2>Policy</h2></header>
+      <dl class="kv">
+        <div><dt>Type of cover</dt><dd>{{ p.cover_type.name }}</dd></div>
+        <div><dt>Where</dt><dd>{{ p.location }}</dd></div>
+        <div><dt>Insurer</dt><dd>{{ p.insurer }}</dd></div>
+        <div><dt>Policy number</dt><dd>{{ p.policy_number }}</dd></div>
+        {% if p.contact %}<div><dt>Broker or agent</dt><dd>{{ p.contact }}</dd></div>{% endif %}
+        <div><dt>Started</dt><dd>{{ p.start_date|date:"d M Y" }}</dd></div>
+        <div><dt>Expires</dt><dd>{{ p.expiry_date|date:"d M Y" }} {% include "_ins_when.html" %}</dd></div>
+        {% if money %}
+          {% if p.sum_insured is not None %}<div><dt>Sum insured</dt><dd>₹{{ p.sum_insured|floatformat:0 }}</dd></div>{% endif %}
+          {% if p.premium is not None %}<div><dt>Premium</dt><dd>₹{{ p.premium|floatformat:0 }}</dd></div>{% endif %}
+        {% endif %}
+        <div><dt>Responsible</dt><dd>{% if p.responsible %}{{ p.responsible.display_name }}{% else %}<span class="muted">Not set</span>{% endif %}</dd></div>
+        <div><dt>First reminder</dt><dd>{{ soon }} days before expiry{% if not p.remind_days %} <small class="muted">(from Settings)</small>{% endif %}, then 30 and 7 days before, and on the day</dd></div>
+      </dl>
+      {% if p.notes %}<p class="panel-note">{{ p.notes|linebreaksbr }}</p>{% endif %}
+    </section>
+
+    {% if renewed_from or renewals %}<section class="panel"><header><h2>History</h2></header>
+      <ul class="plain">
+        {% if renewed_from %}<li>Renews <a href="{% url 'insurance_detail' renewed_from.pk %}">{{ renewed_from.policy_number }}</a> ({{ renewed_from.start_date|date:"d M Y" }} to {{ renewed_from.expiry_date|date:"d M Y" }})</li>{% endif %}
+        {% for r in renewals %}<li>Renewed by <a href="{% url 'insurance_detail' r.pk %}">{{ r.policy_number }}</a> ({{ r.start_date|date:"d M Y" }} to {{ r.expiry_date|date:"d M Y" }})</li>{% endfor %}
+      </ul>
+    </section>{% endif %}
+  </div>
+
+  <div class="stack">
+    <section class="panel"><header><h2>Documents</h2></header>
+      {% if docs %}<ul class="plain">{% for d in docs %}
+        <li><a href="{% url 'insurance_doc' d.pk %}" target="_blank" rel="noopener">{% icon 'paperclip' %}{{ d.name }}</a> <small class="muted">{{ d.size|filesizeformat }}, added {{ d.created_at|date:"d M Y" }}</small>
+          {% if can_edit %}<form method="post" action="{% url 'insurance_doc_delete' d.pk %}" style="display:inline">{% csrf_token %}<button class="btn btn-ghost btn-quiet-bad btn-s" type="submit" data-confirm="Remove {{ d.name }}?">Remove</button></form>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="empty">No documents.</p>{% endif %}
+      {% if can_edit %}<form method="post" action="{% url 'insurance_doc_add' p.pk %}" enctype="multipart/form-data" class="inline-row" style="margin-top:12px">{% csrf_token %}
+        <input type="file" name="files" multiple accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" required>
+        <button class="btn btn-s" type="submit">{% icon 'upload' %}Add</button></form>
+        <small class="muted">PDF, JPG, PNG or WebP, up to {{ max_mb }} MB each.</small>{% endif %}
+    </section>
+
+    {% if machines %}<section class="panel"><header><h2>Machines covered</h2></header>
+      <ul class="plain">{% for e in machines %}<li><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a> <small class="muted">{{ e.centre.name }}</small></li>{% endfor %}</ul>
+    </section>{% endif %}
+  </div>
+</div>
+{% endblock %}

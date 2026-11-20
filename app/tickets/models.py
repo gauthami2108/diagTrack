@@ -576,9 +576,9 @@ class InsurancePolicy(models.Model):
     STATUS_LABELS = {ACTIVE: "Active", EXPIRING: "Expiring soon", EXPIRED: "Expired",
                      RENEWED: "Renewed", CANCELLED: "Cancelled"}
 
-    centre = models.ForeignKey(
-        Centre, null=True, blank=True, on_delete=models.PROTECT, related_name="insurance_policies",
-        help_text="Leave empty for a policy that covers every centre or the head office.")
+    centres = models.ManyToManyField(
+        Centre, blank=True, related_name="insurance_policies",
+        help_text="Choose every centre the policy covers. Leave empty for a policy that covers all centres or the head office.")
     cover_type = models.ForeignKey(InsuranceCoverType, on_delete=models.PROTECT, related_name="policies")
     insurer = models.CharField(max_length=120)
     policy_number = models.CharField(max_length=80)
@@ -591,6 +591,9 @@ class InsurancePolicy(models.Model):
     responsible = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL, related_name="insurance_policies",
         help_text="Optional. Also receives the expiry reminders.")
+    remind_days = models.PositiveSmallIntegerField(
+        "first reminder (days before expiry)", null=True, blank=True,
+        help_text="Optional. Leave empty to use the number on the Settings page. Further reminders follow 30 and 7 days before, and on the expiry date.")
     equipment = models.ManyToManyField(Equipment, blank=True, related_name="insurance_policies",
                                        help_text="Optional. The machines this policy covers.")
     notes = models.TextField(blank=True)
@@ -605,12 +608,18 @@ class InsurancePolicy(models.Model):
     created_at = models.DateTimeField(default=timezone.now, editable=False)
 
     class Meta:
-        ordering = ["expiry_date", "centre__name"]
+        ordering = ["expiry_date", "insurer"]
         verbose_name = "insurance policy"
         verbose_name_plural = "insurance policies"
 
     def __str__(self):
-        return f"{self.cover_type} {self.policy_number} ({self.centre or 'All centres'})"
+        return f"{self.cover_type} {self.policy_number}"
+
+    @property
+    def location(self):
+        """Names of the centres covered, or 'All centres'."""
+        names = [c.name for c in self.centres.all()]
+        return ", ".join(names) if names else "All centres"
 
     @property
     def current(self):

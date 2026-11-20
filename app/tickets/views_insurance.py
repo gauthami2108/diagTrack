@@ -1,8 +1,8 @@
 """
 Insurance register (Oversee > Insurance).
 
-Policies per centre and type of cover, with start and expiry dates, documents, reminders (see
-services.insurance_checks), a renew action, a coverage gap matrix and an Excel export.
+Policies per centre (one, several or all) and type of cover, with start and expiry dates, documents,
+reminders (see services.insurance_checks), a renew action and an Excel export.
 
 Who sees what:
   administrators and management        every policy; sum insured and premium (unless switched off in Settings)
@@ -38,8 +38,13 @@ def _show_money(user, cfg=None):
 
 
 def _scoped(user):
-    qs = InsurancePolicy.objects.select_related("centre", "cover_type", "responsible")
-    return qs if user.sees_everything else qs.filter(centre__in=user.centres.all())
+    qs = InsurancePolicy.objects.select_related("cover_type", "responsible").prefetch_related("centres")
+    return qs if user.sees_everything else qs.filter(centres__in=user.centres.all()).distinct()
+
+
+def _soon(policy, cfg):
+    """Days before expiry at which a policy shows as 'Expiring soon': its own number, else the Settings one."""
+    return policy.remind_days or cfg.insurance_alert_days or 60
 
 
 def _get_visible(user, pk):
@@ -86,19 +91,21 @@ def save_files(policy, files, user):
 class PolicyForm(forms.ModelForm):
     class Meta:
         model = InsurancePolicy
-        fields = ["centre", "cover_type", "insurer", "policy_number", "contact", "start_date", "expiry_date",
-                  "sum_insured", "premium", "responsible", "equipment", "notes", "cancelled"]
+        fields = ["centres", "cover_type", "insurer", "policy_number", "contact", "start_date", "expiry_date",
+                  "sum_insured", "premium", "responsible", "remind_days", "equipment", "notes", "cancelled"]
         widgets = {
             "start_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "expiry_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "notes": forms.Textarea(attrs={"rows": 3}),
             "equipment": forms.SelectMultiple(attrs={"size": 6}),
+            "centres": forms.SelectMultiple(attrs={"size": 6}),
         }
 
     def __init__(self, *args, show_money=True, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["centre"].queryset = Centre.objects.filter(active=True)
-        self.fields["centre"].empty_label = "All centres / head office"
+        self.fields["centres"].queryset = Centre.objects.filter(active=True)
+        self.fields["centres"].help_text = ("Hold Ctrl (Command on a Mac) to choose several. Choose none for a policy "
+                                            "that covers all centres or the head office.")
         types = InsuranceCoverType.objects.filter(active=True)
         if self.instance.pk:
             types = InsuranceCoverType.objects.filter(Q(active=True) | Q(pk=self.instance.cover_type_id))
@@ -123,7 +130,6 @@ def _filtered(request):
     """Policies the person may see, narrowed by the filters in the address. Returns (rows, filters)."""
     cfg = SiteSettings.load()
     today = timezone.localdate()
-    soon = cfg.insurance_alert_days or 60
     g = request.GET
     f = {"q": g.get("q", "").strip(), "centre": g.get("centre", ""), "cover": g.get("cover", ""),
          "status": g.get("status", "") if g.get("status", "") in dict(STATUS_FILTERS) else ""}
@@ -132,14 +138,14 @@ def _filtered(request):
         qs = qs.filter(Q(insurer__icontains=f["q"]) | Q(policy_number__icontains=f["q"]) |
                        Q(contact__icontains=f["q"]) | Q(notes__icontains=f["q"]))
     if f["centre"] == "0":
-        qs = qs.filter(centre__isnull=True)
+        qs = qs.filter(centres__isnull=True)
     elif f["centre"].isdigit():
-        qs = qs.filter(centre_id=int(f["centre"]))
+        qs = qs.filter(Q(centres__id=int(f["centre"])) | Q(centres__isnull=True)).distinct()
     if f["cover"].isdigit():
         qs = qs.filter(cover_type_id=int(f["cover"]))
     rows = []
     for p in qs:
-        p.status = p.status_on(today, soon)
+        p.status = p.status_on(today, _soon(p, cfg))
         p.days_left = (p.expiry_date - today).days
         if f["status"] == "" and not p.current:
             continue
@@ -153,69 +159,28 @@ def _filtered(request):
 def insurance_list(request):
     user = request.user
     cfg = SiteSettings.load()
-    tab = request.GET.get("tab")
-    tab = tab if tab in ("gaps", "types") else "policies"
+    tab = "types" if request.GET.get("tab") == "types" else "policies"
     if tab == "types" and not user.is_admin:
         return redirect("insurance_list")
     money = _show_money(user, cfg)
     centres = Centre.objects.filter(active=True)
     if not user.sees_everything:
         centres = centres.filter(pk__in=user.centres.all())
-    ctx = {"tab": tab, "money": money, "centres": centres, "status_filters": STATUS_FILTERS,
-           "cover_types": InsuranceCoverType.objects.all(), "can_edit": user.is_admin}
-    live = [p for p in _scoped(user) if p.current]
     today = timezone.localdate()
-    soon = cfg.insurance_alert_days or 60
-    ctx["expiring_count"] = sum(1 for p in live if p.status_on(today, soon) == InsurancePolicy.EXPIRING)
-    ctx["expired_count"] = sum(1 for p in live if p.status_on(today, soon) == InsurancePolicy.EXPIRED)
+    live = [p for p in _scoped(user) if p.current]
+    status = [p.status_on(today, _soon(p, cfg)) for p in live]
+    ctx = {"tab": tab, "money": money, "centres": centres, "status_filters": STATUS_FILTERS,
+           "cover_types": InsuranceCoverType.objects.all(), "can_edit": user.is_admin,
+           "expiring_count": status.count(InsurancePolicy.EXPIRING),
+           "expired_count": status.count(InsurancePolicy.EXPIRED), "current_count": len(live)}
     if tab == "policies":
         rows, f = _filtered(request)
-        ctx.update(rows=rows, f=f, soon_days=soon,
+        ctx.update(rows=rows, f=f,
                    total_sum=sum((p.sum_insured or 0) for p in rows) if money else None,
-                   total_premium=sum((p.premium or 0) for p in rows) if money else None,
-                   current_count=len(live))
-    elif tab == "gaps":
-        ctx.update(_gaps(user, centres))
+                   total_premium=sum((p.premium or 0) for p in rows) if money else None)
     else:
         ctx["all_types"] = InsuranceCoverType.objects.all()
     return render(request, "insurance.html", ctx)
-
-
-def _gaps(user, centres):
-    """Centres as rows, the 'expected at every centre' cover types as columns."""
-    cfg = SiteSettings.load()
-    today = timezone.localdate()
-    soon = cfg.insurance_alert_days or 60
-    types = list(InsuranceCoverType.objects.filter(core=True, active=True))
-    live = list(InsurancePolicy.objects.filter(cancelled=False, renewed=False).select_related("centre", "cover_type"))
-    live_ids = [p.pk for p in live]
-    covered_machines = set(InsurancePolicy.equipment.through.objects.filter(
-        insurancepolicy_id__in=[p.pk for p in live if p.expiry_date >= today]).values_list("equipment_id", flat=True))
-    machines = {}
-    for e in Equipment.objects.filter(active=True, centre__in=centres):
-        machines.setdefault(e.centre_id, []).append(e.pk)
-    rows, total_gaps = [], 0
-    for c in centres:
-        cells = []
-        for t in types:
-            best = None
-            for p in live:
-                if p.cover_type_id != t.pk or (p.centre_id not in (c.pk, None)):
-                    continue
-                if best is None or p.expiry_date > best.expiry_date:
-                    best = p
-            if best is None:
-                state = "none"
-            else:
-                state = best.status_on(today, soon)
-            if state in ("none", "expired"):
-                total_gaps += 1
-            cells.append({"type": t, "state": state, "policy": best,
-                          "link": best is not None and best.centre_id is not None})
-        ids = machines.get(c.pk, [])
-        rows.append({"centre": c, "cells": cells, "machines": len(ids),
-                     "unlinked": sum(1 for i in ids if i not in covered_machines)})
-    return {"gap_types": types, "gap_rows": rows, "gap_total": total_gaps, "live_count": len(live_ids)}
 
 
 # --------------------------------------------------------------------------
@@ -226,11 +191,11 @@ def insurance_detail(request, pk):
     p = _get_visible(request.user, pk)
     cfg = SiteSettings.load()
     today = timezone.localdate()
-    p.status = p.status_on(today, cfg.insurance_alert_days or 60)
+    p.status = p.status_on(today, _soon(p, cfg))
     p.days_left = (p.expiry_date - today).days
     return render(request, "insurance_detail.html", {
         "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.is_admin,
-        "docs": p.documents.all(), "machines": p.equipment.select_related("centre"),
+        "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
         "renewed_from": p.renewed_from, "renewals": p.renewals.all(), "max_mb": MAX_FILE_MB})
 
 
@@ -245,10 +210,11 @@ def insurance_new(request):
     initial = {}
     if old:
         start = old.expiry_date + timedelta(days=1)
-        initial = {"centre": old.centre, "cover_type": old.cover_type, "insurer": old.insurer,
+        initial = {"centres": list(old.centres.all()), "cover_type": old.cover_type, "insurer": old.insurer,
                    "policy_number": old.policy_number, "contact": old.contact, "start_date": start,
                    "expiry_date": _plus_year(start), "sum_insured": old.sum_insured, "premium": old.premium,
-                   "responsible": old.responsible, "equipment": list(old.equipment.all())}
+                   "responsible": old.responsible, "remind_days": old.remind_days,
+                   "equipment": list(old.equipment.all())}
     form = PolicyForm(request.POST or None, initial=initial, show_money=money)
     files = request.FILES.getlist("files")
     problems = []
@@ -371,7 +337,7 @@ def insurance_types_action(request):
         elif InsuranceCoverType.objects.filter(name__iexact=name).exclude(pk=t.pk).exists():
             messages.error(request, f"'{name}' already exists.")
         else:
-            t.name, t.core, t.active = name[:80], bool(p.get("core")), bool(p.get("active"))
+            t.name, t.active = name[:80], bool(p.get("active"))
             t.save()
             messages.success(request, "Saved.")
     return redirect("/insurance/?tab=types")
@@ -389,16 +355,15 @@ def insurance_export(request):
     wb = Workbook()
     ws = wb.active
     ws.title = "Insurance"
-    head = ["Centre", "Cover type", "Insurer", "Policy number", "Broker or agent", "Start date", "Expiry date",
+    head = ["Centres", "Cover type", "Insurer", "Policy number", "Broker or agent", "Start date", "Expiry date",
             "Days left", "Status", "Responsible", "Machines covered"]
     if money:
-        head[7:7] = []
         head += ["Sum insured", "Premium"]
     ws.append(head)
     for c in ws[1]:
         c.font = Font(bold=True)
     for p in rows:
-        line = [p.centre.name if p.centre else "All centres", p.cover_type.name, p.insurer, p.policy_number,
+        line = [p.location, p.cover_type.name, p.insurer, p.policy_number,
                 p.contact, p.start_date, p.expiry_date, p.days_left, InsurancePolicy.STATUS_LABELS[p.status],
                 p.responsible.display_name if p.responsible else "",
                 ", ".join(e.name for e in p.equipment.all())]

@@ -1813,3 +1813,294 @@ class BulkAssignToTests(Base):
         self.client.post(url, {"assignee": self.ravi.pk}, follow=True)
         self.t1.refresh_from_db()
         self.assertEqual(self.t1.assignee, self.ravi)
+
+
+# --------------------------------------------------------------------------
+# Insurance register
+# --------------------------------------------------------------------------
+import shutil as _ins_shutil
+import tempfile as _ins_tempfile
+from datetime import date as _ins_date
+
+from django.core.files.uploadedfile import SimpleUploadedFile as _InsFile
+
+from .models import InsuranceCoverType, InsurancePolicy
+
+
+def _pdf(name="policy.pdf"):
+    return _InsFile(name, b"%PDF-1.4 test policy", content_type="application/pdf")
+
+
+class InsuranceTests(Base):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._media = _ins_tempfile.mkdtemp()
+        cls._override = override_settings(MEDIA_ROOT=cls._media)
+        cls._override.enable()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._override.disable()
+        _ins_shutil.rmtree(cls._media, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
+        self.fire = InsuranceCoverType.objects.get(name="Fire")
+        self.today = timezone.localdate()
+
+    def policy(self, centres=(), days=200, cover=None, **kw):
+        p = InsurancePolicy.objects.create(
+            cover_type=cover or self.fire, insurer="New India", policy_number=kw.pop("number", "P-1"),
+            start_date=self.today - timedelta(days=365 - days), expiry_date=self.today + timedelta(days=days),
+            sum_insured=5000000, premium=42000, **kw)
+        p.centres.set(centres)
+        return p
+
+    def post_new(self, **over):
+        data = {"cover_type": self.fire.pk, "centres": [self.kkp.pk], "insurer": "New India", "policy_number": "FIRE-9",
+                "start_date": "2026-04-01", "expiry_date": "2027-03-31", "sum_insured": "1000000", "premium": "9000",
+                "files": _pdf()}
+        data.update(over)
+        return self.client.post(reverse("insurance_new"), data)
+
+    # --- who can see it -------------------------------------------------
+    def test_ordinary_staff_cannot_open_the_page(self):
+        for u in (self.req, self.ravi, self.it_head):
+            self.client.force_login(u)
+            self.assertEqual(self.client.get(reverse("insurance_list")).status_code, 403)
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("insurance_list")).status_code, 200)
+
+    def test_menu_item_only_for_those_who_can_open_it(self):
+        self.client.force_login(self.cm)
+        self.assertContains(self.client.get(reverse("home")), reverse("insurance_list"))
+        self.client.force_login(self.req)
+        self.assertNotContains(self.client.get(reverse("home")), reverse("insurance_list"))
+
+    def test_managers_see_only_their_centres_and_never_the_money(self):
+        mine = self.policy([self.kkp], number="MINE")
+        both = self.policy([self.kkp, self.sec], number="BOTH")
+        other = self.policy([self.sec], number="OTHER")
+        head_office = self.policy([], number="ALL")
+        self.client.force_login(self.cm)  # Imran manages Kukatpally only
+        page = self.client.get(reverse("insurance_list"))
+        numbers = {p.policy_number for p in page.context["rows"]}
+        self.assertEqual(numbers, {"MINE", "BOTH"})
+        self.assertNotContains(page, "5000000")
+        self.assertNotContains(page, "Sum insured")
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[other.pk])).status_code, 404)
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[head_office.pk])).status_code, 404)
+        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[mine.pk])), "42000")
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[both.pk])).status_code, 200)
+
+    def test_management_sees_money_until_it_is_switched_off(self):
+        p = self.policy([self.kkp])
+        self.client.force_login(self.director)
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "₹42000")
+        s = SiteSettings.load()
+        s.insurance_show_money = False
+        s.save()
+        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "₹42000")
+        self.assertNotContains(self.client.get(reverse("insurance_list")), "Sum insured")
+
+    def test_only_administrators_can_change_things(self):
+        p = self.policy([self.kkp])
+        for u in (self.cm, self.am, self.director):
+            self.client.force_login(u)
+            self.assertEqual(self.client.get(reverse("insurance_new")).status_code, 403)
+            self.assertEqual(self.client.get(reverse("insurance_edit", args=[p.pk])).status_code, 403)
+            self.assertEqual(self.client.post(reverse("insurance_delete", args=[p.pk])).status_code, 403)
+
+    # --- adding ---------------------------------------------------------
+    def test_a_policy_needs_a_document_and_dates(self):
+        self.client.force_login(self.admin)
+        r = self.post_new(files="")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "required")
+        self.assertFalse(InsurancePolicy.objects.exists())
+        r = self.post_new(expiry_date="2026-03-01")  # before the start
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(InsurancePolicy.objects.exists())
+        r = self.post_new(start_date="")
+        self.assertFalse(InsurancePolicy.objects.exists())
+
+    def test_saves_a_policy_for_several_centres(self):
+        self.client.force_login(self.admin)
+        r = self.post_new(centres=[self.kkp.pk, self.sec.pk])
+        p = InsurancePolicy.objects.get()
+        self.assertRedirects(r, reverse("insurance_detail", args=[p.pk]))
+        self.assertEqual(set(p.centres.all()), {self.kkp, self.sec})
+        self.assertEqual(p.documents.count(), 1)
+        self.assertEqual(p.created_by, self.admin)
+
+    def test_no_centres_means_all_centres(self):
+        self.client.force_login(self.admin)
+        self.post_new(centres=[])
+        p = InsurancePolicy.objects.get()
+        self.assertEqual(p.location, "All centres")
+
+    def test_only_pdf_and_images_up_to_20_mb(self):
+        self.client.force_login(self.admin)
+        r = self.post_new(files=_InsFile("macro.docx", b"PK\x03\x04", content_type="application/zip"))
+        self.assertContains(r, "only PDF, JPG, PNG or WebP")
+        r = self.post_new(files=_InsFile("fake.pdf", b"<script>alert(1)</script>", content_type="application/pdf"))
+        self.assertContains(r, "does not look like a real PDF")
+        big = _InsFile("big.pdf", b"%PDF" + b"0" * (20 * 1024 * 1024 + 1), content_type="application/pdf")
+        self.assertContains(self.post_new(files=big), "larger than 20 MB")
+        png = _InsFile("scan.png", b"\x89PNG\r\n\x1a\n" + b"0" * 50, content_type="image/png")
+        self.post_new(files=png)
+        self.assertEqual(InsurancePolicy.objects.count(), 1)
+
+    def test_money_fields_are_ignored_when_switched_off(self):
+        s = SiteSettings.load()
+        s.insurance_show_money = False
+        s.save()
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("insurance_new"))
+        self.assertNotContains(page, 'name="sum_insured"')
+        self.post_new(sum_insured="999")
+        self.assertIsNone(InsurancePolicy.objects.get().sum_insured)
+
+    # --- documents ------------------------------------------------------
+    def test_documents_are_served_only_to_people_who_may_see_the_policy(self):
+        self.client.force_login(self.admin)
+        self.post_new(centres=[self.sec.pk])
+        doc = InsurancePolicy.objects.get().documents.get()
+        url = reverse("insurance_doc", args=[doc.pk])
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.client.force_login(self.cm)  # Kukatpally manager, policy is Secunderabad
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.client.force_login(self.am)  # area manager covers both
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.client.force_login(self.req)
+        self.assertEqual(self.client.get(url).status_code, 403)
+
+    def test_the_last_document_cannot_be_removed(self):
+        self.client.force_login(self.admin)
+        self.post_new()
+        p = InsurancePolicy.objects.get()
+        d1 = p.documents.get()
+        self.client.post(reverse("insurance_doc_delete", args=[d1.pk]))
+        self.assertEqual(p.documents.count(), 1)
+        self.client.post(reverse("insurance_doc_add", args=[p.pk]), {"files": _pdf("receipt.pdf")})
+        self.assertEqual(p.documents.count(), 2)
+        self.client.post(reverse("insurance_doc_delete", args=[d1.pk]))
+        self.assertEqual(p.documents.count(), 1)
+
+    # --- renew ----------------------------------------------------------
+    def test_renew_keeps_the_old_policy_and_moves_the_dates_on(self):
+        old = self.policy([self.kkp, self.sec], days=10, remind_days=45)
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("insurance_new"), {"renew": old.pk})
+        self.assertEqual(page.context["form"].initial["start_date"], old.expiry_date + timedelta(days=1))
+        r = self.client.post(reverse("insurance_new"), {
+            "renew": old.pk, "cover_type": self.fire.pk, "centres": [self.kkp.pk, self.sec.pk], "insurer": "New India",
+            "policy_number": "P-2", "start_date": str(old.expiry_date + timedelta(days=1)),
+            "expiry_date": str(old.expiry_date + timedelta(days=365)), "files": _pdf()})
+        new = InsurancePolicy.objects.get(policy_number="P-2")
+        self.assertRedirects(r, reverse("insurance_detail", args=[new.pk]))
+        old.refresh_from_db()
+        self.assertTrue(old.renewed)
+        self.assertEqual(new.renewed_from, old)
+        self.assertEqual(old.status_on(self.today, 60), "renewed")
+        self.assertFalse(old.current)
+
+    def test_renewing_does_not_mark_the_old_one_when_the_new_one_is_invalid(self):
+        old = self.policy([self.kkp])
+        self.client.force_login(self.admin)
+        self.client.post(reverse("insurance_new"), {"renew": old.pk, "cover_type": self.fire.pk, "insurer": "x",
+                                                    "policy_number": "P-3", "start_date": "2027-01-01",
+                                                    "expiry_date": "2027-12-31"})  # no document
+        old.refresh_from_db()
+        self.assertFalse(old.renewed)
+
+    # --- list, status, filters ------------------------------------------
+    def test_status_markers_and_filters(self):
+        self.policy([self.kkp], days=200, number="OK")
+        self.policy([self.kkp], days=20, number="SOON")
+        self.policy([self.kkp], days=-5, number="LATE")
+        done = self.policy([self.kkp], days=-40, number="OLD", renewed=True)
+        gone = self.policy([self.kkp], days=100, number="GONE", cancelled=True)
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("insurance_list"))
+        shown = {p.policy_number: p.status for p in page.context["rows"]}
+        self.assertEqual(shown, {"OK": "active", "SOON": "expiring", "LATE": "expired"})
+        self.assertEqual(page.context["expiring_count"], 1)
+        self.assertEqual(page.context["expired_count"], 1)
+        self.assertContains(page, "Expires in 20 days")
+        self.assertContains(page, "Expired 5 days ago")
+        rows = self.client.get(reverse("insurance_list"), {"status": "all"}).context["rows"]
+        self.assertEqual(len(rows), 5)
+        rows = self.client.get(reverse("insurance_list"), {"status": "renewed"}).context["rows"]
+        self.assertEqual([p.policy_number for p in rows], ["OLD"])
+
+    def test_sorted_by_soonest_expiry_and_centre_filter_includes_all_centre_policies(self):
+        self.policy([self.sec], days=30, number="SEC")
+        self.policy([self.kkp], days=90, number="KKP")
+        self.policy([], days=10, number="ALL")
+        self.client.force_login(self.admin)
+        rows = self.client.get(reverse("insurance_list")).context["rows"]
+        self.assertEqual([p.policy_number for p in rows], ["ALL", "SEC", "KKP"])
+        rows = self.client.get(reverse("insurance_list"), {"centre": self.kkp.pk}).context["rows"]
+        self.assertEqual({p.policy_number for p in rows}, {"ALL", "KKP"})
+        rows = self.client.get(reverse("insurance_list"), {"centre": "0"}).context["rows"]
+        self.assertEqual([p.policy_number for p in rows], ["ALL"])
+
+    def test_the_policys_own_reminder_days_decide_expiring_soon(self):
+        self.policy([self.kkp], days=40, number="OWN", remind_days=45)
+        self.policy([self.kkp], days=40, number="DEFAULT")  # Settings default is 60, so also soon
+        s = SiteSettings.load()
+        s.insurance_alert_days = 30
+        s.save()
+        self.client.force_login(self.admin)
+        shown = {p.policy_number: p.status for p in self.client.get(reverse("insurance_list")).context["rows"]}
+        self.assertEqual(shown, {"OWN": "expiring", "DEFAULT": "active"})
+
+    # --- export, types, delete ------------------------------------------
+    def test_excel_export_respects_the_money_rule(self):
+        import io
+        from openpyxl import load_workbook
+        self.policy([self.kkp, self.sec])
+        self.client.force_login(self.director)
+        ws = load_workbook(io.BytesIO(self.client.get(reverse("insurance_export")).content)).active
+        header = [c.value for c in ws[1]]
+        self.assertIn("Sum insured", header)
+        self.assertEqual(ws.cell(2, 1).value, "Kukatpally, Secunderabad")
+        self.client.force_login(self.cm)
+        ws = load_workbook(io.BytesIO(self.client.get(reverse("insurance_export")).content)).active
+        self.assertNotIn("Sum insured", [c.value for c in ws[1]])
+        self.assertEqual(ws.max_row, 2)
+
+    def test_cover_types_can_be_added_renamed_and_switched_off(self):
+        self.client.force_login(self.admin)
+        url = reverse("insurance_types_action")
+        self.client.post(url, {"action": "add", "name": "Marine transit"})
+        self.assertTrue(InsuranceCoverType.objects.filter(name="Marine transit").exists())
+        self.client.post(url, {"action": "add", "name": "marine TRANSIT"})  # same name, other case
+        self.assertEqual(InsuranceCoverType.objects.filter(name__iexact="marine transit").count(), 1)
+        t = InsuranceCoverType.objects.get(name="Marine transit")
+        self.client.post(url, {"action": "save", "pk": t.pk, "name": "Marine cargo"})  # unticked: off
+        t.refresh_from_db()
+        self.assertEqual((t.name, t.active), ("Marine cargo", False))
+        self.assertNotIn(t, list(self.client.get(reverse("insurance_new")).context["form"].fields["cover_type"].queryset))
+        self.client.force_login(self.cm)
+        self.assertEqual(self.client.post(url, {"action": "add", "name": "X"}).status_code, 403)
+        self.assertEqual(self.client.get(reverse("insurance_list"), {"tab": "types"}).status_code, 302)
+
+    def test_default_cover_types_exist(self):
+        names = set(InsuranceCoverType.objects.values_list("name", flat=True))
+        self.assertTrue({"Fire", "Building", "Public liability"} <= names)
+
+    def test_deleting_a_renewal_makes_the_earlier_policy_current_again(self):
+        old = self.policy([self.kkp], days=-1, number="A")
+        self.client.force_login(self.admin)
+        self.client.post(reverse("insurance_new"), {
+            "renew": old.pk, "cover_type": self.fire.pk, "insurer": "x", "policy_number": "B",
+            "start_date": str(self.today), "expiry_date": str(self.today + timedelta(days=364)), "files": _pdf()})
+        new = InsurancePolicy.objects.get(policy_number="B")
+        self.client.post(reverse("insurance_delete", args=[new.pk]))
+        old.refresh_from_db()
+        self.assertFalse(old.renewed)
+        self.assertFalse(InsurancePolicy.objects.filter(policy_number="B").exists())
