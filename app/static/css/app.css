@@ -1168,3 +1168,6 @@ textarea.mono, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Conso
 .inline-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .inline-row input[type="text"] { flex: 1; min-width: 200px; }
 .plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.ins-none { background: var(--bad); color: #fff; }
+.grid-table td small { display: block; margin-top: 2px; }
+.count-bad { background: var(--bad-soft); color: var(--bad); }

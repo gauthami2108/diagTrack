@@ -16,10 +16,11 @@
   {% if money and tab == 'policies' %}<div class="band-cell"><span class="band-n">₹{{ total_sum|floatformat:0 }}</span><span class="band-l">Sum insured, as listed</span></div>{% endif %}
 </section>
 
-{% if can_edit %}<div class="tabs" role="tablist">
+<div class="tabs" role="tablist">
   <a role="tab" href="?tab=policies" {% if tab == 'policies' %}aria-selected="true"{% endif %}>Policies</a>
-  <a role="tab" href="?tab=types" {% if tab == 'types' %}aria-selected="true"{% endif %}>Cover types</a>
-</div>{% endif %}
+  <a role="tab" href="?tab=gaps" {% if tab == 'gaps' %}aria-selected="true"{% endif %}>Coverage grid{% if gap_total %} <span class="count count-bad">{{ gap_total }}</span>{% endif %}</a>
+  {% if can_edit %}<a role="tab" href="?tab=types" {% if tab == 'types' %}aria-selected="true"{% endif %}>Cover types</a>{% endif %}
+</div>
 
 {% if tab == 'policies' %}
 <form class="filters" method="get" data-autosubmit>
@@ -48,21 +49,42 @@
 <div class="empty-big">{% icon 'shield-check' %}<h2>No policies found</h2><p>{% if can_edit %}Use Add policy to record the first one, or change the filters above.{% else %}Nothing matches. Change the filters, or ask the administrator to add the policy.{% endif %}</p></div>
 {% endif %}
 
+{% elif tab == 'gaps' %}
+<p class="sub tab-intro">Which centres have which cover. The columns are the types marked <b>expected at every centre</b>{% if can_edit %} on the Cover types tab{% endif %}. A policy for all centres counts for every centre. Missing or expired cover shows in red.</p>
+{% if gap_rows and gap_types %}
+<div class="table-wrap"><table class="table grid-table">
+  <thead><tr><th>Centre</th>{% for t in gap_types %}<th>{{ t.name }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for r in gap_rows %}<tr>
+    <td class="cell-title">{{ r.centre.name }}</td>
+    {% for c in r.cells %}<td data-l="{{ c.type.name }}">
+      {% if c.state == 'none' %}<span class="ins-chip ins-none">Missing</span>
+      {% else %}{% if c.link %}<a href="{% url 'insurance_detail' c.policy.pk %}">{% endif %}<span class="ins-chip ins-{{ c.state }}">{% if c.state == 'expired' %}Expired {{ c.policy.expiry_date|date:"d M Y" }}{% elif c.state == 'expiring' %}Ends {{ c.policy.expiry_date|date:"d M Y" }}{% else %}Until {{ c.policy.expiry_date|date:"d M Y" }}{% endif %}</span>{% if c.link %}</a>{% endif %}{% if c.everywhere %}<small class="muted">all centres</small>{% endif %}{% endif %}
+    </td>{% endfor %}
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% elif not gap_types %}
+<div class="empty-big">{% icon 'shield-check' %}<h2>No cover types are marked as expected</h2><p>{% if can_edit %}On the Cover types tab, tick <b>Expected at every centre</b> for the types every centre should have, such as Fire and Building.{% else %}Ask the administrator to mark the types every centre should have.{% endif %}</p></div>
 {% else %}
-<p class="sub tab-intro">The types of cover offered when adding a policy. Rename a type or switch it off here; policies already recorded keep their type.</p>
+<div class="empty-big">{% icon 'building-2' %}<h2>No centres to show</h2></div>
+{% endif %}
+
+{% else %}
+<p class="sub tab-intro">The types of cover offered when adding a policy. Rename a type or switch it off here; policies already recorded keep their type. Types marked <b>expected at every centre</b> become the columns of the Coverage grid.</p>
 <div class="table-wrap"><table class="table">
-  <thead><tr><th>Name</th><th>Active</th><th></th></tr></thead>
+  <thead><tr><th>Name, and whether every centre should have it</th></tr></thead>
   <tbody>{% for t in all_types %}
   <tr><td colspan="3"><form method="post" action="{% url 'insurance_types_action' %}" class="inline-row">{% csrf_token %}
     <input type="hidden" name="action" value="save"><input type="hidden" name="pk" value="{{ t.pk }}">
     <input type="text" name="name" value="{{ t.name }}" maxlength="80" aria-label="Name" required>
+    <label class="chip-check"><input type="checkbox" name="core" {% if t.core %}checked{% endif %}><span>Expected at every centre</span></label>
     <label class="chip-check"><input type="checkbox" name="active" {% if t.active %}checked{% endif %}><span>Active</span></label>
     <button class="btn btn-s" type="submit">Save</button>
   </form></td></tr>{% endfor %}</tbody>
 </table></div>
 <form class="form-card" method="post" action="{% url 'insurance_types_action' %}" style="margin-top:18px">{% csrf_token %}
   <input type="hidden" name="action" value="add">
-  <label class="field"><span>Add a type of cover</span><input type="text" name="name" maxlength="80" placeholder="For example: Fire, Marine transit, Directors liability" required></label>
+  <label class="field"><span>Add a type of cover</span><input type="text" name="name" maxlength="80" placeholder="For example: Marine transit, Directors liability" required></label>
+  <label class="chip-check"><input type="checkbox" name="core"><span>Expected at every centre</span></label>
   <div class="form-foot"><button class="btn btn-primary" type="submit">Add</button></div>
 </form>
 {% endif %}

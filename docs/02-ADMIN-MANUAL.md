@@ -275,6 +275,13 @@ A policy cancelled before its end is marked with the Cancelled tick on its Edit 
 **Who sees what.** Administrators and management see every policy. Centre and area managers see policies that include
 one of their centres, without money figures. Everyone else does not see the Insurance item.
 
+**Coverage grid.** The **Coverage grid** tab shows the centres down the side and the types of cover every centre should have
+across the top. Each cell says how long the cover runs, that it ends soon, that it has expired, or that it is missing, so
+a centre with no fire cover stands out at once. The number on the tab counts missing and expired cells. A policy for all
+centres counts for every centre. Managers see only their own centres. Which types appear as columns is set on the
+**Cover types** tab with **Expected at every centre** (Fire, Building, Equipment / machinery breakdown and Contents / stock to
+begin with).
+
 **Cover types.** The list (Fire, Building, Equipment / machinery breakdown, Contents / stock, Burglary, Public liability,
 Professional indemnity, Medical malpractice, Vehicle, Cyber, Other) is on the **Cover types** tab. Add your own, rename
 one or switch one off; policies already recorded keep their type.
