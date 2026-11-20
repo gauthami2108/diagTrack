@@ -32,6 +32,7 @@ EVENTS = [
     ("mention", "Mentioned", "Conversation", "Someone is @mentioned in a comment"),
     ("escalation", "Escalation", "Deadlines and equipment", "An escalation rule fires. Goes to the people the rule names"),
     ("amc", "AMC ending", "Deadlines and equipment", "A machine's AMC is about to end. Goes to the equipment head and administrators"),
+    ("insurance", "Insurance ending", "Deadlines and equipment", "An insurance policy is about to end or has ended. Goes to administrators, the centre manager and the person responsible for the policy"),
     ("backupfail", "Backup failed", "Backups", "A backup, its weekly check or the monthly test restore failed. Goes to administrators and the people chosen on the Backups page"),
     ("backuplate", "Backup overdue", "Backups", "No good backup for longer than the destination allows. Goes to the same people"),
     ("signinlock", "Sign-in paused", "Security", "Too many wrong passwords for a user name or from one computer. Goes to administrators"),
@@ -126,14 +127,14 @@ def default(event, channel):
     if event == "signinlock" and channel != EMAIL:
         return ("never", "", "")
     if channel == EMAIL:
-        body = _AMC_EMAIL if event == "amc" else _PLAIN_EMAIL if event in ("backupfail", "backuplate", "signinlock") else _TICKET_EMAIL
+        body = _AMC_EMAIL if event in ("amc", "insurance") else _PLAIN_EMAIL if event in ("backupfail", "backuplate", "signinlock") else _TICKET_EMAIL
         return ("always", "[{org}] {title}", body)
     if channel == TELEGRAM:
-        body = _AMC_TELEGRAM if event in ("amc", "backupfail", "backuplate", "signinlock") else _TELEGRAM
+        body = _AMC_TELEGRAM if event in ("amc", "insurance", "backupfail", "backuplate", "signinlock") else _TELEGRAM
         return ("always", "", body)
     if channel == SMS:
         return ("always", "", _SMS)
-    return ("always", "", _AMC_WHATSAPP if event in ("amc", "backupfail", "backuplate", "signinlock") else _WHATSAPP)
+    return ("always", "", _AMC_WHATSAPP if event in ("amc", "insurance", "backupfail", "backuplate", "signinlock") else _WHATSAPP)
 
 
 def get(event, channel):

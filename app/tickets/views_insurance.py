@@ -21,6 +21,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .models import (Centre, Equipment, InsuranceCoverType, InsuranceDocument, InsurancePolicy, SiteSettings, User)
+from .services import insurance_stages
 from .views import _safe, admin_only, role_required
 
 MAX_FILE_MB = 20
@@ -104,6 +105,9 @@ class PolicyForm(forms.ModelForm):
     def __init__(self, *args, show_money=True, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["centres"].queryset = Centre.objects.filter(active=True)
+        self.fields["remind_days"].help_text = (
+            "Optional. Leave empty to use the number on the Settings page. Reminders then follow 30 and 7 days "
+            "before expiry, on the day and the day after, as far as they come after this number.")
         self.fields["centres"].help_text = ("Hold Ctrl (Command on a Mac) to choose several. Choose none for a policy "
                                             "that covers all centres or the head office.")
         types = InsuranceCoverType.objects.filter(active=True)
@@ -196,6 +200,7 @@ def insurance_detail(request, pk):
     return render(request, "insurance_detail.html", {
         "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.is_admin,
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
+        "stages": insurance_stages(_soon(p, cfg)),
         "renewed_from": p.renewed_from, "renewals": p.renewals.all(), "max_mb": MAX_FILE_MB})
 
 

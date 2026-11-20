@@ -2104,3 +2104,126 @@ class InsuranceTests(Base):
         old.refresh_from_db()
         self.assertFalse(old.renewed)
         self.assertFalse(InsurancePolicy.objects.filter(policy_number="B").exists())
+
+
+class InsuranceReminderTests(Base):
+    def setUp(self):
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
+        self.sec_cm = User.objects.create_user("sec_cm", password="Demo@12345", role=User.CENTRE_MANAGER,
+                                               email="sec@example.com")
+        self.sec_cm.centres.set([self.sec])
+        self.accounts = User.objects.create_user("accounts", password="Demo@12345", role=User.AGENT,
+                                                 email="acc@example.com")
+        self.fire = InsuranceCoverType.objects.get(name="Fire")
+        self.expiry = _ins_date(2027, 3, 31)
+
+    def policy(self, centres=(), **kw):
+        p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="New India", policy_number="F-1",
+                                           start_date=_ins_date(2026, 4, 1), expiry_date=kw.pop("expiry", self.expiry),
+                                           **kw)
+        p.centres.set(centres)
+        return p
+
+    def run_on(self, days_left):
+        return services.insurance_checks(self.expiry - timedelta(days=days_left))
+
+    def who(self):
+        return set(Notification.objects.filter(kind="insurance").values_list("user__username", flat=True))
+
+    def admins(self):
+        return set(User.objects.filter(role=User.ADMIN).values_list("username", flat=True))
+
+    def test_each_stage_goes_out_once_then_the_day_after(self):
+        self.policy([self.kkp])
+        self.assertEqual(self.run_on(90), 0)  # too early
+        self.assertEqual(self.run_on(59), 1)  # first reminder, 60 days
+        self.assertEqual(self.run_on(59), 0)  # not again
+        self.assertEqual(self.run_on(45), 0)
+        self.assertEqual(self.run_on(30), 1)
+        self.assertEqual(self.run_on(7), 1)
+        self.assertEqual(self.run_on(0), 1)
+        self.assertEqual(self.run_on(-1), 1)  # the day after: has expired
+        self.assertEqual(self.run_on(-2), 0)
+        self.assertEqual(Notification.objects.filter(kind="insurance").values("title").distinct().count(), 5)
+        self.assertTrue(Notification.objects.filter(kind="insurance", title__contains="has expired").exists())
+        self.assertTrue(Notification.objects.filter(kind="insurance", title__contains="ends today").exists())
+
+    def test_a_late_worker_sends_only_the_latest_stage(self):
+        self.policy([self.kkp])
+        self.assertEqual(self.run_on(5), 1)  # nothing before, so one alert for where it stands now
+        self.assertEqual(self.run_on(4), 0)
+
+    def test_goes_to_admins_the_centre_manager_and_the_person_responsible(self):
+        self.policy([self.kkp], responsible=self.accounts)
+        self.run_on(20)
+        self.assertEqual(self.who(), self.admins() | {"imran", "accounts"})  # not Secunderabad's manager, area manager or director
+
+    def test_every_centre_manager_of_a_multi_centre_policy(self):
+        self.policy([self.kkp, self.sec])
+        self.run_on(20)
+        self.assertEqual(self.who(), self.admins() | {"imran", "sec_cm"})
+
+    def test_a_policy_for_all_centres_goes_to_admins_and_the_responsible_person(self):
+        self.policy([], responsible=self.accounts)
+        self.run_on(20)
+        self.assertEqual(self.who(), self.admins() | {"accounts"})
+
+    def test_the_policys_own_first_reminder_replaces_the_settings_number(self):
+        self.policy([self.kkp], remind_days=14)
+        self.assertEqual(self.run_on(40), 0)  # Settings say 60, but this policy starts at 14
+        self.assertEqual(self.run_on(30), 0)
+        self.assertEqual(self.run_on(14), 1)
+        self.assertEqual(self.run_on(7), 1)
+        self.assertEqual(services.insurance_stages(14), [14, 7, 0, -1])
+        self.assertEqual(services.insurance_stages(60), [60, 30, 7, 0, -1])
+
+    def test_the_settings_number_is_the_first_reminder(self):
+        s = SiteSettings.load()
+        s.insurance_alert_days = 90
+        s.save()
+        self.policy([self.kkp])
+        self.assertEqual(self.run_on(89), 1)
+
+    def test_renewed_and_cancelled_policies_stay_quiet(self):
+        self.policy([self.kkp], renewed=True)
+        self.policy([self.kkp], cancelled=True)
+        self.assertEqual(self.run_on(5), 0)
+
+    def test_changing_the_expiry_date_starts_again(self):
+        p = self.policy([self.kkp])
+        self.assertEqual(self.run_on(5), 1)
+        self.assertEqual(self.run_on(4), 0)
+        p.expiry_date = self.expiry + timedelta(days=365)
+        p.save()
+        self.assertEqual(services.insurance_checks(p.expiry_date - timedelta(days=5)), 1)
+
+    def test_a_policy_recorded_long_after_it_ended_is_not_announced(self):
+        self.policy([self.kkp])
+        self.assertEqual(self.run_on(-100), 0)
+        self.assertEqual(self.run_on(-101), 0)
+        self.assertFalse(Notification.objects.filter(kind="insurance").exists())
+
+    def test_alert_links_to_the_policy_and_is_urgent_in_the_last_week(self):
+        p = self.policy([self.kkp])
+        self.run_on(20)
+        self.run_on(5)
+        early, late = Notification.objects.filter(kind="insurance", user=self.admin).order_by("pk")
+        self.assertEqual(early.link, f"/insurance/{p.pk}/")
+        self.assertFalse(early.urgent)
+        self.assertTrue(late.urgent)
+        self.assertIn("F-1", late.body)
+
+    def test_email_goes_out_when_switched_on(self):
+        s = SiteSettings.load()
+        s.email_enabled = True
+        s.save()
+        self.policy([self.kkp])
+        self.run_on(20)
+        self.assertTrue(OutboundMessage.objects.filter(channel="email", to="imran@example.com",
+                                                       subject__contains="Fire insurance").exists())
+
+    def test_the_wording_screen_lists_the_new_alert(self):
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("message_templates"), {"event": "insurance"})
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Insurance ending")

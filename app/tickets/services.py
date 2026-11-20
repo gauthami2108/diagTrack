@@ -14,7 +14,7 @@ from django.utils import timezone
 from . import notify as nt
 from .models import (
     OPEN_STATUSES, RUNNING_STATUSES, Category, Centre, Department, DowntimeLog, Equipment, EscalationLog, VendorCall, PreventiveMaintenance,
-    EscalationRule, Heartbeat, Priority, SiteSettings, SlaPolicy, Status, Ticket,
+    EscalationRule, Heartbeat, InsurancePolicy, Priority, SiteSettings, SlaPolicy, Status, Ticket,
     TicketAttachment, TicketComment, TicketHistory, User,
 )
 
@@ -650,6 +650,48 @@ def amc_checks(today=None):
                       urgent=left <= 7, kind="amc", link=f"/equipment/{e.pk}/")
             sent += 1
         e.save(update_fields=["amc_alert_for", "amc_alert_stage"])
+    return sent
+
+
+def insurance_stages(first):
+    """Days before expiry at which a reminder goes out: the first reminder, then 30 and 7 days, the day itself, and
+    the day after (-1) if it was not renewed. A first reminder of 14 days gives 14, 7, 0 and -1, so nothing goes out
+    earlier than the first one."""
+    return sorted({d for d in (first, 30, 7, 0, -1) if d <= first}, reverse=True)
+
+
+def insurance_checks(today=None):
+    """Once a day: warn about insurance policies that are ending or have ended.
+
+    Goes to the administrators, the managers of the centres the policy covers and the person responsible for it.
+    Each stage is sent once; changing the expiry date (or renewing, which makes a new policy) starts again.
+    A policy that was already long over when it was recorded is not announced."""
+    today = today or timezone.localdate()
+    default_first = SiteSettings.load().insurance_alert_days or 60
+    admins = list(User.objects.filter(role=User.ADMIN, is_active=True))
+    sent = 0
+    live = InsurancePolicy.objects.filter(cancelled=False, renewed=False).select_related(
+        "cover_type", "responsible").prefetch_related("centres")
+    for p in live:
+        if p.alert_for != p.expiry_date:  # new policy, or the expiry date was changed: start again
+            p.alert_for, p.alert_stage = p.expiry_date, 0
+        left = (p.expiry_date - today).days
+        due = [st for st in insurance_stages(p.remind_days or default_first) if left <= st]
+        stage = (min(due) + 2) if due else 0  # stored +2 so 0 still means "nothing sent"
+        if due and (p.alert_stage == 0 or stage < p.alert_stage):
+            if p.alert_stage == 0 and left < -30:
+                pass  # recorded long after it ended: no point announcing it
+            else:
+                people = list(admins) + [p.responsible]
+                for c in p.centres.all():
+                    people += nt.users_with_role(User.CENTRE_MANAGER, c)
+                when = "has expired" if left < 0 else "ends today" if left == 0 else f"ends in {left} days"
+                nt.notify(people, None, f"{p.cover_type.name} insurance for {p.location} {when}",
+                          f"Policy {p.policy_number} with {p.insurer}. Expiry {p.expiry_date:%d %b %Y}.",
+                          urgent=left <= 7, kind="insurance", link=f"/insurance/{p.pk}/")
+                sent += 1
+            p.alert_stage = stage
+        p.save(update_fields=["alert_for", "alert_stage"])
     return sent
 
 
