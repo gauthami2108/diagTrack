@@ -513,7 +513,7 @@ class EscalationLog(models.Model):
 # --------------------------------------------------------------------------
 class Notification(models.Model):
     KINDS = ["raised", "assigned", "started", "hold", "resolved", "closed", "reopened", "cancelled",
-             "transferred", "priority", "reply", "note", "mention", "escalation", "vendor", "amc", "other"]
+             "transferred", "priority", "reply", "note", "mention", "escalation", "vendor", "amc", "insurance", "other"]
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
     ticket = models.ForeignKey(Ticket, null=True, blank=True, on_delete=models.CASCADE)
     kind = models.CharField(max_length=12, default="other")
@@ -549,6 +549,102 @@ class OutboundMessage(models.Model):
         verbose_name = "sent alert"
 
 
+# --------------------------------------------------------------------------
+# Insurance
+# --------------------------------------------------------------------------
+class InsuranceCoverType(models.Model):
+    name = models.CharField(max_length=80, unique=True, help_text="For example: Fire, Building, Public liability.")
+    core = models.BooleanField(
+        "expected at every centre", default=False,
+        help_text="Shown as a column on the coverage gaps tab, so a centre without this cover stands out.")
+    active = models.BooleanField(default=True, help_text="Untick to stop offering it for new policies.")
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "insurance cover type"
+
+    def __str__(self):
+        return self.name
+
+
+def insurance_path(instance, filename):
+    return f"insurance/{instance.policy_id}/{timezone.now():%Y%m%d%H%M%S}-{filename}"
+
+
+class InsurancePolicy(models.Model):
+    ACTIVE, EXPIRING, EXPIRED, RENEWED, CANCELLED = "active", "expiring", "expired", "renewed", "cancelled"
+    STATUS_LABELS = {ACTIVE: "Active", EXPIRING: "Expiring soon", EXPIRED: "Expired",
+                     RENEWED: "Renewed", CANCELLED: "Cancelled"}
+
+    centre = models.ForeignKey(
+        Centre, null=True, blank=True, on_delete=models.PROTECT, related_name="insurance_policies",
+        help_text="Leave empty for a policy that covers every centre or the head office.")
+    cover_type = models.ForeignKey(InsuranceCoverType, on_delete=models.PROTECT, related_name="policies")
+    insurer = models.CharField(max_length=120)
+    policy_number = models.CharField(max_length=80)
+    contact = models.CharField("broker or agent", max_length=160, blank=True,
+                               help_text="Name and phone number, if there is one.")
+    start_date = models.DateField()
+    expiry_date = models.DateField()
+    sum_insured = models.DecimalField("sum insured (₹)", max_digits=14, decimal_places=2, null=True, blank=True)
+    premium = models.DecimalField("premium (₹)", max_digits=12, decimal_places=2, null=True, blank=True)
+    responsible = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="insurance_policies",
+        help_text="Optional. Also receives the expiry reminders.")
+    equipment = models.ManyToManyField(Equipment, blank=True, related_name="insurance_policies",
+                                       help_text="Optional. The machines this policy covers.")
+    notes = models.TextField(blank=True)
+    cancelled = models.BooleanField(default=False, help_text="Tick if the policy was cancelled before it ended.")
+    renewed = models.BooleanField(default=False, editable=False)
+    renewed_from = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name="renewals", editable=False)
+    alert_for = models.DateField(null=True, blank=True, editable=False)
+    alert_stage = models.PositiveSmallIntegerField(default=0, editable=False)
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                   editable=False)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        ordering = ["expiry_date", "centre__name"]
+        verbose_name = "insurance policy"
+        verbose_name_plural = "insurance policies"
+
+    def __str__(self):
+        return f"{self.cover_type} {self.policy_number} ({self.centre or 'All centres'})"
+
+    @property
+    def current(self):
+        """In force or lapsed without a replacement: not cancelled and not renewed."""
+        return not (self.cancelled or self.renewed)
+
+    def status_on(self, today, soon_days):
+        if self.cancelled:
+            return self.CANCELLED
+        if self.renewed:
+            return self.RENEWED
+        if self.expiry_date < today:
+            return self.EXPIRED
+        if (self.expiry_date - today).days <= soon_days:
+            return self.EXPIRING
+        return self.ACTIVE
+
+
+class InsuranceDocument(models.Model):
+    policy = models.ForeignKey(InsurancePolicy, on_delete=models.CASCADE, related_name="documents")
+    file = models.FileField(upload_to=insurance_path, max_length=300)
+    name = models.CharField(max_length=200)
+    size = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    @property
+    def is_image(self):
+        return self.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png", "webp")
+
+
 class SiteSettings(models.Model):
     """One row only. Edited on the Settings screen."""
     org_name = models.CharField("organisation name", max_length=120, default="Pramodini Medicare Limited")
@@ -577,6 +673,12 @@ class SiteSettings(models.Model):
     managers_on_close = models.BooleanField("Alert centre and area managers when a ticket is closed", default=True)
     popups_enabled = models.BooleanField("Pop-up messages on screen", default=True)
     amc_alert_days = models.PositiveSmallIntegerField("warn about AMC expiry (days before)", default=60)
+    insurance_alert_days = models.PositiveSmallIntegerField(
+        "warn about insurance expiry (days before)", default=60,
+        help_text="First reminder. Further reminders go out 30 and 7 days before, and on the expiry date.")
+    insurance_show_money = models.BooleanField(
+        "show sum insured and premium on the Insurance page", default=True,
+        help_text="Administrators and management only. Untick to hide the money figures everywhere.")
     weekly_report_enabled = models.BooleanField("Weekly management email on Monday", default=True)
     last_weekly_report_at = models.DateField(null=True, blank=True, editable=False)
 
