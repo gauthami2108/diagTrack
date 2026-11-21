@@ -1203,3 +1203,8 @@ textarea.mono, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Conso
 .ins-home a span { font-size: 12.5px; color: var(--ink-3); }
 .ins-home a.is-bad b { color: var(--bad); }
 .ins-home a.is-warn b { color: var(--warn); }
+.claim-chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); }
+.claim-filed, .claim-review { background: var(--warn-soft); color: var(--warn); }
+.claim-approved { background: var(--accent-soft); color: var(--accent-text); }
+.claim-settled { background: var(--good-soft); color: var(--good); }
+.claim-rejected { background: var(--bad-soft, var(--surface-2)); color: var(--bad); }

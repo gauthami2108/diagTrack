@@ -274,6 +274,15 @@ Documents may be PDF, JPG, PNG or WebP, up to 20 MB each; add more later for end
 the day, to the same people as the expiry reminders (the amount is never in the message). After paying, change the date to the next
 instalment and the reminders start again. If the date has passed and nobody has moved it, one more alert goes out the day after, marked overdue, and then no more; a date that was already more than 30 days old when first recorded is not announced. Leave it empty for a policy paid once a year.
 
+**Claims.** Each policy page has a **Claims** panel. People with Manage access (and administrators) choose **Add a claim**:
+date of the incident (not in the future), what happened in a line, the machine (from the policy's machines, or the centre's
+machines), the insurer's claim number, the date filed, status (Filed, Under review, Approved awaiting payment, Settled,
+Rejected, Withdrawn) and, if money is shown, the amount claimed and settled. An incident outside the policy dates is saved with
+a yellow warning. Edit the claim as it moves along; status changes are written to the policy's change history. Only an
+administrator can remove a claim. The **Claims** tab of the register lists every claim the person may open, open ones by
+default (filter by status, search, Excel), with a count of open claims on the tab. Amounts follow the same rule as other money
+figures, and the history says only "amounts changed".
+
 **Insurance on the Home page.** People with Insurance access see an Insurance card on Home: how many policies have expired
 without being renewed, how many end within the reminder period, premiums due within 14 days or overdue, centres missing an
 expected cover, and policies without a document, followed by the six that need attention first (premiums, then expired, then

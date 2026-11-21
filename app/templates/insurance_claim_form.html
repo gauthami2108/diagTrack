@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}{% if claim %}Edit claim{% else %}Add a claim{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{% if claim %}Edit claim{% else %}Add a claim{% endif %}</h1>
+  <p class="sub">On {{ p.cover_type.name }}, {{ p.location }}: {{ p.insurer }} policy {{ p.policy_number }}, {{ p.start_date|date:"d M Y" }} to {{ p.expiry_date|date:"d M Y" }}.</p></div></div>
+<form class="form-card" method="post" novalidate>
+  {% csrf_token %}
+  {% if form.errors %}<div class="callout callout-bad" role="alert">{% icon 'circle-alert' %}<div><strong>The claim was not saved.</strong><p class="sub">Check the marked fields below.</p></div></div>{% endif %}
+  <div class="field-row">{% include "_field.html" with f=form.incident_date %}{% include "_field.html" with f=form.status %}</div>
+  {% include "_field.html" with f=form.description %}
+  {% include "_field.html" with f=form.equipment %}
+  <div class="field-row">{% include "_field.html" with f=form.claim_number %}{% include "_field.html" with f=form.claimed_on %}</div>
+  {% if money %}<div class="field-row">{% include "_field.html" with f=form.amount_claimed %}{% include "_field.html" with f=form.amount_settled %}</div>{% endif %}
+  {% include "_field.html" with f=form.notes %}
+  <div class="form-foot"><a class="btn" href="{% url 'insurance_detail' p.pk %}">Cancel</a><button class="btn btn-primary" type="submit">Save claim</button></div>
+</form>
+{% endblock %}

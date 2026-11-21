@@ -20,7 +20,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import (Centre, Equipment, InsuranceCoverType, InsuranceDocument, InsurancePolicy, SiteSettings, User)
+from .models import (Centre, Equipment, InsuranceClaim, InsuranceCoverType, InsuranceDocument, InsurancePolicy, SiteSettings,
+                     User)
 from . import insurance_log as ilog
 from .services import insurance_stages
 from .views import _safe, admin_only, role_required
@@ -219,7 +220,7 @@ def _filtered(request):
 def insurance_list(request):
     user = request.user
     cfg = SiteSettings.load()
-    tab = request.GET.get("tab") if request.GET.get("tab") in ("gaps", "types") else "policies"
+    tab = request.GET.get("tab") if request.GET.get("tab") in ("gaps", "types", "claims") else "policies"
     if tab == "types" and not user.is_admin:
         return redirect("insurance_list")
     money = _show_money(user, cfg)
@@ -240,10 +241,175 @@ def insurance_list(request):
                    total_premium=sum((p.premium or 0) for p in rows) if money else None)
     elif tab == "gaps":
         ctx.update(_gaps(user, centres, cfg))
+    elif tab == "claims":
+        claims, cf = _claims(request)
+        ctx.update(claims=claims, cf=cf, claim_statuses=InsuranceClaim.STATUSES)
     else:
         ctx["all_types"] = InsuranceCoverType.objects.all()
     ctx.setdefault("gap_total", _gap_count(user, centres, cfg))
+    ctx["open_claims"] = InsuranceClaim.objects.filter(policy__in=_scoped(user), status__in=InsuranceClaim.OPEN).count()
     return render(request, "insurance.html", ctx)
+
+
+# --------------------------------------------------------------------------
+# Claims
+# --------------------------------------------------------------------------
+def _claims(request):
+    """Claims on the policies this person may open. By default the open ones; ?cstatus=all or a single status."""
+    g = request.GET
+    cstatus = g.get("cstatus", "open")
+    if cstatus not in ("open", "all", *dict(InsuranceClaim.STATUSES)):
+        cstatus = "open"
+    qs = (InsuranceClaim.objects.filter(policy__in=_scoped(request.user))
+          .select_related("policy", "policy__cover_type", "equipment").prefetch_related("policy__centres"))
+    if cstatus == "open":
+        qs = qs.filter(status__in=InsuranceClaim.OPEN)
+    elif cstatus != "all":
+        qs = qs.filter(status=cstatus)
+    q = g.get("q", "").strip()
+    if q:
+        qs = qs.filter(Q(description__icontains=q) | Q(claim_number__icontains=q) | Q(policy__insurer__icontains=q)
+                       | Q(policy__policy_number__icontains=q) | Q(equipment__name__icontains=q))
+    return list(qs), {"cstatus": cstatus, "q": q}
+
+
+class ClaimForm(forms.ModelForm):
+    class Meta:
+        model = InsuranceClaim
+        fields = ["incident_date", "description", "equipment", "claim_number", "claimed_on", "status", "amount_claimed",
+                  "amount_settled", "notes"]
+        widgets = {"incident_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+                   "claimed_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+                   "notes": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *a, policy, show_money, **kw):
+        super().__init__(*a, **kw)
+        self.policy = policy
+        machines = policy.equipment.all()
+        if not machines:
+            machines = Equipment.objects.filter(active=True)
+            if policy.centres.exists():
+                machines = machines.filter(centre__in=policy.centres.all())
+        self.fields["equipment"].queryset = machines.select_related("centre").order_by("centre__name", "name")
+        self.fields["equipment"].label_from_instance = lambda e: f"{e.name} · {e.centre.code}"
+        self.fields["equipment"].empty_label = "Not about one machine"
+        if not show_money:
+            del self.fields["amount_claimed"], self.fields["amount_settled"]
+
+    def clean(self):
+        data = super().clean()
+        inc, filed = data.get("incident_date"), data.get("claimed_on")
+        if inc and inc > timezone.localdate():
+            self.add_error("incident_date", "The incident cannot be in the future.")
+        if inc and filed and filed < inc:
+            self.add_error("claimed_on", "The claim cannot be filed before the incident.")
+        return data
+
+    def warning(self):
+        inc = self.cleaned_data.get("incident_date")
+        if inc and not (self.policy.start_date <= inc <= self.policy.expiry_date):
+            return ("The incident date is outside this policy's dates "
+                    f"({self.policy.start_date:%d %b %Y} to {self.policy.expiry_date:%d %b %Y}). Check that it is on the right policy.")
+
+
+def _claim_line(c):
+    return f"{c.description} (incident {c.incident_date:%d %b %Y})"
+
+
+@manager
+def claim_new(request, pk):
+    p = get_object_or_404(_scoped(request.user), pk=pk)
+    return _claim_form(request, p, None)
+
+
+@manager
+def claim_edit(request, pk):
+    c = get_object_or_404(InsuranceClaim.objects.select_related("policy"), pk=pk)
+    p = get_object_or_404(_scoped(request.user), pk=c.policy_id)
+    return _claim_form(request, p, c)
+
+
+def _claim_form(request, p, claim):
+    money = _show_money(request.user)
+    before = None
+    if claim:
+        before = (claim.status, claim.claim_number, claim.incident_date, claim.claimed_on, claim.equipment_id,
+                  claim.description, claim.amount_claimed, claim.amount_settled)
+    form = ClaimForm(request.POST or None, instance=claim, policy=p, show_money=money)
+    if request.method == "POST" and form.is_valid():
+        c = form.save(commit=False)
+        c.policy = p
+        if not claim:
+            c.created_by = request.user
+        c.save()
+        if not claim:
+            ilog.record(p, request.user, f"Claim added: {_claim_line(c)}")
+        else:
+            bits = []
+            if before[0] != c.status:
+                bits.append(f"status {dict(InsuranceClaim.STATUSES)[before[0]]} → {c.get_status_display()}")
+            if before[1] != c.claim_number:
+                bits.append("claim number changed")
+            if before[2:6] != (c.incident_date, c.claimed_on, c.equipment_id, c.description):
+                bits.append("details changed")
+            if before[6:] != (c.amount_claimed, c.amount_settled):
+                bits.append("amounts changed")
+            if bits:
+                ilog.record(p, request.user, f"Claim updated ({_claim_line(c)}): " + ", ".join(bits))
+        messages.success(request, "Claim saved.")
+        w = form.warning()
+        if w:
+            messages.warning(request, w)
+        return redirect("insurance_detail", pk=p.pk)
+    if request.method == "POST":
+        messages.error(request, "The claim was not saved. Check the marked fields.")
+    return render(request, "insurance_claim_form.html", {"form": form, "p": p, "claim": claim, "money": money})
+
+
+@admin_only
+@require_POST
+def claim_delete(request, pk):
+    c = get_object_or_404(InsuranceClaim.objects.select_related("policy"), pk=pk)
+    p = c.policy
+    ilog.record(p, request.user, f"Claim removed: {_claim_line(c)}")
+    c.delete()
+    messages.success(request, "Claim removed.")
+    return redirect("insurance_detail", pk=p.pk)
+
+
+@viewer
+def claims_export(request):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    money = _show_money(request.user)
+    claims, _ = _claims(request)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Claims"
+    head = ["Policy", "Centres", "Insurer", "Policy number", "Date of incident", "Machine", "What happened", "Claim number",
+            "Date filed", "Status"]
+    if money:
+        head += ["Amount claimed", "Amount settled"]
+    ws.append(head)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for c in claims:
+        line = [c.policy.cover_type.name, c.policy.location, c.policy.insurer, c.policy.policy_number, c.incident_date,
+                c.equipment.name if c.equipment else "", c.description, c.claim_number, c.claimed_on, c.get_status_display()]
+        if money:
+            line += [float(c.amount_claimed) if c.amount_claimed is not None else None,
+                     float(c.amount_settled) if c.amount_settled is not None else None]
+        ws.append(line)
+    for col in ("E", "I"):
+        for cell in ws[col][1:]:
+            cell.number_format = "dd mmm yyyy"
+    for i, w in enumerate([22, 24, 24, 20, 14, 26, 50, 18, 14, 22, 16, 16][:len(head)], start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = f'attachment; filename="insurance-claims-{date.today():%Y-%m-%d}.xlsx"'
+    return resp
 
 
 def _gaps(user, centres, cfg):
@@ -300,6 +466,7 @@ def insurance_detail(request, pk):
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
         "premium_days": (p.premium_due - today).days if p.premium_due else None,
         "log": p.log.select_related("actor")[:40],
+        "claims": p.claims.select_related("equipment"),
         "stages": insurance_stages(_soon(p, cfg)),
         "renewed_from": p.renewed_from, "renewals": p.renewals.all(), "max_mb": MAX_FILE_MB})
 

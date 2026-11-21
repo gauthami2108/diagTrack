@@ -2174,6 +2174,122 @@ class InsuranceTests(Base):
         self.client.force_login(self.req)
         self.assertContains(self.client.get(reverse("home")), "Open register")
 
+    # --- claims -------------------------------------------------------------
+    def claim_data(self, **over):
+        d = {"incident_date": str(self.today - timedelta(days=10)), "description": "Compressor failure in the MRI",
+             "equipment": self.mri.pk, "claim_number": "CL-77", "claimed_on": str(self.today - timedelta(days=8)),
+             "status": "filed", "amount_claimed": "250000", "notes": "Surveyor visit booked"}
+        d.update(over)
+        return d
+
+    def test_a_claim_is_added_listed_and_logged(self):
+        p = self.policy([self.kkp])
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse("claim_new", args=[p.pk]), self.claim_data())
+        self.assertEqual(r.status_code, 302)
+        c = p.claims.get()
+        self.assertEqual((c.status, c.claim_number, c.equipment, c.created_by), ("filed", "CL-77", self.mri, self.admin))
+        detail = self.client.get(reverse("insurance_detail", args=[p.pk]))
+        self.assertContains(detail, "Compressor failure in the MRI")
+        self.assertContains(detail, "claimed ₹250000")
+        self.assertTrue(any("Claim added: Compressor failure" in t for t in [e.text for e in p.log.all()]))
+        tab = self.client.get(reverse("insurance_list"), {"tab": "claims"})
+        self.assertContains(tab, "Compressor failure in the MRI")
+        self.assertEqual(tab.context["open_claims"], 1)
+
+    def test_updating_a_claim_logs_the_status_and_filters_work(self):
+        p = self.policy([self.kkp])
+        self.client.force_login(self.admin)
+        self.client.post(reverse("claim_new", args=[p.pk]), self.claim_data())
+        c = p.claims.get()
+        self.client.post(reverse("claim_edit", args=[c.pk]), self.claim_data(status="settled", amount_settled="180000"))
+        c.refresh_from_db()
+        self.assertEqual((c.status, str(c.amount_settled)), ("settled", "180000.00"))
+        text = " | ".join(e.text for e in p.log.all())
+        self.assertIn("status Filed → Settled", text)
+        self.assertIn("amounts changed", text)
+        self.assertNotIn("180000", text)
+        self.assertEqual(self.client.get(reverse("insurance_list"), {"tab": "claims"}).context["claims"], [])  # not open any more
+        self.assertEqual(len(self.client.get(reverse("insurance_list"), {"tab": "claims", "cstatus": "settled"}).context["claims"]), 1)
+        self.assertEqual(len(self.client.get(reverse("insurance_list"), {"tab": "claims", "cstatus": "all", "q": "MRI"}).context["claims"]), 1)
+        self.assertEqual(len(self.client.get(reverse("insurance_list"), {"tab": "claims", "cstatus": "all", "q": "nothing like this"}).context["claims"]), 0)
+
+    def test_claim_rules(self):
+        p = self.policy([self.kkp])
+        self.client.force_login(self.admin)
+        future = self.client.post(reverse("claim_new", args=[p.pk]), self.claim_data(incident_date=str(self.today + timedelta(days=3))))
+        self.assertEqual(future.status_code, 200)
+        self.assertContains(future, "cannot be in the future")
+        early = self.client.post(reverse("claim_new", args=[p.pk]), self.claim_data(claimed_on=str(self.today - timedelta(days=30))))
+        self.assertContains(early, "before the incident")
+        self.assertEqual(p.claims.count(), 0)
+        # an incident outside the policy dates is saved, with a warning
+        old = str(self.today - timedelta(days=500))
+        r = self.client.post(reverse("claim_new", args=[p.pk]), self.claim_data(incident_date=old, claimed_on=""))
+        self.assertEqual(r.status_code, 302)
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "outside this policy")
+
+    def test_claim_machines_come_from_the_policy(self):
+        p = self.policy([self.kkp])
+        p.equipment.set([self.mri])
+        self.client.force_login(self.admin)
+        form = self.client.get(reverse("claim_new", args=[p.pk])).context["form"]
+        self.assertEqual(list(form.fields["equipment"].queryset), [self.mri])
+
+    def test_who_may_add_see_and_remove_claims(self):
+        p = self.policy([self.kkp])
+        other = self.policy([self.sec], number="SEC")
+        self.client.force_login(self.admin)
+        self.client.post(reverse("claim_new", args=[p.pk]), self.claim_data())
+        self.client.post(reverse("claim_new", args=[other.pk]), self.claim_data(description="Secunderabad flood", equipment=""))
+        c = p.claims.get()
+        # view own: sees only Kukatpally's claim, cannot add, edit or remove, and never the amounts
+        self.client.force_login(self.cm)
+        tab = self.client.get(reverse("insurance_list"), {"tab": "claims"})
+        self.assertContains(tab, "Compressor failure")
+        self.assertNotContains(tab, "Secunderabad flood")
+        self.assertNotContains(tab, "250000")
+        self.assertEqual(self.client.get(reverse("claim_new", args=[p.pk])).status_code, 403)
+        self.assertEqual(self.client.get(reverse("claim_edit", args=[c.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse("claim_delete", args=[c.pk])).status_code, 403)
+        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "Add a claim")
+        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "250000")
+        # manage: may add and edit anywhere but not remove
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="manage")
+        self.assertEqual(self.client.get(reverse("claim_edit", args=[c.pk])).status_code, 200)
+        self.assertEqual(self.client.post(reverse("claim_delete", args=[c.pk])).status_code, 403)
+        # a view-own person cannot reach a claim of another centre by address
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="own")
+        self.client.force_login(self.admin)
+        sec_claim = other.claims.get()
+        self.client.force_login(self.cm)
+        self.assertEqual(self.client.get(reverse("claim_edit", args=[sec_claim.pk])).status_code, 403)
+
+    def test_an_administrator_can_remove_a_claim_and_it_is_logged(self):
+        p = self.policy([self.kkp])
+        self.client.force_login(self.admin)
+        self.client.post(reverse("claim_new", args=[p.pk]), self.claim_data())
+        c = p.claims.get()
+        self.assertEqual(self.client.post(reverse("claim_delete", args=[c.pk])).status_code, 302)
+        self.assertEqual(p.claims.count(), 0)
+        self.assertTrue(any("Claim removed" in e.text for e in p.log.all()))
+
+    def test_claims_export_follows_the_money_rule(self):
+        import io
+        from openpyxl import load_workbook
+        p = self.policy([self.kkp])
+        self.client.force_login(self.admin)
+        self.client.post(reverse("claim_new", args=[p.pk]), self.claim_data())
+        ws = load_workbook(io.BytesIO(self.client.get(reverse("claims_export"), {"cstatus": "all"}).content)).active
+        heads = [c.value for c in ws[1]]
+        self.assertIn("Amount claimed", heads)
+        self.assertEqual(ws.cell(2, heads.index("What happened") + 1).value, "Compressor failure in the MRI")
+        s = SiteSettings.load()
+        s.insurance_show_money = False
+        s.save()
+        ws = load_workbook(io.BytesIO(self.client.get(reverse("claims_export"), {"cstatus": "all"}).content)).active
+        self.assertNotIn("Amount claimed", [c.value for c in ws[1]])
+
     def test_a_requester_given_access_sees_the_menu_item_and_the_page(self):
         p = self.policy([self.kkp])
         self.req.centres.add(self.kkp)

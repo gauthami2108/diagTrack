@@ -36,7 +36,7 @@ DEMO_PASSWORD = "Demo@12345"
 COMMON = ["/", "/tickets/", "/tickets/{ticket}/", "/alerts/", "/me/", "/password/"]
 RESOLVER = COMMON + ["/tickets/new/", "/tickets/board/", "/equipment/", "/equipment/{equipment}/"]
 OVERSEER = RESOLVER + ["/dashboard/", "/centres/", "/reports/"]
-ADMIN = OVERSEER + ["/insurance/", "/insurance/new/", "/insurance/{policy}/", "/insurance/{policy}/edit/", "/insurance/?tab=gaps", "/insurance/?tab=types", "/reports/print/", "/equipment/labels/", "/settings/", "/settings/templates/", "/settings/backups/", "/settings/import/",
+ADMIN = OVERSEER + ["/insurance/", "/insurance/new/", "/insurance/{policy}/", "/insurance/{policy}/edit/", "/insurance/?tab=claims", "/insurance/{policy}/claims/new/", "/insurance/?tab=gaps", "/insurance/?tab=types", "/reports/print/", "/equipment/labels/", "/settings/", "/settings/templates/", "/settings/backups/", "/settings/import/",
                     "/admin/", "/admin/tickets/user/", "/admin/tickets/user/add/", "/admin/tickets/equipment/",
                     "/admin/tickets/equipment/add/", "/admin/tickets/centre/", "/admin/tickets/department/",
                     "/admin/tickets/category/", "/admin/tickets/slapolicy/", "/admin/tickets/escalationrule/",
@@ -118,6 +118,7 @@ def main():
                              " start_date=t - timedelta(days=300), expiry_date=t + timedelta(days=65), covers='Building and contents, MRI room',"
                              " premium_due=t + timedelta(days=20), sum_insured=5000000, premium=42000);"
                              "p.centres.set(Centre.objects.all()[:2]); p.responsible.set(User.objects.filter(role='admin')[:1]);"
+                             "InsuranceClaim.objects.create(policy=p, incident_date=t - timedelta(days=12), description='Compressor failure in the MRI', status='filed', amount_claimed=250000);"
                              "d = InsuranceDocument(policy=p, name='policy.pdf', size=20); d.file.save('policy.pdf', ContentFile(b'%PDF-1.4 demo')); d.save();"
                              "print(p.pk)"],
                             cwd=APP, env=env, check=True, capture_output=True, text=True).stdout.strip().splitlines()[-1]
