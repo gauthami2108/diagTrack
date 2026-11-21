@@ -58,6 +58,13 @@ def _get_visible(user, pk):
     return get_object_or_404(_scoped(user), pk=pk)
 
 
+def _same_day_next_year(d):
+    try:
+        return d.replace(year=d.year + 1)
+    except ValueError:  # 29 February
+        return date(d.year + 1, 2, 28)
+
+
 def _plus_year(d):
     try:
         return d.replace(year=d.year + 1) - timedelta(days=1)
@@ -515,6 +522,11 @@ def insurance_new(request):
     renew = request.GET.get("renew") or request.POST.get("renew")
     if renew and renew.isdigit():
         old = get_object_or_404(InsurancePolicy, pk=int(renew))
+        if not old.current:
+            later = old.renewals.first()
+            messages.error(request, "That policy is " + ("already renewed" + (f" by policy {later.policy_number}" if later else "")
+                                                         if old.renewed else "cancelled") + ", so it cannot be renewed again.")
+            return redirect("insurance_detail", pk=old.pk)
     initial = {}
     if old:
         start = old.expiry_date + timedelta(days=1)
@@ -522,7 +534,9 @@ def insurance_new(request):
                    "policy_number": old.policy_number, "contact": old.contact, "start_date": start,
                    "expiry_date": _plus_year(start), "sum_insured": old.sum_insured, "premium": old.premium,
                    "responsible": list(old.responsible.all()), "remind_days": old.remind_days,
-                   "equipment": list(old.equipment.all()), "covers_all_machines": old.covers_all_machines}
+                   "equipment": list(old.equipment.all()), "covers_all_machines": old.covers_all_machines,
+                   "covers": old.covers,
+                   "premium_due": _same_day_next_year(old.premium_due) if old.premium_due and old.premium_due >= old.start_date else None}
     form = PolicyForm(request.POST or None, initial=initial, show_money=money)
     files = request.FILES.getlist("files")
     problems = []
@@ -548,6 +562,12 @@ def insurance_new(request):
             else:
                 ilog.record(p, request.user, f"Policy added, with {len(files)} document{'s' if len(files) != 1 else ''}")
             messages.success(request, "Policy saved." if not old else "Policy renewed. The old policy is marked Renewed.")
+            if old and p.policy_number.strip().lower() == old.policy_number.strip().lower():
+                messages.warning(request, "The policy number is the same as the old policy's. If the insurer issued a new "
+                                          "number, edit the policy and change it.")
+            if old and money and old.premium and p.premium and old.premium != p.premium:
+                pct = (p.premium - old.premium) / old.premium * 100
+                messages.info(request, f"The premium is {abs(pct):.0f}% {'higher' if pct > 0 else 'lower'} than the old policy's.")
             for w in form.warnings:
                 messages.warning(request, w)
             return redirect("insurance_detail", pk=p.pk)

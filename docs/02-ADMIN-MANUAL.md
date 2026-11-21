@@ -324,6 +324,10 @@ Some phones cannot show a PDF inside a page: use Download or Open in new tab the
 
 **Renewing.** Open the policy and choose **Renew**. The new policy starts the day after the old one ends and runs a year;
 change whatever differs and add the new document. The old policy is kept and marked Renewed, so the history stays.
+The form shows the policy being renewed and carries over everything else: insurer, number, broker, what is covered, centres,
+machines, the blanket tick, responsible people, the first reminder and the next premium due (a year later). After saving, if
+the policy number is unchanged DiagTrack reminds you to check it, and people who see money are told how much the premium moved
+in percent. A policy that is already renewed or cancelled cannot be renewed again.
 A policy cancelled before its end is marked with the Cancelled tick on its Edit page.
 
 **Sum insured and premium** are optional, and are shown only to administrators, people with Manage access, and management with any access. Untick
