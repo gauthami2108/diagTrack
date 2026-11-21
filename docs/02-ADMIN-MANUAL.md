@@ -292,7 +292,7 @@ after insurance. The levels are:
 
 - **No access** (the default): no Insurance menu item, and the page, documents and export are closed. Management and
   managers lose Insurance when this release is installed until you grant it.
-- **View: policies of own centres**: sees policies that include one of their centres. Policies for all centres are not shown.
+- **View: policies of own centres**: sees policies that include one of their centres, and also the policies that cover every centre or the head office, because those cover their centre too.
 - **View: all centres**: sees every policy, read only.
 - **Manage**: sees every policy and may add, edit, renew, cancel and add or remove documents. Deleting a policy, the Cover
   types tab and the Settings switch stay with administrators.
@@ -312,7 +312,7 @@ the list marks it **No document**.
 **Coverage grid.** The **Coverage grid** tab shows the centres down the side and the types of cover every centre should have
 across the top. Each cell says how long the cover runs, that it ends soon, that it has expired, or that it is missing, so
 a centre with no fire cover stands out at once. The number on the tab counts missing and expired cells. A policy for all
-centres counts for every centre. Managers see only their own centres. Which types appear as columns is set on the
+centres counts for every centre. People with view-own access see only their own centres. Which types appear as columns is set on the
 **Cover types** tab with **Expected at every centre** (Fire, Building, Equipment / machinery breakdown and Contents / stock to
 begin with).
 
