@@ -274,6 +274,11 @@ Documents may be PDF, JPG, PNG or WebP, up to 20 MB each; add more later for end
 the day, to the same people as the expiry reminders (the amount is never in the message). After paying, change the date to the next
 instalment and the reminders start again. Leave it empty for a policy paid once a year.
 
+**Change history.** The policy page lists what changed, who did it and when: policy added, dates, insurer, centres, people
+or machines changed, documents added or removed, renewed, cancelled, and changes made by the Excel import. Sum insured, premium
+and notes are recorded as "changed" only, never with their values, so everyone who can open the policy may read the history.
+The history is deleted with the policy.
+
 **Opening a document.** On the policy page, choosing a file name shows it in a viewer inside DiagTrack, so it also stays in the app
 when DiagTrack is installed on a phone or desktop. The viewer has **Open in new tab** and **Download**; both are also beside each file.
 Some phones cannot show a PDF inside a page: use Download or Open in new tab there.

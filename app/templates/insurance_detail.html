@@ -35,7 +35,13 @@
       {% if p.notes %}<p class="panel-note">{{ p.notes|linebreaksbr }}</p>{% endif %}
     </section>
 
-    {% if renewed_from or renewals %}<section class="panel"><header><h2>History</h2></header>
+    <section class="panel"><header><h2>Change history</h2></header>
+      {% if log %}<ul class="plain log-list">{% for e in log %}
+        <li>{{ e.text }}<small class="muted"> {{ e.actor.display_name|default:"System" }}, {{ e.at|date:"d M Y, H:i" }}</small></li>{% endfor %}</ul>
+      {% else %}<p class="empty">No changes recorded yet.</p>{% endif %}
+    </section>
+
+    {% if renewed_from or renewals %}<section class="panel"><header><h2>Renewals</h2></header>
       <ul class="plain">
         {% if renewed_from %}<li>Renews <a href="{% url 'insurance_detail' renewed_from.pk %}">{{ renewed_from.policy_number }}</a> ({{ renewed_from.start_date|date:"d M Y" }} to {{ renewed_from.expiry_date|date:"d M Y" }})</li>{% endif %}
         {% for r in renewals %}<li>Renewed by <a href="{% url 'insurance_detail' r.pk %}">{{ r.policy_number }}</a> ({{ r.start_date|date:"d M Y" }} to {{ r.expiry_date|date:"d M Y" }})</li>{% endfor %}
