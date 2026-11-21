@@ -272,7 +272,7 @@ Documents may be PDF, JPG, PNG or WebP, up to 20 MB each; add more later for end
 
 **Next premium due** is for policies paid in instalments. Enter the date of the next instalment; a reminder goes out 7 days before and on
 the day, to the same people as the expiry reminders (the amount is never in the message). After paying, change the date to the next
-instalment and the reminders start again. Leave it empty for a policy paid once a year.
+instalment and the reminders start again. If the date has passed and nobody has moved it, one more alert goes out the day after, marked overdue, and then no more; a date that was already more than 30 days old when first recorded is not announced. Leave it empty for a policy paid once a year.
 
 **Change history.** The policy page lists what changed, who did it and when: policy added, dates, insurer, centres, people
 or machines changed, documents added or removed, renewed, cancelled, and changes made by the Excel import. Sum insured, premium

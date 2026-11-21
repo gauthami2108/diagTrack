@@ -660,7 +660,7 @@ def insurance_stages(first):
     return sorted({d for d in (first, 30, 7, 0, -1) if d <= first}, reverse=True)
 
 
-PREMIUM_STAGES = (7, 0)  # days before the next premium is due
+PREMIUM_STAGES = (7, 0)  # days before the next premium is due; then once more the day after (stage -1) if the date was not moved
 
 
 def _insurance_people(p, admins, holders):
@@ -712,16 +712,21 @@ def insurance_checks(today=None):
             p.premium_alert_for, p.premium_alert_stage = p.premium_due, 0
         if p.premium_due:
             pleft = (p.premium_due - today).days
-            pdue = [st for st in PREMIUM_STAGES if pleft <= st] if pleft >= 0 else []
-            pstage = (min(pdue) + 2) if pdue else 0
+            pdue = [st for st in (*PREMIUM_STAGES, -1) if pleft <= st]
+            pstage = (min(pdue) + 2) if pdue else 0  # 9 = 7 days, 2 = the day, 1 = overdue
             if pdue and (p.premium_alert_stage == 0 or pstage < p.premium_alert_stage):
-                when = "is due today" if pleft == 0 else f"is due in {pleft} days"
-                nt.notify(_insurance_people(p, admins, holders), None,
-                          f"Premium for {p.cover_type.name} insurance at {p.location} {when}",
-                          f"Policy {p.policy_number} with {p.insurer}. Premium due {p.premium_due:%d %b %Y}. "
-                          "After paying, set the next premium due date on the policy.",
-                          urgent=pleft <= 1, kind="insurance", link=f"/insurance/{p.pk}/")
-                sent += 1
+                if p.premium_alert_stage == 0 and pleft < -30:
+                    pass  # recorded long after it fell due: not announced
+                else:
+                    when = ("is overdue: it fell due on " + f"{p.premium_due:%d %b %Y}") if pleft < 0 else \
+                           "is due today" if pleft == 0 else f"is due in {pleft} days"
+                    nt.notify(_insurance_people(p, admins, holders), None,
+                              f"Premium for {p.cover_type.name} insurance at {p.location} {when}",
+                              f"Policy {p.policy_number} with {p.insurer}. Premium due {p.premium_due:%d %b %Y}. "
+                              "After paying, set the next premium due date on the policy. "
+                              + ("If it is already paid, update the date so this stops." if pleft < 0 else ""),
+                              urgent=pleft <= 1, kind="insurance", link=f"/insurance/{p.pk}/")
+                    sent += 1
                 p.premium_alert_stage = pstage
         p.save(update_fields=["alert_for", "alert_stage", "premium_alert_for", "premium_alert_stage"])
     return sent
