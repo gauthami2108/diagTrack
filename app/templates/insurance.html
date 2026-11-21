@@ -2,7 +2,7 @@
 {% block title %}Insurance{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Insurance</h1><p class="sub">Every policy, by centre and type of cover, with its dates and documents.{% if not request.user.insurance_sees_all %} You see the policies of your own centres.{% endif %}</p></div>
+  <div><h1>Insurance</h1><p class="sub">Every policy, by centre and type of cover, with its dates and documents.{% if not request.user.insurance_sees_all %} You see the policies of your own centres and those that cover every centre.{% endif %}</p></div>
   <div class="head-actions">
     {% if tab == 'policies' %}<a class="btn" href="{% url 'insurance_export' %}?{{ request.GET.urlencode }}">{% icon 'download' %}Excel</a>{% endif %}
     {% if can_edit %}<a class="btn btn-primary" href="{% url 'insurance_new' %}">{% icon 'circle-plus' %}Add policy</a>{% endif %}
@@ -26,7 +26,7 @@
 <form class="filters" method="get" data-autosubmit>
   <input type="search" name="q" value="{{ f.q }}" placeholder="Insurer or policy number" aria-label="Search policies">
   <select name="centre" aria-label="Centre"><option value="">All centres</option>
-    {% if request.user.insurance_sees_all %}<option value="0" {% if f.centre == '0' %}selected{% endif %}>Policies for all centres</option>{% endif %}
+    <option value="0" {% if f.centre == '0' %}selected{% endif %}>Policies for all centres</option>
     {% for c in centres %}<option value="{{ c.pk }}" {% if f.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
   <select name="cover" aria-label="Type of cover"><option value="">All types of cover</option>{% for t in cover_types %}<option value="{{ t.pk }}" {% if f.cover == t.pk|stringformat:"s" %}selected{% endif %}>{{ t.name }}</option>{% endfor %}</select>
   <select name="status" aria-label="Status">{% for v, l in status_filters %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>

@@ -668,7 +668,7 @@ def _insurance_people(p, admins, holders):
     covered = {c.pk for c in p.centres.all()}
     people = list(admins)
     for u in holders:
-        if u.insurance_access in ("all", "manage") or covered & {c.pk for c in u.centres.all()}:
+        if u.insurance_access in ("all", "manage") or not covered or covered & {c.pk for c in u.centres.all()}:
             people.append(u)
     people += [u for u in p.responsible.all() if u.is_active and u.can_view_insurance]
     return people

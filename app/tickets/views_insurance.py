@@ -41,7 +41,10 @@ def _show_money(user, cfg=None):
 
 def _scoped(user):
     qs = InsurancePolicy.objects.select_related("cover_type").prefetch_related("centres", "responsible")
-    return qs if user.insurance_sees_all else qs.filter(centres__in=user.centres.all()).distinct()
+    if user.insurance_sees_all:
+        return qs
+    # Own centres, plus policies that cover every centre or the head office (they have no centres listed)
+    return qs.filter(Q(centres__in=user.centres.all()) | Q(centres__isnull=True)).distinct()
 
 
 def _soon(policy, cfg):

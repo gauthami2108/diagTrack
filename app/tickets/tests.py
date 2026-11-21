@@ -1890,7 +1890,7 @@ class InsuranceTests(Base):
         self.client.force_login(self.req)
         self.assertNotContains(self.client.get(reverse("home")), reverse("insurance_list"))
 
-    def test_managers_see_only_their_centres_and_never_the_money(self):
+    def test_managers_see_their_centres_and_all_centre_policies_but_never_the_money(self):
         mine = self.policy([self.kkp], number="MINE")
         both = self.policy([self.kkp, self.sec], number="BOTH")
         other = self.policy([self.sec], number="OTHER")
@@ -1898,11 +1898,11 @@ class InsuranceTests(Base):
         self.client.force_login(self.cm)  # Imran manages Kukatpally only
         page = self.client.get(reverse("insurance_list"))
         numbers = {p.policy_number for p in page.context["rows"]}
-        self.assertEqual(numbers, {"MINE", "BOTH"})
+        self.assertEqual(numbers, {"MINE", "BOTH", "ALL"})  # ALL covers every centre, so it is shown too
         self.assertNotContains(page, "5000000")
         self.assertNotContains(page, "Sum insured")
         self.assertEqual(self.client.get(reverse("insurance_detail", args=[other.pk])).status_code, 404)
-        self.assertEqual(self.client.get(reverse("insurance_detail", args=[head_office.pk])).status_code, 404)
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[head_office.pk])).status_code, 200)
         self.assertNotContains(self.client.get(reverse("insurance_detail", args=[mine.pk])), "42000")
         self.assertEqual(self.client.get(reverse("insurance_detail", args=[both.pk])).status_code, 200)
 
@@ -2052,6 +2052,19 @@ class InsuranceTests(Base):
         self.assertEqual(self.client.get(reverse("insurance_list")).status_code, 200)
         self.assertContains(self.client.get(reverse("home")), reverse("insurance_list"))
         self.assertEqual(self.client.get(reverse("insurance_detail", args=[p.pk])).status_code, 404)  # not his centre
+
+    def test_view_own_also_sees_policies_that_cover_every_centre(self):
+        everywhere = self.policy([], number="ALL")
+        other = self.policy([self.sec], number="SEC")
+        mine = self.policy([self.kkp], number="KKP")
+        self.client.force_login(self.cm)  # view own: Kukatpally
+        page = self.client.get(reverse("insurance_list")).content.decode()
+        self.assertIn("ALL", page)
+        self.assertIn("KKP", page)
+        self.assertNotIn("SEC", page.replace("SECUNDERABAD", ""))
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[everywhere.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[other.pk])).status_code, 404)
+        self.assertEqual(self.client.get(reverse("insurance_list"), {"centre": "0"}).content.decode().count("ALL") > 0, True)
 
     def test_a_requester_given_access_sees_the_menu_item_and_the_page(self):
         p = self.policy([self.kkp])
@@ -2367,7 +2380,7 @@ class InsuranceReminderTests(Base):
         noaccess = User.objects.create_user("noaccess", password="Demo@12345", role=User.AGENT)
         self.policy([], responsible=[self.accounts, other, noaccess])
         self.run_on(20)
-        self.assertEqual(self.who(), self.admins() | {"director", "accounts", "other"})
+        self.assertEqual(self.who(), self.admins() | {"director", "accounts", "other", "imran", "kavitha"})  # all-centre policy
 
     def premium_policy(self, due, **kw):
         p = self.policy([self.kkp], **kw)
@@ -2432,11 +2445,13 @@ class InsuranceReminderTests(Base):
         self.run_on(20)
         self.assertEqual(self.who(), self.admins() | {"imran", "kavitha", "director", "sec_cm"})
 
-    def test_a_policy_for_all_centres_goes_to_admins_and_those_who_view_all(self):
+    def test_a_policy_for_all_centres_goes_to_everyone_with_access(self):
         User.objects.filter(pk=self.accounts.pk).update(insurance_access="manage")
         self.policy([], responsible=self.accounts)
         self.run_on(20)
-        self.assertEqual(self.who(), self.admins() | {"director", "accounts"})  # view-own people cannot see it
+        # view-own people (Imran, Kavitha) see policies that cover every centre, so they are told too
+        self.assertEqual(self.who(), self.admins() | {"director", "accounts", "imran", "kavitha"})
+        self.assertNotIn("sec_cm", self.who())  # no Insurance access
 
     def test_the_policys_own_first_reminder_replaces_the_settings_number(self):
         self.policy([self.kkp], remind_days=14)
@@ -2568,15 +2583,15 @@ class InsuranceGridTests(Base):
         page = self.client.get(reverse("insurance_list"))
         self.assertEqual(page.context["gap_total"], n_centres * n_types - 1)  # kkp fire covered; sec fire expired still a gap
 
-    def test_managers_see_only_their_centres_and_no_links_to_policies_they_cannot_open(self):
+    def test_managers_see_only_their_centres_and_no_links_to_policies_of_other_centres(self):
         self.policy("Fire", [self.kkp], 200)
-        self.policy("Building", [], 200)  # all centres: counts as cover, but a manager may not open it
+        self.policy("Building", [], 200)  # all centres: counts as cover, and a manager may open it
         page = self.grid(self.cm)  # Imran: Kukatpally only
         self.assertEqual([r["centre"] for r in page.context["gap_rows"]], [self.kkp])
         self.assertTrue(self.cell(page, self.kkp, "Fire")["link"])
         building = self.cell(page, self.kkp, "Building")
         self.assertEqual(building["state"], "active")
-        self.assertFalse(building["link"])
+        self.assertTrue(building["link"])
         self.assertNotContains(page, "Secunderabad")
 
     def test_requesters_cannot_open_the_grid(self):
