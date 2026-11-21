@@ -3581,6 +3581,38 @@ class UninsuredMachineTests(Base):
         self.cheap.refresh_from_db()
         self.assertEqual(self.cheap.value, 150000)
 
+    def test_a_blanket_policy_covers_every_machine_at_its_centres(self):
+        from .views_insurance import machine_policies
+        self.assertEqual(self.names(), ["MRI 1.5T"])
+        p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="NI", policy_number="B-1", covers_all_machines=True,
+                                           start_date=self.today - timedelta(days=100),
+                                           expiry_date=self.today + timedelta(days=100))
+        p.centres.set([self.sec])
+        self.assertEqual(self.names(), ["MRI 1.5T"], "a blanket policy for another centre does not help")
+        p.centres.set([self.kkp])
+        self.assertEqual(self.names(), [])
+        self.assertEqual([x.pk for x in machine_policies(self.admin, self.mri)], [p.pk])
+        p.centres.set([])  # no centres: every centre
+        self.assertEqual(self.names(), [])
+        InsurancePolicy.objects.filter(pk=p.pk).update(covers_all_machines=False)
+        self.assertEqual(self.names(), ["MRI 1.5T"])
+
+    def test_the_policy_form_saves_the_blanket_tick_and_logs_it(self):
+        self.client.force_login(self.admin)
+        p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="NI", policy_number="B-2",
+                                           start_date=self.today - timedelta(days=100),
+                                           expiry_date=self.today + timedelta(days=100))
+        p.centres.set([self.kkp])
+        r = self.client.post(reverse("insurance_edit", args=[p.pk]), {
+            "cover_type": self.fire.pk, "centres": [self.kkp.pk], "insurer": "NI", "policy_number": "B-2",
+            "start_date": str(p.start_date), "expiry_date": str(p.expiry_date), "covers_all_machines": "on"})
+        self.assertEqual(r.status_code, 302, getattr(r, "context", None) and r.context["form"].errors)
+        p.refresh_from_db()
+        self.assertTrue(p.covers_all_machines)
+        self.assertTrue(any("Covers every machine: No → Yes" in e.text for e in p.log.all()))
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "Every machine at")
+
+
 
 class ImportLicencesClaimsTests(Base):
     """Phase 16: Licences and Claims sheets, and the machine value column."""

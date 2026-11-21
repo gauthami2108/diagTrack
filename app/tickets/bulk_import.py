@@ -116,6 +116,7 @@ SHEETS = {
         ("Premium", "premium", False, "Rupees"),
         ("Responsible (user names)", "responsible", False, "One or more user names separated by commas. They also receive the expiry reminders"),
         ("First reminder (days)", "remind_days", False, "Days before expiry. Empty uses the Settings number"),
+        ("Covers all machines", "covers_all_machines", False, "Yes for a blanket policy that covers every machine at its centres without listing them"),
         ("Renewed", "renewed", False, "Yes when a later policy has replaced this one: it then sends no reminders"),
         ("Cancelled", "cancelled", False, "Yes if the policy was cancelled before it ended"),
     ],
@@ -522,7 +523,7 @@ def _check(plan):
         elif not existing:
             r.values["_centres"] = []  # a new policy with no centres named covers all centres
         r.values["_cover"] = v.get("cover_type", "").lower()
-        _compare(r, existing, fields, v, ("renewed", "cancelled"))
+        _compare(r, existing, fields, v, ("renewed", "cancelled", "covers_all_machines"))
         if existing and not r.errors:
             if cover and existing.cover_type_id != cover.pk:
                 r.changes.append("cover type")
@@ -907,7 +908,7 @@ def workbook():
         for j, (_, key, _, _) in enumerate(cols, start=1):
             letter = ws.cell(row=1, column=j).column_letter
             choices = None
-            if key in ("active", "is_active", "handles_equipment", "renewed", "cancelled", "closed"):
+            if key in ("active", "is_active", "handles_equipment", "renewed", "cancelled", "closed", "covers_all_machines"):
                 choices = '"Yes,No"'
             elif key == "role":
                 choices = '"' + ",".join(ROLE_LABEL.values()) + '"'
@@ -964,7 +965,8 @@ def _current_rows():
                        "sum_insured": float(p.sum_insured) if p.sum_insured is not None else None,
                        "premium": float(p.premium) if p.premium is not None else None,
                        "responsible": ", ".join(u.username for u in p.responsible.all()), "remind_days": p.remind_days,
-                       "renewed": _yn(p.renewed), "cancelled": _yn(p.cancelled)}
+                       "covers_all_machines": _yn(p.covers_all_machines), "renewed": _yn(p.renewed),
+                       "cancelled": _yn(p.cancelled)}
                       for p in InsurancePolicy.objects.select_related("cover_type")
                       .prefetch_related("centres", "responsible").order_by("cover_type__name", "expiry_date")],
         "Licences": [{"name": x.name, "centres": ", ".join(c.code for c in x.centres.all()) or "All", "issuer": x.issuer,

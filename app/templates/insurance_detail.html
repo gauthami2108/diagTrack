@@ -71,7 +71,8 @@
       {% else %}<p class="empty">No claims on this policy.</p>{% endif %}
     </section>
 
-    {% if machines %}<section class="panel"><header><h2>Machines covered</h2></header>
+    {% if machines or p.covers_all_machines %}<section class="panel"><header><h2>Machines covered</h2></header>
+      {% if p.covers_all_machines %}<p class="panel-note">Every machine at {% if p.centres.all %}{{ p.location }}{% else %}every centre{% endif %}, without listing them.</p>{% endif %}
       <ul class="plain">{% for e in machines %}<li><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a> <small class="muted">{{ e.centre.name }}</small></li>{% endfor %}</ul>
     </section>{% endif %}
   </div>

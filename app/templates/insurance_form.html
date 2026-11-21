@@ -18,6 +18,7 @@
   {% if money %}<div class="field-row">{% include "_field.html" with f=form.sum_insured %}{% include "_field.html" with f=form.premium %}</div>{% endif %}
   {% include "_field.html" with f=form.remind_days %}
   {% include "_checklist.html" with title="Responsible" name="responsible" uid="ins-people" items=form.responsible_items errors=form.responsible.errors hint=form.responsible.help_text %}
+  <label class="check"><input type="checkbox" name="covers_all_machines" {% if form.covers_all_machines.value %}checked{% endif %}><span><b>{{ form.covers_all_machines.label|capfirst }}</b><small>{{ form.covers_all_machines.help_text }}</small></span></label>
   {% include "_checklist.html" with title="Machines covered (optional)" name="equipment" uid="ins-machines" items=form.equipment_items errors=form.equipment.errors hint="Tick the machines this policy covers. When centres are ticked above, only their machines are listed." %}
   {% include "_field.html" with f=form.notes %}
   {% if not new %}<label class="check"><input type="checkbox" name="cancelled" {% if form.cancelled.value %}checked{% endif %}><span><b>{{ form.cancelled.label|capfirst }}</b><small>{{ form.cancelled.help_text }}</small></span></label>{% endif %}
