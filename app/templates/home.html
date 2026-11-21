@@ -68,6 +68,21 @@
   </div>
 
   <div class="stack">
+    {% if insurance %}<section class="panel">
+      <header><h2>Insurance</h2><a href="{% url 'insurance_list' %}">Open register</a></header>
+      <div class="ins-home">
+        <a href="{% url 'insurance_list' %}?status=expired" class="{% if insurance.expired %}is-bad{% endif %}"><b>{{ insurance.expired }}</b><span>Expired, not renewed</span></a>
+        <a href="{% url 'insurance_list' %}?status=expiring" class="{% if insurance.expiring %}is-warn{% endif %}"><b>{{ insurance.expiring }}</b><span>Ending within {{ insurance.soon_days }} days</span></a>
+        <a href="{% url 'insurance_list' %}" class="{% if insurance.premiums %}is-warn{% endif %}"><b>{{ insurance.premiums }}</b><span>Premiums due soon or overdue</span></a>
+        <a href="{% url 'insurance_list' %}?tab=gaps" class="{% if insurance.gaps %}is-bad{% endif %}"><b>{{ insurance.gaps }}</b><span>Missing cover at a centre</span></a>
+      </div>
+      {% if insurance.no_document %}<p class="sub">{{ insurance.no_document }} polic{{ insurance.no_document|pluralize:"y,ies" }} without a document.</p>{% endif %}
+      {% if insurance.items %}<ul class="plain log-list">{% for i in insurance.items %}
+        <li><a href="{% url 'insurance_detail' i.p.pk %}">{{ i.p.cover_type.name }}, {{ i.p.location }}</a>
+          <small class="{% if i.kind == 'expiring' %}warn-text{% else %}bad-text{% endif %}">{% if i.kind == 'premium' %}Premium {% if i.days < 0 %}overdue by {{ i.days|abs }} day{{ i.days|abs|pluralize }}{% elif i.days == 0 %}due today{% else %}due in {{ i.days }} day{{ i.days|pluralize }}{% endif %}{% elif i.kind == 'expired' %}Expired {{ i.days|abs }} day{{ i.days|abs|pluralize }} ago{% else %}Ends in {{ i.days }} day{{ i.days|pluralize }}{% endif %}</small></li>{% endfor %}</ul>
+        {% if insurance.more %}<p class="sub">and {{ insurance.more }} more in the register.</p>{% endif %}
+      {% elif not insurance.gaps %}<p class="empty">Nothing needs attention.</p>{% endif %}
+    </section>{% endif %}
     {% if not is_mgmt %}
     {% if at_risk %}
     <section class="panel">

@@ -274,6 +274,11 @@ Documents may be PDF, JPG, PNG or WebP, up to 20 MB each; add more later for end
 the day, to the same people as the expiry reminders (the amount is never in the message). After paying, change the date to the next
 instalment and the reminders start again. If the date has passed and nobody has moved it, one more alert goes out the day after, marked overdue, and then no more; a date that was already more than 30 days old when first recorded is not announced. Leave it empty for a policy paid once a year.
 
+**Insurance on the Home page.** People with Insurance access see an Insurance card on Home: how many policies have expired
+without being renewed, how many end within the reminder period, premiums due within 14 days or overdue, centres missing an
+expected cover, and policies without a document, followed by the six that need attention first (premiums, then expired, then
+those ending soonest). It shows only the policies that person may open, and never the money figures.
+
 **Change history.** The policy page lists what changed, who did it and when: policy added, dates, insurer, centres, people
 or machines changed, documents added or removed, renewed, cancelled, and changes made by the Excel import. Sum insured, premium
 and notes are recorded as "changed" only, never with their values, so everyone who can open the policy may read the history.

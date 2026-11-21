@@ -68,6 +68,8 @@ def home(request):
                     "Good afternoon" if timezone.localtime().hour < 17 else "Good evening",
         "mine_open_count": mine_open.count(),
     }
+    from .views_insurance import home_card
+    ctx["insurance"] = home_card(user)
     return render(request, "home.html", ctx)
 
 

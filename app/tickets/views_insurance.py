@@ -448,6 +448,36 @@ def insurance_doc(request, pk):
     return resp
 
 
+def home_card(user):
+    """What the Home page shows to people with Insurance access: counts and the policies needing attention. None without access."""
+    if not user.can_view_insurance:
+        return None
+    cfg = SiteSettings.load()
+    today = timezone.localdate()
+    rows = list(_scoped(user).filter(cancelled=False, renewed=False).annotate(doc_count=Count("documents", distinct=True)))
+    expired, expiring, premiums = [], [], []
+    for p in rows:
+        p.days_left = (p.expiry_date - today).days
+        p.status = p.status_on(today, _soon(p, cfg))
+        if p.status == InsurancePolicy.EXPIRED:
+            expired.append(p)
+        elif p.status == InsurancePolicy.EXPIRING:
+            expiring.append(p)
+        if p.premium_due and (p.premium_due - today).days <= 14 and p.expiry_date >= today - timedelta(days=30):
+            p.premium_days = (p.premium_due - today).days
+            premiums.append(p)
+    centres = Centre.objects.filter(active=True)
+    if not user.insurance_sees_all:
+        centres = centres.filter(pk__in=user.centres.all())
+    # Most urgent first: premiums overdue or due, then expired, then those ending soonest
+    items = ([{"p": p, "kind": "premium", "days": p.premium_days} for p in sorted(premiums, key=lambda x: x.premium_days)]
+             + [{"p": p, "kind": "expired", "days": p.days_left} for p in sorted(expired, key=lambda x: -x.days_left)]
+             + [{"p": p, "kind": "expiring", "days": p.days_left} for p in sorted(expiring, key=lambda x: x.days_left)])
+    return {"expired": len(expired), "expiring": len(expiring), "premiums": len(premiums),
+            "no_document": sum(1 for p in rows if not p.doc_count), "gaps": _gap_count(user, centres, cfg),
+            "items": items[:6], "more": max(0, len(items) - 6), "soon_days": cfg.insurance_alert_days or 60}
+
+
 def machine_policies(user, equipment):
     """The current policies that list this machine, for its page. None when the person may not see insurance."""
     if not user.can_view_insurance:
