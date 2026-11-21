@@ -2197,6 +2197,41 @@ class InsuranceTests(Base):
         self.assertContains(tab, "Compressor failure in the MRI")
         self.assertEqual(tab.context["open_claims"], 1)
 
+    def test_claim_documents_can_be_added_viewed_and_removed(self):
+        from .models import ClaimDocument
+        p = self.policy([self.kkp])
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse("claim_new", args=[p.pk]), {**self.claim_data(), "files": [_pdf("form.pdf"), _pdf("photo.pdf")]})
+        self.assertEqual(r.status_code, 302)
+        c = p.claims.get()
+        self.assertEqual(c.documents.count(), 2)
+        d = c.documents.first()
+        page = self.client.get(reverse("claim_doc", args=[d.pk]))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "form.pdf")
+        self.assertTrue(any("Added 2 documents to claim" in e.text for e in p.log.all()))
+        # a bad file is refused and nothing is saved
+        bad = _InsFile("x.pdf", b"not a pdf", content_type="application/pdf")
+        r = self.client.post(reverse("claim_edit", args=[c.pk]), {**self.claim_data(), "files": [bad]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(c.documents.count(), 2)
+        r = self.client.post(reverse("claim_doc_delete", args=[d.pk]))
+        self.assertRedirects(r, reverse("claim_edit", args=[c.pk]))
+        self.assertEqual(c.documents.count(), 1)
+
+    def test_claim_documents_follow_the_policy_scope(self):
+        from .models import ClaimDocument
+        p = self.policy([self.sec])
+        c = InsuranceClaim.objects.create(policy=p, incident_date=self.today, description="x")
+        d = ClaimDocument.objects.create(claim=c, file=_pdf("a.pdf"), name="a.pdf", size=5)
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="own")
+        self.cm.centres.set([self.kkp])
+        self.client.force_login(self.cm)
+        self.assertEqual(self.client.get(reverse("claim_doc", args=[d.pk])).status_code, 404)
+        self.assertEqual(self.client.post(reverse("claim_doc_delete", args=[d.pk])).status_code, 403)
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("claim_doc", args=[d.pk])).status_code, 200)
+
     def test_updating_a_claim_logs_the_status_and_filters_work(self):
         p = self.policy([self.kkp])
         self.client.force_login(self.admin)

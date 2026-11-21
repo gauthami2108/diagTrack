@@ -92,7 +92,7 @@
   <thead><tr><th>Incident</th><th>What happened</th><th>Policy</th><th>Machine</th><th>Status</th>{% if money %}<th class="num-col">Claimed</th><th class="num-col">Settled</th>{% endif %}</tr></thead>
   <tbody>{% for c in claims %}<tr>
     <td>{{ c.incident_date|date:"d M Y" }}</td>
-    <td><a href="{% url 'insurance_detail' c.policy.pk %}">{{ c.description }}</a>{% if c.claim_number %}<br><small class="muted">{{ c.claim_number }}</small>{% endif %}</td>
+    <td><a href="{% url 'insurance_detail' c.policy.pk %}">{{ c.description }}</a>{% if c.claim_number %}<br><small class="muted">{{ c.claim_number }}</small>{% endif %}{% with n=c.documents.all|length %}{% if n %}<br><small class="muted">{% icon 'paperclip' %}{{ n }} document{{ n|pluralize }}</small>{% endif %}{% endwith %}</td>
     <td>{{ c.policy.cover_type.name }}, {{ c.policy.location }}<br><small class="muted">{{ c.policy.insurer }} {{ c.policy.policy_number }}</small></td>
     <td>{% if c.equipment %}{{ c.equipment.name }}{% else %}<span class="muted">none</span>{% endif %}</td>
     <td><span class="claim-chip claim-{{ c.status }}">{{ c.get_status_display }}</span></td>

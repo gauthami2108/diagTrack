@@ -1,9 +1,10 @@
 {% extends "base.html" %}{% load dt %}
-{% block title %}{% if claim %}Edit claim{% else %}Add a claim{% endif %}{% endblock %}
+{% block title %}{% if claim %}Edit claim{% else %}Add a claim{% endif %}{% include "_doc_viewer.html" %}
+{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>{% if claim %}Edit claim{% else %}Add a claim{% endif %}</h1>
   <p class="sub">On {{ p.cover_type.name }}, {{ p.location }}: {{ p.insurer }} policy {{ p.policy_number }}, {{ p.start_date|date:"d M Y" }} to {{ p.expiry_date|date:"d M Y" }}.</p></div></div>
-<form class="form-card" method="post" novalidate>
+<form class="form-card" method="post" enctype="multipart/form-data" novalidate>
   {% csrf_token %}
   {% if form.errors %}<div class="callout callout-bad" role="alert">{% icon 'circle-alert' %}<div><strong>The claim was not saved.</strong><p class="sub">Check the marked fields below.</p></div></div>{% endif %}
   <div class="field-row">{% include "_field.html" with f=form.incident_date %}{% include "_field.html" with f=form.status %}</div>
@@ -12,6 +13,15 @@
   <div class="field-row">{% include "_field.html" with f=form.claim_number %}{% include "_field.html" with f=form.claimed_on %}</div>
   {% if money %}<div class="field-row">{% include "_field.html" with f=form.amount_claimed %}{% include "_field.html" with f=form.amount_settled %}</div>{% endif %}
   {% include "_field.html" with f=form.notes %}
+  <div class="field"><span>Documents <small class="muted">(optional)</small></span>
+    {% if docs %}<ul class="plain">{% for d in docs %}
+      <li><a href="{% url 'claim_doc' d.pk %}" data-doc-view data-name="{{ d.name }}" data-kind="{% if d.is_image %}image{% else %}pdf{% endif %}">{% icon 'paperclip' %}{{ d.name }}</a> <small class="muted">{{ d.size|filesizeformat }}</small>
+        <button class="btn btn-ghost btn-quiet-bad btn-s" type="submit" formaction="{% url 'claim_doc_delete' d.pk %}" formnovalidate data-confirm="Remove {{ d.name }}?">Remove</button></li>{% endfor %}</ul>{% endif %}
+    <input type="file" name="files" multiple accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp">
+    <small class="muted">The claim form, photos, estimates or the insurer's letter. PDF, JPG, PNG or WebP, up to {{ max_mb }} MB each.</small>
+    {% for p in problems %}<small class="bad-text">{{ p }}</small>{% endfor %}
+  </div>
   <div class="form-foot"><a class="btn" href="{% url 'insurance_detail' p.pk %}">Cancel</a><button class="btn btn-primary" type="submit">Save claim</button></div>
 </form>
+{% include "_doc_viewer.html" %}
 {% endblock %}
