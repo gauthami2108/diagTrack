@@ -2053,6 +2053,17 @@ class InsuranceTests(Base):
         self.assertContains(self.client.get(reverse("home")), reverse("insurance_list"))
         self.assertEqual(self.client.get(reverse("insurance_detail", args=[p.pk])).status_code, 404)  # not his centre
 
+    def test_a_requester_given_access_sees_the_menu_item_and_the_page(self):
+        p = self.policy([self.kkp])
+        self.req.centres.add(self.kkp)
+        User.objects.filter(pk=self.req.pk).update(insurance_access="manage")
+        self.client.force_login(self.req)
+        self.assertContains(self.client.get(reverse("home")), 'data-tooltip="Insurance"')
+        self.assertEqual(self.client.get(reverse("insurance_list")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[p.pk])).status_code, 200)
+        User.objects.filter(pk=self.req.pk).update(insurance_access="")
+        self.assertNotContains(self.client.get(reverse("home")), 'data-tooltip="Insurance"')
+
     def test_view_all_sees_every_policy_but_cannot_change(self):
         p = self.policy([self.sec], number="SEC")
         self.client.force_login(self.director)  # view all

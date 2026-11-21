@@ -47,7 +47,10 @@ d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini
       <a href="{% url 'centres' %}" data-tooltip="Centres" {% if p == 'centres' %}aria-current="page"{% endif %}>{% icon 'building-2' %}<span>Centres</span></a>
       <a href="{% url 'reports' %}" data-tooltip="Reports" {% if p == 'reports' %}aria-current="page"{% endif %}>{% icon 'file-text' %}<span>Reports</span></a>
       <a href="{% url 'equipment_list' %}" data-tooltip="Equipment" {% if p == 'equipment_list' or p == 'equipment_detail' %}aria-current="page"{% endif %}>{% icon 'scan-line' %}<span>Equipment</span></a>
-      {% if request.user.can_view_insurance %}<a href="{% url 'insurance_list' %}" data-tooltip="Insurance" {% if p|slice:":9" == 'insurance' %}aria-current="page"{% endif %}>{% icon 'shield-check' %}<span>Insurance</span></a>{% endif %}
+      {% endif %}
+      {% if request.user.can_view_insurance %}
+      {% if r == 'requester' and not request.user.is_superuser %}<p class="nav-group">Oversee</p>{% endif %}
+      <a href="{% url 'insurance_list' %}" data-tooltip="Insurance" {% if p|slice:":9" == 'insurance' %}aria-current="page"{% endif %}>{% icon 'shield-check' %}<span>Insurance</span></a>
       {% endif %}
       {% if request.user.is_admin %}
       <p class="nav-group">Administer</p>
