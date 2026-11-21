@@ -2470,6 +2470,31 @@ class InsuranceTests(Base):
         self.assertEqual(old.status_on(self.today, 60), "renewed")
         self.assertFalse(old.current)
 
+    def test_renewal_form_carries_more_over_and_warns_about_the_same_number(self):
+        old = self.policy([self.kkp], days=10, covers="MRI room", premium_due=self.today + timedelta(days=30),
+                          contact="Ravi 98765")
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("insurance_new"), {"renew": old.pk})
+        ini = page.context["form"].initial
+        self.assertEqual(ini["covers"], "MRI room")
+        self.assertEqual(ini["premium_due"].year, old.premium_due.year + 1)
+        self.assertContains(page, "The policy being renewed")
+        self.assertContains(page, "premium ₹42000")
+        r = self.client.post(reverse("insurance_new"), {
+            "renew": old.pk, "cover_type": self.fire.pk, "centres": [self.kkp.pk], "insurer": "New India",
+            "policy_number": old.policy_number, "start_date": str(old.expiry_date + timedelta(days=1)),
+            "expiry_date": str(old.expiry_date + timedelta(days=365)), "premium": "46200", "files": _pdf()}, follow=True)
+        text = " ".join(str(m) for m in r.context["messages"])
+        self.assertIn("same as the old policy's", text)
+        self.assertIn("10% higher", text)
+
+    def test_a_policy_already_renewed_cannot_be_renewed_again(self):
+        old = self.policy([self.kkp], days=10)
+        InsurancePolicy.objects.filter(pk=old.pk).update(renewed=True)
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("insurance_new"), {"renew": old.pk})
+        self.assertRedirects(r, reverse("insurance_detail", args=[old.pk]))
+
     def test_renewing_does_not_mark_the_old_one_when_the_new_one_is_invalid(self):
         old = self.policy([self.kkp])
         self.client.force_login(self.admin)
