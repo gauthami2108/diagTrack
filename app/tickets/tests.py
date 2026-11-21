@@ -2477,8 +2477,12 @@ class InsuranceReminderTests(Base):
         services.insurance_checks(due)
         self.assertEqual(len(self.premium_notes()), first * 2)
         self.assertTrue(any("due today" in n.title for n in self.premium_notes()))
-        services.insurance_checks(due + timedelta(days=1))  # past due: the reminder stays quiet
-        self.assertEqual(len(self.premium_notes()), first * 2)
+        services.insurance_checks(due + timedelta(days=1))  # the date was not moved: one overdue alert
+        self.assertEqual(len(self.premium_notes()), first * 3)
+        self.assertTrue(any("overdue" in n.title for n in self.premium_notes()))
+        services.insurance_checks(due + timedelta(days=2))  # and then no more
+        services.insurance_checks(due + timedelta(days=20))
+        self.assertEqual(len(self.premium_notes()), first * 3)
 
     def test_the_premium_alert_goes_to_the_same_people_and_never_shows_the_amount(self):
         User.objects.filter(pk=self.accounts.pk).update(insurance_access="own")
@@ -2488,6 +2492,26 @@ class InsuranceReminderTests(Base):
         self.assertEqual({n.user.username for n in self.premium_notes()}, self.admins() | {"imran", "kavitha", "director", "accounts"})
         for n in self.premium_notes():
             self.assertNotIn("₹", n.title + n.body)
+
+    def test_an_overdue_alert_is_sent_even_if_the_earlier_ones_were_missed_but_not_for_old_dates(self):
+        due = _ins_date(2027, 1, 15)
+        self.premium_policy(due)
+        services.insurance_checks(due + timedelta(days=3))  # first look is 3 days late: tell them
+        self.assertTrue(any("overdue" in n.title for n in self.premium_notes()))
+        Notification.objects.all().delete()
+        InsurancePolicy.objects.update(premium_alert_for=None, premium_alert_stage=0)
+        services.insurance_checks(due + timedelta(days=60))  # recorded long after: not announced
+        self.assertEqual(self.premium_notes(), [])
+
+    def test_paying_and_moving_the_date_stops_the_overdue_alert(self):
+        due = _ins_date(2027, 1, 15)
+        p = self.premium_policy(due)
+        services.insurance_checks(due)
+        p.refresh_from_db()
+        p.premium_due = _ins_date(2027, 4, 15)
+        p.save()
+        services.insurance_checks(due + timedelta(days=1))
+        self.assertFalse(any("overdue" in n.title for n in self.premium_notes()))
 
     def test_changing_the_due_date_after_paying_starts_the_reminders_again(self):
         due = _ins_date(2027, 1, 15)
