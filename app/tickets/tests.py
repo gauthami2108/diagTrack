@@ -1862,8 +1862,10 @@ class InsuranceTests(Base):
         p = InsurancePolicy.objects.create(
             cover_type=cover or self.fire, insurer="New India", policy_number=kw.pop("number", "P-1"),
             start_date=self.today - timedelta(days=365 - days), expiry_date=self.today + timedelta(days=days),
-            sum_insured=5000000, premium=42000, **kw)
+            sum_insured=5000000, premium=42000, **{k: v for k, v in kw.items() if k != "responsible"})
         p.centres.set(centres)
+        if kw.get("responsible"):
+            p.responsible.set(kw["responsible"])
         return p
 
     def post_new(self, **over):
@@ -1920,6 +1922,25 @@ class InsuranceTests(Base):
             self.assertEqual(self.client.get(reverse("insurance_new")).status_code, 403)
             self.assertEqual(self.client.get(reverse("insurance_edit", args=[p.pk])).status_code, 403)
             self.assertEqual(self.client.post(reverse("insurance_delete", args=[p.pk])).status_code, 403)
+
+    def test_a_policy_can_have_several_responsible_people(self):
+        a = User.objects.create_user("anil", password="Demo@12345", role=User.AGENT)
+        b = User.objects.create_user("bina", password="Demo@12345", role=User.AGENT)
+        self.client.force_login(self.admin)
+        self.assertEqual(self.post_new(responsible=[a.pk, b.pk]).status_code, 302)
+        p = InsurancePolicy.objects.get()
+        self.assertEqual({u.pk for u in p.responsible.all()}, {a.pk, b.pk})
+        page = self.client.get(reverse("insurance_detail", args=[p.pk]))
+        self.assertContains(page, "anil")
+        self.assertContains(page, "bina")
+        # renewing starts from the same people
+        form = self.client.get(reverse("insurance_new"), {"renew": p.pk}).context["form"]
+        self.assertEqual({u.pk for u in form.initial["responsible"]}, {a.pk, b.pk})
+
+    def test_responsible_is_optional(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.post_new().status_code, 302)
+        self.assertEqual(InsurancePolicy.objects.get().responsible.count(), 0)
 
     # --- who has access -------------------------------------------------
     def test_no_access_means_no_page_menu_or_files_even_for_managers_and_management(self):
@@ -2187,10 +2208,13 @@ class InsuranceReminderTests(Base):
         self.expiry = _ins_date(2027, 3, 31)
 
     def policy(self, centres=(), **kw):
+        who = kw.pop("responsible", None)
         p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="New India", policy_number="F-1",
                                            start_date=_ins_date(2026, 4, 1), expiry_date=kw.pop("expiry", self.expiry),
                                            **kw)
         p.centres.set(centres)
+        if who:
+            p.responsible.set(who if isinstance(who, (list, tuple)) else [who])
         return p
 
     def run_on(self, days_left):
@@ -2234,6 +2258,14 @@ class InsuranceReminderTests(Base):
         self.policy([self.kkp], responsible=self.accounts)
         self.run_on(20)
         self.assertIn("accounts", self.who())
+
+    def test_every_responsible_person_with_access_is_told(self):
+        other = User.objects.create_user("other", password="Demo@12345", role=User.AGENT)
+        User.objects.filter(pk__in=[self.accounts.pk, other.pk]).update(insurance_access="own")
+        noaccess = User.objects.create_user("noaccess", password="Demo@12345", role=User.AGENT)
+        self.policy([], responsible=[self.accounts, other, noaccess])
+        self.run_on(20)
+        self.assertEqual(self.who(), self.admins() | {"director", "accounts", "other"})
 
     def test_view_own_only_for_centres_the_policy_covers(self):
         User.objects.filter(pk=self.sec_cm.pk).update(insurance_access="own")
@@ -2523,9 +2555,10 @@ class InsuranceImportTests(Base):
         boss = User.objects.create_user("accts", password="Demo@12345", role=User.AGENT)
         a = InsurancePolicy.objects.create(cover_type=self.fire, insurer="New India", policy_number="0012/34",
                                            start_date=_ins_date(2026, 4, 1), expiry_date=_ins_date(2027, 3, 31),
-                                           sum_insured=5000000, premium=42500.5, responsible=boss, remind_days=45,
+                                           sum_insured=5000000, premium=42500.5, remind_days=45,
                                            contact="Ravi 9876543210")
         a.centres.set([self.kkp, self.sec])
+        a.responsible.set([boss])
         b = InsurancePolicy.objects.create(cover_type=self.building, insurer="Oriental", policy_number="B-9",
                                            start_date=_ins_date(2026, 1, 1), expiry_date=_ins_date(2026, 12, 31),
                                            renewed=True)
@@ -2558,12 +2591,40 @@ class InsuranceImportTests(Base):
         self.add(bad, {"User name": "zed", "Role": "Agent", "Insurance access": "Everything"}, "People")
         self.assertIn("Insurance access", " ".join(self.errors(self.read(bad))))
 
+    def test_several_responsible_people_are_read_changed_and_exported(self):
+        from . import bulk_import
+        for n in ("anil", "bina"):
+            User.objects.create_user(n, password="Demo@12345", role=User.AGENT)
+        wb = self.book()
+        self.add(wb, self.row(**{"Responsible (user names)": "anil, bina"}))
+        plan = self.read(wb)
+        self.assertEqual(self.errors(plan), [])
+        bulk_import.apply(plan)
+        p = InsurancePolicy.objects.get()
+        self.assertEqual({u.username for u in p.responsible.all()}, {"anil", "bina"})
+        rows = bulk_import._current_rows()["Insurance"]
+        self.assertEqual(sorted(x.strip() for x in rows[0]["responsible"].split(",")), ["anil", "bina"])
+        wb = self.book()  # round trip: nothing to change
+        plan = self.read(wb)
+        self.assertEqual([r.action for r in plan.rows["Insurance"]], ["same"])
+        wb = self.book()
+        ws = wb["Insurance"]
+        heads = [c.value.rstrip(" *") for c in ws[1]]
+        ws.cell(2, heads.index("Responsible (user names)") + 1).value = "anil"
+        plan = self.read(wb)
+        self.assertIn("responsible", plan.rows["Insurance"][0].changes)
+        bulk_import.apply(plan)
+        self.assertEqual([u.username for u in p.responsible.all()], ["anil"])
+        bad = self.book()
+        self.add(bad, self.row(**{"Policy number": "X", "Responsible (user names)": "anil, ghost"}))
+        self.assertIn("ghost", " ".join(self.errors(self.read(bad))))
+
     def test_new_policies_are_added_with_their_centres_and_responsible_person(self):
         from . import bulk_import
         User.objects.create_user("accts", password="Demo@12345", role=User.AGENT)
         wb = self.book()
         self.add(wb, self.row(**{"Centres": "KKP, SEC", "Sum insured": "₹50,00,000", "Premium": 42000.0,
-                                 "Responsible (user name)": "accts", "First reminder (days)": 45.0,
+                                 "Responsible (user names)": "accts", "First reminder (days)": 45.0,
                                  "Broker or agent": "Ravi 9876543210"}))
         self.add(wb, self.row(**{"Cover type": "building", "Centres": "All", "Policy number": "B-1"}))
         self.add(wb, self.row(**{"Cover type": "Building", "Centres": "", "Policy number": "B-2"}))
@@ -2575,7 +2636,7 @@ class InsuranceImportTests(Base):
         self.assertEqual({c.code for c in f.centres.all()}, {"KKP", "SEC"})
         self.assertEqual((f.cover_type, f.insurer, f.start_date, f.expiry_date), (self.fire, "New India",
                                                                                     _ins_date(2026, 4, 1), _ins_date(2027, 3, 31)))
-        self.assertEqual((int(f.sum_insured), int(f.premium), f.remind_days, f.responsible.username, f.contact),
+        self.assertEqual((int(f.sum_insured), int(f.premium), f.remind_days, ", ".join(u.username for u in f.responsible.all()), f.contact),
                          (5000000, 42000, 45, "accts", "Ravi 9876543210"))
         self.assertEqual(f.documents.count(), 0)  # documents are added on the policy's page
         for n in ("B-1", "B-2"):
@@ -2630,13 +2691,13 @@ class InsuranceImportTests(Base):
         wb = self.book()
         self.add(wb, {"Code": "MDP", "Name": "Madhapur"}, "Centres")
         self.add(wb, {"User name": "newbie", "Role": "Agent"}, "People")
-        self.add(wb, self.row(**{"Centres": "MDP", "Responsible (user name)": "newbie"}))
+        self.add(wb, self.row(**{"Centres": "MDP", "Responsible (user names)": "newbie"}))
         plan = self.read(wb)
         self.assertEqual(self.errors(plan), [])
         bulk_import.apply(plan)
         p = InsurancePolicy.objects.get()
         self.assertEqual([c.code for c in p.centres.all()], ["MDP"])
-        self.assertEqual(p.responsible.username, "newbie")
+        self.assertEqual([u.username for u in p.responsible.all()], ["newbie"])
 
     def test_every_kind_of_mistake_is_reported_and_nothing_is_saved(self):
         from . import bulk_import
@@ -2645,7 +2706,7 @@ class InsuranceImportTests(Base):
         self.add(wb, self.row(**{"Policy number": "F-2", "Start date": "soon"}))
         self.add(wb, self.row(**{"Policy number": "F-3", "Expiry date": "01-01-2026"}))  # before the start
         self.add(wb, self.row(**{"Policy number": "F-4", "Centres": "ZZZ"}))
-        self.add(wb, self.row(**{"Policy number": "F-5", "Responsible (user name)": "nobody"}))
+        self.add(wb, self.row(**{"Policy number": "F-5", "Responsible (user names)": "nobody"}))
         self.add(wb, self.row(**{"Policy number": "F-6", "Sum insured": "lots"}))
         self.add(wb, self.row(**{"Policy number": "F-7", "First reminder (days)": 0}))
         self.add(wb, self.row(**{"Policy number": "F-8", "Expiry date": ""}))

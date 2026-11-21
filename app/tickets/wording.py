@@ -32,7 +32,7 @@ EVENTS = [
     ("mention", "Mentioned", "Conversation", "Someone is @mentioned in a comment"),
     ("escalation", "Escalation", "Deadlines and equipment", "An escalation rule fires. Goes to the people the rule names"),
     ("amc", "AMC ending", "Deadlines and equipment", "A machine's AMC is about to end. Goes to the equipment head and administrators"),
-    ("insurance", "Insurance ending", "Deadlines and equipment", "An insurance policy is about to end or has ended. Goes to administrators, the centre manager and the person responsible for the policy"),
+    ("insurance", "Insurance ending", "Deadlines and equipment", "An insurance policy is about to end or has ended. Goes to administrators, people with Insurance access who can see the policy, and the people responsible for it"),
     ("backupfail", "Backup failed", "Backups", "A backup, its weekly check or the monthly test restore failed. Goes to administrators and the people chosen on the Backups page"),
     ("backuplate", "Backup overdue", "Backups", "No good backup for longer than the destination allows. Goes to the same people"),
     ("signinlock", "Sign-in paused", "Security", "Too many wrong passwords for a user name or from one computer. Goes to administrators"),

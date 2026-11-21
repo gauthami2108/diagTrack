@@ -108,7 +108,7 @@ SHEETS = {
         ("Broker or agent", "contact", False, "Name and phone number"),
         ("Sum insured", "sum_insured", False, "Rupees, for example 5000000. Shown to administrators and management only"),
         ("Premium", "premium", False, "Rupees"),
-        ("Responsible (user name)", "responsible", False, "Also receives the expiry reminders"),
+        ("Responsible (user names)", "responsible", False, "One or more user names separated by commas. They also receive the expiry reminders"),
         ("First reminder (days)", "remind_days", False, "Days before expiry. Empty uses the Settings number"),
         ("Renewed", "renewed", False, "Yes when a later policy has replaced this one: it then sends no reminders"),
         ("Cancelled", "cancelled", False, "Yes if the policy was cancelled before it ended"),
@@ -418,7 +418,7 @@ def _check(plan):
                                        _text(r.values.get("serial_no")).lower() or _text(r.values.get("name")).lower()))
 
     covers = {t.name.lower(): t for t in InsuranceCoverType.objects.all()}
-    policies = list(InsurancePolicy.objects.select_related("cover_type", "responsible").prefetch_related("centres"))
+    policies = list(InsurancePolicy.objects.select_related("cover_type").prefetch_related("centres", "responsible"))
     for r in plan.rows["Insurance"]:
         if r.action == "error":
             continue
@@ -466,10 +466,11 @@ def _check(plan):
             else:
                 r.errors.append("First reminder: use a whole number of days between 1 and 365.")
         if v.get("responsible"):
-            who = v["responsible"].lower()
-            if who not in users and who not in new_users:
-                r.errors.append(f"Responsible: no user called '{v['responsible']}'.")
-            r.values["_responsible"] = who
+            names = [n.lower() for n in _list(v["responsible"])]
+            bad = [n for n in names if n not in users and n not in new_users]
+            if bad:
+                r.errors.append(f"Responsible: no user called {', '.join(repr(n) for n in bad)}.")
+            r.values["_responsible"] = names
         if v.get("centres"):
             codes = [c.upper() for c in _list(v["centres"])]
             if [c.lower() for c in codes] == ["all"]:
@@ -485,7 +486,7 @@ def _check(plan):
         if existing and not r.errors:
             if cover and existing.cover_type_id != cover.pk:
                 r.changes.append("cover type")
-            if v.get("responsible") and (not existing.responsible or existing.responsible.username.lower() != v["responsible"].lower()):
+            if r.values.get("_responsible") and sorted(u.username.lower() for u in existing.responsible.all()) != sorted(set(r.values["_responsible"])):
                 r.changes.append("responsible")
             if "_centres" in r.values and sorted(c.code for c in existing.centres.all()) != sorted(r.values["_centres"]):
                 r.changes.append("centres")
@@ -601,8 +602,6 @@ def apply(plan):
             continue
         f = dict(r.values["_fields"])
         f["cover_type"] = covers[r.values["_cover"]]
-        if r.values.get("_responsible"):
-            f["responsible"] = users[r.values["_responsible"]]
         if r.action == "new":
             p = InsurancePolicy.objects.create(**f)
         else:
@@ -610,6 +609,8 @@ def apply(plan):
             _update(p, f)
         if "_centres" in r.values:
             p.centres.set([centres[c] for c in r.values["_centres"]])
+        if r.values.get("_responsible"):
+            p.responsible.set([users[n] for n in r.values["_responsible"]])
     return {s: plan.counts(s) for s in ORDER}, passwords
 
 
@@ -729,8 +730,8 @@ def _current_rows():
                        "expiry_date": p.expiry_date, "contact": p.contact,
                        "sum_insured": float(p.sum_insured) if p.sum_insured is not None else None,
                        "premium": float(p.premium) if p.premium is not None else None,
-                       "responsible": p.responsible.username if p.responsible else "", "remind_days": p.remind_days,
+                       "responsible": ", ".join(u.username for u in p.responsible.all()), "remind_days": p.remind_days,
                        "renewed": _yn(p.renewed), "cancelled": _yn(p.cancelled)}
-                      for p in InsurancePolicy.objects.select_related("cover_type", "responsible")
-                      .prefetch_related("centres").order_by("cover_type__name", "expiry_date")],
+                      for p in InsurancePolicy.objects.select_related("cover_type")
+                      .prefetch_related("centres", "responsible").order_by("cover_type__name", "expiry_date")],
     }

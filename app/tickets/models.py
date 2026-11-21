@@ -620,9 +620,9 @@ class InsurancePolicy(models.Model):
     expiry_date = models.DateField()
     sum_insured = models.DecimalField("sum insured (₹)", max_digits=14, decimal_places=2, null=True, blank=True)
     premium = models.DecimalField("premium (₹)", max_digits=12, decimal_places=2, null=True, blank=True)
-    responsible = models.ForeignKey(
-        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="insurance_policies",
-        help_text="Optional. Also receives the expiry reminders.")
+    responsible = models.ManyToManyField(
+        User, blank=True, related_name="insurance_policies",
+        help_text="Optional. One or more people. They also receive the expiry reminders if they have Insurance access.")
     remind_days = models.PositiveSmallIntegerField(
         "first reminder (days before expiry)", null=True, blank=True,
         help_text="Optional. Leave empty to use the number on the Settings page. Further reminders follow 30 and 7 days before, and on the expiry date.")

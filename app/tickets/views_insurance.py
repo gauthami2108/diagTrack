@@ -40,7 +40,7 @@ def _show_money(user, cfg=None):
 
 
 def _scoped(user):
-    qs = InsurancePolicy.objects.select_related("cover_type", "responsible").prefetch_related("centres")
+    qs = InsurancePolicy.objects.select_related("cover_type").prefetch_related("centres", "responsible")
     return qs if user.insurance_sees_all else qs.filter(centres__in=user.centres.all()).distinct()
 
 
@@ -100,6 +100,7 @@ class PolicyForm(forms.ModelForm):
             "expiry_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "notes": forms.Textarea(attrs={"rows": 3}),
             "equipment": forms.SelectMultiple(attrs={"size": 6}),
+            "responsible": forms.SelectMultiple(attrs={"size": 5}),
             "centres": forms.SelectMultiple(attrs={"size": 6}),
         }
 
@@ -116,6 +117,8 @@ class PolicyForm(forms.ModelForm):
             types = InsuranceCoverType.objects.filter(Q(active=True) | Q(pk=self.instance.cover_type_id))
         self.fields["cover_type"].queryset = types
         self.fields["responsible"].queryset = User.objects.filter(is_active=True).exclude(role=User.REQUESTER)
+        self.fields["responsible"].help_text = ("Optional. Hold Ctrl (Command on a Mac) to choose several. They also "
+                                                "receive the expiry reminders if they have Insurance access.")
         self.fields["equipment"].queryset = Equipment.objects.filter(active=True).select_related("centre")
         if not show_money:
             del self.fields["sum_insured"], self.fields["premium"]
@@ -261,7 +264,7 @@ def insurance_new(request):
         initial = {"centres": list(old.centres.all()), "cover_type": old.cover_type, "insurer": old.insurer,
                    "policy_number": old.policy_number, "contact": old.contact, "start_date": start,
                    "expiry_date": _plus_year(start), "sum_insured": old.sum_insured, "premium": old.premium,
-                   "responsible": old.responsible, "remind_days": old.remind_days,
+                   "responsible": list(old.responsible.all()), "remind_days": old.remind_days,
                    "equipment": list(old.equipment.all())}
     form = PolicyForm(request.POST or None, initial=initial, show_money=money)
     files = request.FILES.getlist("files")
@@ -426,7 +429,7 @@ def insurance_export(request):
     for p in rows:
         line = [p.location, p.cover_type.name, p.insurer, p.policy_number,
                 p.contact, p.start_date, p.expiry_date, p.days_left, InsurancePolicy.STATUS_LABELS[p.status],
-                p.responsible.display_name if p.responsible else "",
+                ", ".join(u.display_name for u in p.responsible.all()),
                 ", ".join(e.name for e in p.equipment.all())]
         if money:
             line += [float(p.sum_insured) if p.sum_insured is not None else None,
