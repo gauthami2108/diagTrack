@@ -75,6 +75,7 @@
         <a href="{% url 'insurance_list' %}?status=expiring" class="{% if insurance.expiring %}is-warn{% endif %}"><b>{{ insurance.expiring }}</b><span>Ending within {{ insurance.soon_days }} days</span></a>
         <a href="{% url 'insurance_list' %}" class="{% if insurance.premiums %}is-warn{% endif %}"><b>{{ insurance.premiums }}</b><span>Premiums due soon or overdue</span></a>
         <a href="{% url 'insurance_list' %}?tab=gaps" class="{% if insurance.gaps %}is-bad{% endif %}"><b>{{ insurance.gaps }}</b><span>Missing cover at a centre</span></a>
+        {% if insurance.lic_expired or insurance.lic_expiring %}<a href="{% url 'licence_list' %}?status={% if insurance.lic_expired %}expired{% else %}expiring{% endif %}" class="{% if insurance.lic_expired %}is-bad{% else %}is-warn{% endif %}"><b>{{ insurance.lic_expired|add:insurance.lic_expiring }}</b><span>Licences expired or ending</span></a>{% endif %}
         {% if insurance.uninsured %}<a href="{% url 'insurance_list' %}?tab=gaps" class="is-warn"><b>{{ insurance.uninsured }}</b><span>Valuable machines, no policy</span></a>{% endif %}
       </div>
       {% if insurance.no_document %}<p class="sub">{{ insurance.no_document }} polic{{ insurance.no_document|pluralize:"y,ies" }} without a document.</p>{% endif %}
@@ -82,7 +83,13 @@
         <li><a href="{% url 'insurance_detail' i.p.pk %}">{{ i.p.cover_type.name }}, {{ i.p.location }}</a>
           <small class="{% if i.kind == 'expiring' %}warn-text{% else %}bad-text{% endif %}">{% if i.kind == 'premium' %}Premium {% if i.days < 0 %}overdue by {{ i.days|abs }} day{{ i.days|abs|pluralize }}{% elif i.days == 0 %}due today{% else %}due in {{ i.days }} day{{ i.days|pluralize }}{% endif %}{% elif i.kind == 'expired' %}Expired {{ i.days|abs }} day{{ i.days|abs|pluralize }} ago{% else %}Ends in {{ i.days }} day{{ i.days|pluralize }}{% endif %}</small></li>{% endfor %}</ul>
         {% if insurance.more %}<p class="sub">and {{ insurance.more }} more in the register.</p>{% endif %}
-      {% elif not insurance.gaps and not insurance.uninsured %}<p class="empty">Nothing needs attention.</p>{% endif %}
+      {% endif %}
+      {% if insurance.lic_items %}<ul class="plain log-list">{% for i in insurance.lic_items %}
+        <li><a href="{% url 'licence_detail' i.l.pk %}">{{ i.l.name }}, {{ i.l.location }}</a>
+          <small class="{% if i.kind == 'expiring' %}warn-text{% else %}bad-text{% endif %}">{% if i.kind == 'expired' %}Expired {{ i.days|abs }} day{{ i.days|abs|pluralize }} ago{% else %}Ends in {{ i.days }} day{{ i.days|pluralize }}{% endif %}</small></li>{% endfor %}</ul>
+        {% if insurance.lic_more %}<p class="sub">and {{ insurance.lic_more }} more under Licences.</p>{% endif %}
+      {% endif %}
+      {% if not insurance.items and not insurance.lic_items and not insurance.gaps and not insurance.uninsured %}<p class="empty">Nothing needs attention.</p>{% endif %}
     </section>{% endif %}
     {% if not is_mgmt %}
     {% if at_risk %}
