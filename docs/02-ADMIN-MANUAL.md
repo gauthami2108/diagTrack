@@ -514,7 +514,7 @@ Below them, **Tasks** shows what is running and the results of recent backups, c
 policies at once, for example when setting up all the centres, or when a new centre opens with its staff and equipment.
 
 1. Press **Download the workbook**. It already holds everything in DiagTrack: one sheet each for Centres, Vendors,
-   Departments, People, Equipment and Insurance, and a **Read me** sheet that explains every column.
+   Departments, People, Equipment, Insurance, Licences and Claims, and a **Read me** sheet that explains every column.
 2. In Excel, add new rows at the bottom of a sheet, or change existing rows. Columns marked * must be filled.
    Drop-down lists offer the roles, the assignment modes and Yes/No.
 3. Save the file and upload it on the same page, then press **Check the file**. DiagTrack lists, for each sheet,
@@ -533,3 +533,6 @@ policies at once, for example when setting up all the centres, or when a new cen
 | Existing people | Initial password is ignored. Set a new password under Masters and rules, Users |
 | Dates | Day-month-year, for example 31-03-2027, or an Excel date |
 | Insurance | One row per policy. **Cover type** must be a name from the Cover types tab. **Centres** are codes separated by commas, or `All` (also when left empty on a new row) for every centre or the head office. **Covers** is free text and **Next premium due** a date. Put **Yes** under **Renewed** for a policy a later one has replaced, so it sends no reminders. Policy documents cannot come from Excel: add them on each policy's page. Until then the policy shows **No document** in the list |
+| Machine value | The Equipment sheet has an optional **Value** column (rupees). It drives the uninsured machine check |
+| Licences | One row per licence or certificate. Matched by name, number and issue date. Centres, responsible people and the first reminder work as for policies. Documents are added on each licence's page |
+| Claims | One row per claim. The policy is found by insurer and policy number (add **Policy start date** if two policies share a number), and may be one added on the Insurance sheet of the same file. A claim is matched by policy, incident date and what happened. **Machine** is the machine's name, or `Name (CENTRE CODE)` |

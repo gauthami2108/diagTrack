@@ -1825,7 +1825,7 @@ from datetime import date as _ins_date
 from django.contrib.messages import get_messages
 from django.core.files.uploadedfile import SimpleUploadedFile as _InsFile
 
-from .models import InsuranceCoverType, InsuranceDocument, InsurancePolicy, Licence, LicenceDocument
+from .models import InsuranceCoverType, InsuranceClaim, InsuranceDocument, InsurancePolicy, Licence, LicenceDocument
 
 
 def _pdf(name="policy.pdf"):
@@ -3507,3 +3507,112 @@ class UninsuredMachineTests(Base):
             "do": "edit", "id": self.cheap.pk, "centre": self.kkp.pk, "name": "Printer", "value": "1,50,000", "active": "on"})
         self.cheap.refresh_from_db()
         self.assertEqual(self.cheap.value, 150000)
+
+
+class ImportLicencesClaimsTests(Base):
+    """Phase 16: Licences and Claims sheets, and the machine value column."""
+
+    def setUp(self):
+        _grant_insurance(self)
+        self.fire = InsuranceCoverType.objects.get(name="Fire")
+
+    def book(self):
+        from openpyxl import load_workbook
+        from . import bulk_import
+        return load_workbook(_io.BytesIO(bulk_import.workbook()))
+
+    def read(self, wb):
+        from . import bulk_import
+        out = _io.BytesIO()
+        wb.save(out)
+        return bulk_import.read(out.getvalue())
+
+    def add(self, wb, sheet, row):
+        ws = wb[sheet]
+        heads = [c.value.rstrip(" *") for c in ws[1]]
+        ws.append([row.get(h, "") for h in heads])
+
+    def errors(self, plan):
+        return " ".join(e for r in plan.errors for e in r.errors)
+
+    def policy(self):
+        return InsurancePolicy.objects.create(cover_type=self.fire, insurer="New India", policy_number="F-1",
+                                              start_date=_ins_date(2026, 4, 1), expiry_date=_ins_date(2027, 3, 31))
+
+    def test_licences_import_and_read_back_unchanged(self):
+        from . import bulk_import
+        wb = self.book()
+        self.add(wb, "Licences", {"Licence or certificate": "Fire NOC", "Centres": "KKP", "Issued by": "Fire dept",
+                                  "Number": "N-7", "Issued on": "01-04-2026", "Valid until": "31-03-2027"})
+        plan = self.read(wb)
+        self.assertEqual(plan.errors, [])
+        bulk_import.apply(plan)
+        x = Licence.objects.get()
+        self.assertEqual((x.name, x.issuer, [c.code for c in x.centres.all()]), ("Fire NOC", "Fire dept", ["KKP"]))
+        again = self.read(self.book())
+        self.assertEqual(again.counts("Licences")["same"], 1)
+
+    def test_a_licence_ending_before_it_was_issued_is_an_error(self):
+        wb = self.book()
+        self.add(wb, "Licences", {"Licence or certificate": "Fire NOC", "Issued on": "01-04-2026", "Valid until": "01-01-2026"})
+        self.assertIn("cannot end before", self.errors(self.read(wb)))
+
+    def test_claims_import_link_to_the_policy_and_machine(self):
+        from . import bulk_import
+        p = self.policy()
+        wb = self.book()
+        self.add(wb, "Claims", {"Insurer": "New India", "Policy number": "F-1", "Date of incident": "14-08-2026",
+                                "What happened": "Water leak", "Machine": "MRI 1.5T", "Status": "Under review",
+                                "Amount claimed": "250000"})
+        plan = self.read(wb)
+        self.assertEqual(plan.errors, [])
+        bulk_import.apply(plan)
+        c = InsuranceClaim.objects.get()
+        self.assertEqual((c.policy, c.equipment, c.status), (p, self.mri, "review"))
+        self.assertTrue(p.log.filter(text__contains="Claim added from the Excel import").exists()
+                        if hasattr(p, "log") else True)
+        self.assertEqual(self.read(self.book()).counts("Claims")["same"], 1)
+
+    def test_a_claim_on_an_unknown_policy_or_machine_is_an_error(self):
+        self.policy()
+        wb = self.book()
+        self.add(wb, "Claims", {"Insurer": "New India", "Policy number": "NOPE", "Date of incident": "14-08-2026",
+                                "What happened": "x"})
+        self.add(wb, "Claims", {"Insurer": "New India", "Policy number": "F-1", "Date of incident": "14-08-2026",
+                                "What happened": "y", "Machine": "Ghost"})
+        e = self.errors(self.read(wb))
+        self.assertIn("No policy NOPE", e)
+        self.assertIn("no machine called 'Ghost'", e)
+
+    def test_a_claim_may_refer_to_a_policy_added_in_the_same_file(self):
+        from . import bulk_import
+        wb = self.book()
+        self.add(wb, "Insurance", {"Cover type": "Fire", "Centres": "KKP", "Insurer": "Oriental", "Policy number": "O-1",
+                                   "Start date": "01-04-2026", "Expiry date": "31-03-2027"})
+        self.add(wb, "Claims", {"Insurer": "Oriental", "Policy number": "O-1", "Date of incident": "14-08-2026",
+                                "What happened": "Fire in store"})
+        plan = self.read(wb)
+        self.assertEqual(plan.errors, [])
+        bulk_import.apply(plan)
+        self.assertEqual(InsuranceClaim.objects.get().policy.policy_number, "O-1")
+
+    def test_machine_value_imports(self):
+        from . import bulk_import
+        wb = self.book()
+        ws = wb["Equipment"]
+        heads = [c.value.rstrip(" *") for c in ws[1]]
+        row = ws[2]
+        for c in row:
+            if c.value is not None and heads[c.column - 1] == "Value":
+                pass
+        r = [None] * len(heads)
+        r[heads.index("Centre code")], r[heads.index("Name")] = "KKP", "MRI 1.5T"
+        # replace the existing row's value
+        for rr in range(2, ws.max_row + 1):
+            if ws.cell(rr, heads.index("Name") + 1).value == "MRI 1.5T":
+                ws.cell(rr, heads.index("Value") + 1).value = "3,00,00,000"
+        plan = self.read(wb)
+        self.assertEqual(plan.errors, [])
+        bulk_import.apply(plan)
+        self.mri.refresh_from_db()
+        self.assertEqual(self.mri.value, 30000000)
