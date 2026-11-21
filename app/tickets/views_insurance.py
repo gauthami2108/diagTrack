@@ -241,6 +241,7 @@ def insurance_list(request):
                    total_premium=sum((p.premium or 0) for p in rows) if money else None)
     elif tab == "gaps":
         ctx.update(_gaps(user, centres, cfg))
+        ctx.update(uninsured=uninsured(user, centres, cfg), min_value=cfg.insurance_min_value)
     elif tab == "claims":
         claims, cf = _claims(request)
         ctx.update(claims=claims, cf=cf, claim_statuses=InsuranceClaim.STATUSES)
@@ -446,6 +447,20 @@ def _gaps(user, centres, cfg):
     return {"gap_types": types, "gap_rows": rows, "gap_total": gaps}
 
 
+def uninsured(user, centres, cfg):
+    """Active machines worth at least the Settings amount that no current policy lists. A blanket policy that lists no
+    machines does not count as cover here, which is why the person decides. Empty when the check is switched off."""
+    floor = cfg.insurance_min_value
+    if not floor:
+        return []
+    today = timezone.localdate()
+    linked = set(InsurancePolicy.equipment.through.objects.filter(
+        insurancepolicy__cancelled=False, insurancepolicy__renewed=False,
+        insurancepolicy__expiry_date__gte=today).values_list("equipment_id", flat=True))
+    return [e for e in Equipment.objects.filter(active=True, centre__in=centres, value__gte=floor)
+            .select_related("centre").order_by("-value", "name") if e.pk not in linked]
+
+
 def _gap_count(user, centres, cfg):
     """The number shown on the Coverage grid tab: missing or expired cover across the centres in view."""
     return _gaps(user, centres, cfg)["gap_total"]
@@ -647,6 +662,7 @@ def home_card(user):
              + [{"p": p, "kind": "expiring", "days": p.days_left} for p in sorted(expiring, key=lambda x: x.days_left)])
     return {"expired": len(expired), "expiring": len(expiring), "premiums": len(premiums),
             "no_document": sum(1 for p in rows if not p.doc_count), "gaps": _gap_count(user, centres, cfg),
+            "uninsured": len(uninsured(user, centres, cfg)),
             "items": items[:6], "more": max(0, len(items) - 6), "soon_days": cfg.insurance_alert_days or 60}
 
 

@@ -58,6 +58,9 @@ def build(user, today=None):
     gaps = vi._gap_count(user, centres, cfg)
     if gaps:
         add("Cover missing", [f"{gaps} centre and cover combination{'s' if gaps != 1 else ''} with no current policy. See the Coverage grid."])
+    miss = vi.uninsured(user, centres, cfg)
+    money = vi._show_money(user, cfg)
+    add("Valuable machines with no policy", [f"{e.name}, {e.centre.name}" + (f", ₹{e.value:,.0f}" if money else "") for e in miss])
     return sec or None
 
 

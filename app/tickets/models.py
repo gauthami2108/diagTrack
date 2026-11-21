@@ -244,6 +244,9 @@ class Equipment(models.Model):
         "penalty per day (₹)", max_digits=10, decimal_places=2, default=0.00,
         help_text="Fixed deduction per day of excess downtime beyond allowable limits.",
     )
+    value = models.DecimalField(
+        "value (₹)", max_digits=14, decimal_places=0, null=True, blank=True,
+        help_text="Optional. Purchase or replacement value. Used to flag valuable machines that have no insurance.")
     annual_camc_cost = models.DecimalField(
         "annual CAMC cost (₹)", max_digits=12, decimal_places=2, default=0.00,
         help_text="Annual contract value for pro-rata penalty calculation if daily penalty is not set.",
@@ -846,6 +849,9 @@ class SiteSettings(models.Model):
     insurance_alert_days = models.PositiveSmallIntegerField(
         "warn about insurance expiry (days before)", default=60,
         help_text="First reminder. Further reminders go out 30 and 7 days before, and on the expiry date.")
+    insurance_min_value = models.PositiveBigIntegerField(
+        "flag uninsured machines worth at least (₹)", default=1000000,
+        help_text="Machines with a value at or above this and no current policy listing them show on the Coverage grid and in the weekly summary. 0 switches the check off.")
     insurance_show_money = models.BooleanField(
         "show sum insured and premium on the Insurance page", default=True,
         help_text="Shown to administrators, people with Manage access and management with access. Untick to hide the money figures from everyone.")

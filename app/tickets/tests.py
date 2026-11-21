@@ -3456,3 +3456,54 @@ class InsuranceSummaryTests(Base):
         s.insurance_weekly_enabled = True; s.save()
         self.assertGreaterEqual(send_weekly(), 1)
         self.assertEqual(send_weekly(), 0)
+
+
+class UninsuredMachineTests(Base):
+    def setUp(self):
+        from .models import InsuranceCoverType
+        _grant_insurance(self)
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
+        InsuranceCoverType.objects.update(core=False)
+        self.fire = InsuranceCoverType.objects.get(name="Fire")
+        self.today = timezone.localdate()
+        from .models import Equipment
+        self.mri = Equipment.objects.create(centre=self.kkp, name="MRI 1.5T", value=30000000)
+        self.cheap = Equipment.objects.create(centre=self.kkp, name="Printer", value=20000)
+        self.novalue = Equipment.objects.create(centre=self.kkp, name="Old CT")
+
+    def cover(self, expiry_days=100):
+        p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="NI", policy_number="E-1",
+                                           start_date=self.today - timedelta(days=200),
+                                           expiry_date=self.today + timedelta(days=expiry_days))
+        p.equipment.set([self.mri])
+        return p
+
+    def names(self):
+        from .views_insurance import uninsured
+        cfg = SiteSettings.load()
+        return [e.name for e in uninsured(self.admin, Centre.objects.all(), cfg)]
+
+    def test_only_valuable_machines_without_current_cover_are_flagged(self):
+        self.assertEqual(self.names(), ["MRI 1.5T"])
+        self.cover()
+        self.assertEqual(self.names(), [])
+
+    def test_expired_cover_does_not_count_and_zero_switches_off(self):
+        self.cover(expiry_days=-3)
+        self.assertEqual(self.names(), ["MRI 1.5T"])
+        s = SiteSettings.load(); s.insurance_min_value = 0; s.save()
+        self.assertEqual(self.names(), [])
+
+    def test_shown_on_grid_home_and_summary(self):
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("insurance_list") + "?tab=gaps"), "Valuable machines with no policy")
+        self.assertContains(self.client.get(reverse("home")), "Valuable machines, no policy")
+        from .insurance_summary import build
+        self.assertIn("Valuable machines with no policy", [t for t, _ in build(self.admin)])
+
+    def test_machine_value_saved_from_masters(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse("masters_action", kwargs={"section": "equipment"}), {
+            "do": "edit", "id": self.cheap.pk, "centre": self.kkp.pk, "name": "Printer", "value": "1,50,000", "active": "on"})
+        self.cheap.refresh_from_db()
+        self.assertEqual(self.cheap.value, 150000)
