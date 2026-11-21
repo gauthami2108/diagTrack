@@ -2066,6 +2066,77 @@ class InsuranceTests(Base):
         self.assertEqual(self.client.get(reverse("insurance_detail", args=[other.pk])).status_code, 404)
         self.assertEqual(self.client.get(reverse("insurance_list"), {"centre": "0"}).content.decode().count("ALL") > 0, True)
 
+    # --- change history ---------------------------------------------------
+    def history(self, p):
+        return [e.text for e in p.log.all()]
+
+    def test_adding_a_policy_is_logged_with_who_did_it(self):
+        self.client.force_login(self.admin)
+        self.post_new()
+        p = InsurancePolicy.objects.get()
+        e = p.log.get()
+        self.assertEqual(e.actor, self.admin)
+        self.assertIn("Policy added, with 1 document", e.text)
+        page = self.client.get(reverse("insurance_detail", args=[p.pk]))
+        self.assertContains(page, "Change history")
+        self.assertContains(page, "Policy added, with 1 document")
+
+    def test_edits_are_logged_field_by_field(self):
+        self.client.force_login(self.admin)
+        self.post_new()
+        p = InsurancePolicy.objects.get()
+        self.client.post(reverse("insurance_edit", args=[p.pk]), {
+            "cover_type": self.fire.pk, "insurer": "New India", "policy_number": "FIRE-9", "start_date": "2026-04-01",
+            "expiry_date": "2028-03-31", "centres": [self.sec.pk, self.kkp.pk], "sum_insured": "2000000", "premium": "9000",
+            "responsible": [self.cm.pk], "notes": "changed"})
+        text = " | ".join(self.history(p))
+        self.assertIn("Expiry date: 31 Mar 2027 → 31 Mar 2028", text)
+        self.assertIn("Centres: added Secunderabad", text)
+        self.assertIn("Responsible: added", text)
+        self.assertIn("Sum insured changed", text)   # recorded as changed, the amounts are never written
+        self.assertIn("Notes changed", text)
+        self.assertNotIn("2000000", text)
+        self.assertNotIn("1000000", text)
+        self.assertNotIn("Premium changed", text)    # the premium did not change
+
+    def test_saving_without_changes_logs_nothing_new(self):
+        self.client.force_login(self.admin)
+        self.post_new()
+        p = InsurancePolicy.objects.get()
+        before = p.log.count()
+        self.client.post(reverse("insurance_edit", args=[p.pk]), {
+            "cover_type": self.fire.pk, "insurer": "New India", "policy_number": "FIRE-9", "start_date": "2026-04-01",
+            "expiry_date": "2027-03-31", "centres": [self.kkp.pk], "sum_insured": "1000000", "premium": "9000"})
+        self.assertEqual(p.log.count(), before)
+
+    def test_documents_renewal_and_cancelling_are_logged(self):
+        self.client.force_login(self.admin)
+        self.post_new()
+        p = InsurancePolicy.objects.get()
+        self.client.post(reverse("insurance_doc_add", args=[p.pk]), {"files": _pdf("endorsement.pdf")})
+        first = p.documents.order_by("pk").first()
+        self.client.post(reverse("insurance_doc_delete", args=[first.pk]))
+        text = " | ".join(self.history(p))
+        self.assertIn("Added 1 document: endorsement.pdf", text)
+        self.assertIn("Removed document policy.pdf", text)
+        self.client.post(reverse("insurance_new"), {
+            "renew": p.pk, "cover_type": self.fire.pk, "centres": [self.kkp.pk], "insurer": "New India",
+            "policy_number": "FIRE-9", "start_date": "2027-04-01", "expiry_date": "2028-03-31", "files": _pdf("new.pdf")})
+        new = InsurancePolicy.objects.get(renewed_from=p)
+        self.assertIn("Renewed by policy FIRE-9", " | ".join(self.history(p)))
+        self.assertIn("Added as the renewal of policy FIRE-9", " | ".join(self.history(new)))
+        self.client.post(reverse("insurance_edit", args=[new.pk]), {
+            "cover_type": self.fire.pk, "insurer": "New India", "policy_number": "FIRE-9", "start_date": "2027-04-01",
+            "expiry_date": "2028-03-31", "centres": [self.kkp.pk], "cancelled": "on"})
+        self.assertIn("Cancelled: No → Yes", " | ".join(self.history(new)))
+
+    def test_everyone_who_may_open_the_policy_sees_its_history(self):
+        p = self.policy([self.kkp])
+        from . import insurance_log
+        insurance_log.record(p, self.admin, "Expiry date: 01 Jan 2027 → 01 Jan 2028")
+        self.client.force_login(self.cm)
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "01 Jan 2028")
+
     def test_a_requester_given_access_sees_the_menu_item_and_the_page(self):
         p = self.policy([self.kkp])
         self.req.centres.add(self.kkp)
@@ -2780,6 +2851,20 @@ class InsuranceImportTests(Base):
         bad = self.book()
         self.add(bad, self.row(**{"Policy number": "Z", "Next premium due": "soon"}))
         self.assertIn("Next premium due", " ".join(self.errors(self.read(bad))))
+
+    def test_the_import_writes_history_too(self):
+        from . import bulk_import
+        wb = self.book()
+        self.add(wb, self.row())
+        bulk_import.apply(self.read(wb))
+        p = InsurancePolicy.objects.get()
+        self.assertEqual([e.text for e in p.log.all()], ["Policy added from the Excel import"])
+        wb = self.book()
+        ws = wb["Insurance"]
+        heads = [c.value.rstrip(" *") for c in ws[1]]
+        ws.cell(2, heads.index("Covers") + 1).value = "Building"
+        bulk_import.apply(self.read(wb))
+        self.assertIn("Excel import. Covers: none → Building", [e.text for e in p.log.all()])
 
     def test_several_responsible_people_are_read_changed_and_exported(self):
         from . import bulk_import

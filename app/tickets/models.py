@@ -694,6 +694,17 @@ class InsuranceDocument(models.Model):
         return self.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png", "webp")
 
 
+class InsuranceLog(models.Model):
+    """Who changed what on a policy. Shown on the policy page to everyone who may open it."""
+    policy = models.ForeignKey(InsurancePolicy, on_delete=models.CASCADE, related_name="log")
+    actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    at = models.DateTimeField(default=timezone.now)
+    text = models.CharField(max_length=500)
+
+    class Meta:
+        ordering = ["-at", "-pk"]
+
+
 class SiteSettings(models.Model):
     """One row only. Edited on the Settings screen."""
     org_name = models.CharField("organisation name", max_length=120, default="Pramodini Medicare Limited")

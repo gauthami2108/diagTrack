@@ -27,6 +27,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
 
+from . import insurance_log as ilog
 from .models import Centre, Department, Equipment, InsuranceCoverType, InsurancePolicy, User, Vendor
 
 ROLE_NAMES = {
@@ -604,15 +605,22 @@ def apply(plan):
             continue
         f = dict(r.values["_fields"])
         f["cover_type"] = covers[r.values["_cover"]]
+        before = None
         if r.action == "new":
             p = InsurancePolicy.objects.create(**f)
         else:
             p = r.obj
+            before = ilog.snapshot(p)
             _update(p, f)
         if "_centres" in r.values:
             p.centres.set([centres[c] for c in r.values["_centres"]])
         if r.values.get("_responsible"):
             p.responsible.set([users[n] for n in r.values["_responsible"]])
+        p = InsurancePolicy.objects.get(pk=p.pk)
+        if before is None:
+            ilog.record(p, None, "Policy added from the Excel import")
+        else:
+            ilog.record_changes(p, None, before, prefix="Excel import. ")
     return {s: plan.counts(s) for s in ORDER}, passwords
 
 

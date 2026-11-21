@@ -21,6 +21,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .models import (Centre, Equipment, InsuranceCoverType, InsuranceDocument, InsurancePolicy, SiteSettings, User)
+from . import insurance_log as ilog
 from .services import insurance_stages
 from .views import _safe, admin_only, role_required
 
@@ -298,6 +299,7 @@ def insurance_detail(request, pk):
         "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.can_manage_insurance, "can_admin": request.user.is_admin,
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
         "premium_days": (p.premium_due - today).days if p.premium_due else None,
+        "log": p.log.select_related("actor")[:40],
         "stages": insurance_stages(_soon(p, cfg)),
         "renewed_from": p.renewed_from, "renewals": p.renewals.all(), "max_mb": MAX_FILE_MB})
 
@@ -336,6 +338,12 @@ def insurance_new(request):
             if old:
                 old.renewed = True
                 old.save(update_fields=["renewed"])
+                ilog.record(p, request.user, f"Added as the renewal of policy {old.policy_number} "
+                                             f"(ended {old.expiry_date:%d %b %Y}), with {len(files)} document{'s' if len(files) != 1 else ''}")
+                ilog.record(old, request.user, f"Renewed by policy {p.policy_number} "
+                                               f"({p.start_date:%d %b %Y} to {p.expiry_date:%d %b %Y})")
+            else:
+                ilog.record(p, request.user, f"Policy added, with {len(files)} document{'s' if len(files) != 1 else ''}")
             messages.success(request, "Policy saved." if not old else "Policy renewed. The old policy is marked Renewed.")
             for w in form.warnings:
                 messages.warning(request, w)
@@ -349,12 +357,17 @@ def insurance_new(request):
 def insurance_edit(request, pk):
     p = get_object_or_404(InsurancePolicy, pk=pk)
     money = _show_money(request.user)
+    before = ilog.snapshot(p)  # taken first: validating the form changes the object in memory
     form = PolicyForm(request.POST or None, instance=p, show_money=money)
     files = request.FILES.getlist("files")
     problems = check_files(files) if request.method == "POST" else []
     if request.method == "POST":
         if form.is_valid() and not problems:
             form.save()
+            p = InsurancePolicy.objects.get(pk=p.pk)
+            ilog.record_changes(p, request.user, before)
+            if files:
+                ilog.record(p, request.user, f"Added {len(files)} document{'s' if len(files) != 1 else ''}")
             save_files(p, files, request.user)
             messages.success(request, "Policy saved.")
             for w in form.warnings:
@@ -392,6 +405,8 @@ def insurance_doc_add(request, pk):
             messages.error(request, x)
     else:
         save_files(p, files, request.user)
+        ilog.record(p, request.user, f"Added {len(files)} document{'s' if len(files) != 1 else ''}: "
+                                     + ", ".join(f.name for f in files))
         messages.success(request, f"{len(files)} file{'s' if len(files) != 1 else ''} added.")
     return redirect("insurance_detail", pk=p.pk)
 
@@ -404,8 +419,10 @@ def insurance_doc_delete(request, pk):
     if p.documents.count() <= 1:
         messages.error(request, "A policy must keep at least one document. Add the new one first, then remove this one.")
     else:
+        name = d.name
         d.file.delete(save=False)
         d.delete()
+        ilog.record(p, request.user, f"Removed document {name}")
         messages.success(request, "Document removed.")
     return redirect("insurance_detail", pk=p.pk)
 
