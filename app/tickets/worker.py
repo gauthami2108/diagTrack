@@ -52,6 +52,14 @@ class Worker:
             except Exception:
                 log.exception("Failed to send weekly management report.")
 
+            try:
+                from . import insurance_summary
+                n = insurance_summary.send_weekly()
+                if n:
+                    log.info("Sent %s weekly insurance summary emails.", n)
+            except Exception:
+                log.exception("Failed to send weekly insurance summary.")
+
         sent = notify.send_pending()
         services.beat("worker", f"{fired} escalations, {closed} auto-closed, {sent} alerts sent")
         if fired or closed or sent:

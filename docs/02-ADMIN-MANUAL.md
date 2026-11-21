@@ -285,6 +285,12 @@ own number), then 30 days, 7 days, the last day and the day after if it was not 
 no longer needed can be marked Closed, which stops reminders. Documents open in the same in-app viewer. The list has filters
 and an Excel export. Only an administrator deletes a licence.
 
+**Weekly insurance summary.** Every Monday each administrator and each person with Insurance access gets one email listing
+what needs attention in what they may see: premiums due or overdue, policies expired and not renewed or ending soon, licences
+and certificates expired or ending soon, claims still open, and centres with no current expected cover. People with View own
+see only their centres and the all-centre items. Nothing is sent to a person when nothing needs attention. Switch it off in
+Settings (**Weekly insurance summary email on Monday**). It needs an email address on the user.
+
 **Claims.** Each policy page has a **Claims** panel. People with Manage access (and administrators) choose **Add a claim**:
 date of the incident (not in the future), what happened in a line, the machine (from the policy's machines, or the centre's
 machines), the insurer's claim number, the date filed, status (Filed, Under review, Approved awaiting payment, Settled,

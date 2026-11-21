@@ -848,7 +848,11 @@ class SiteSettings(models.Model):
         help_text="First reminder. Further reminders go out 30 and 7 days before, and on the expiry date.")
     insurance_show_money = models.BooleanField(
         "show sum insured and premium on the Insurance page", default=True,
-        help_text="Administrators and management only. Untick to hide the money figures everywhere.")
+        help_text="Shown to administrators, people with Manage access and management with access. Untick to hide the money figures from everyone.")
+    insurance_weekly_enabled = models.BooleanField(
+        "weekly insurance summary email on Monday", default=True,
+        help_text="Each administrator and each person with Insurance access gets what needs attention in what they may see. Nothing is sent when nothing needs attention.")
+    last_insurance_summary_at = models.DateField(null=True, blank=True, editable=False)
     weekly_report_enabled = models.BooleanField("Weekly management email on Monday", default=True)
     last_weekly_report_at = models.DateField(null=True, blank=True, editable=False)
 

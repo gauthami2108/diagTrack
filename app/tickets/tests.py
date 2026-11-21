@@ -3392,3 +3392,67 @@ class InsuranceImportTests(Base):
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, "Insurance")
         self.assertContains(page, "Fire F-100")
+
+
+from .models import InsuranceClaim as _IC, Licence as _L
+
+
+class InsuranceSummaryTests(Base):
+    """Monday insurance summary: scoped to what each person may see, silent when nothing needs attention."""
+
+    def setUp(self):
+        from .models import InsuranceCoverType
+        _grant_insurance(self)
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
+        InsuranceCoverType.objects.update(core=False)
+        self.fire = InsuranceCoverType.objects.get(name="Fire")
+        self.bel = Centre.objects.create(code="BEL", name="Belapur")
+        self.today = timezone.localdate()
+
+    def policy(self, centres=(), days=200, **kw):
+        p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="New India", policy_number=kw.pop("number", "P-1"),
+                                           start_date=self.today - timedelta(days=365 - days),
+                                           expiry_date=self.today + timedelta(days=days), **kw)
+        p.centres.set(centres)
+        return p
+
+    def sent(self):
+        from .insurance_summary import send_weekly
+        OutboundMessage.objects.all().delete()
+        n = send_weekly(force=True)
+        return n, {m.to: m.body for m in OutboundMessage.objects.all()}
+
+    def test_nothing_to_report_sends_nothing(self):
+        self.policy([self.kkp], days=300)
+        n, _ = self.sent()
+        self.assertEqual(n, 0)
+
+    def test_each_person_hears_only_about_what_they_may_see(self):
+        self.policy([self.kkp], days=-5, number="KKP-OLD")
+        self.policy([self.bel], days=10, number="BEL-SOON")
+        self.cm.email = "cm@example.com"; self.cm.save()
+        self.cm.centres.set([self.kkp])
+        n, out = self.sent()
+        self.assertIn("KKP-OLD", out["cm@example.com"])
+        self.assertNotIn("BEL-SOON", out["cm@example.com"])
+        self.assertIn("BEL-SOON", out["boss@example.com"])
+        self.assertIn("KKP-OLD", out["boss@example.com"])
+
+    def test_licences_claims_and_premiums_are_included(self):
+        p = self.policy([self.kkp], days=200, number="P-9", premium_due=self.today - timedelta(days=3))
+        _IC.objects.create(policy=p, incident_date=self.today, description="Water damage", status="filed")
+        _L.objects.create(name="AERB licence", issued_on=self.today - timedelta(days=300),
+                               valid_until=self.today - timedelta(days=2))
+        _, out = self.sent()
+        b = out["boss@example.com"]
+        for text in ("3 days overdue", "Water damage", "AERB licence", "Premiums due or overdue"):
+            self.assertIn(text, b)
+
+    def test_switch_and_once_a_day(self):
+        from .insurance_summary import send_weekly
+        self.policy([self.kkp], days=-5)
+        s = SiteSettings.load(); s.insurance_weekly_enabled = False; s.save()
+        self.assertEqual(send_weekly(), 0)
+        s.insurance_weekly_enabled = True; s.save()
+        self.assertGreaterEqual(send_weekly(), 1)
+        self.assertEqual(send_weekly(), 0)

@@ -50,6 +50,7 @@
     <div class="field-row field-row-3">{% include "_field.html" with f=form.auto_close_days %}{% include "_field.html" with f=form.reopen_days %}{% include "_field.html" with f=form.max_attachment_mb %}</div>
     <div class="field-row field-row-3">{% include "_field.html" with f=form.amc_alert_days %}{% include "_field.html" with f=form.insurance_alert_days %}</div>
     {% include "_switch.html" with f=form.insurance_show_money note=form.insurance_show_money.help_text %}
+    {% include "_switch.html" with f=form.insurance_weekly_enabled note=form.insurance_weekly_enabled.help_text %}
   </section>
 
   <section class="panel">
