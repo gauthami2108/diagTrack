@@ -35,6 +35,9 @@ ROLE_NAMES = {
     "area manager": User.AREA_MANAGER, "management": User.MANAGEMENT, "administrator": User.ADMIN,
     "admin": User.ADMIN,
 }
+INSURANCE_NAMES = {"none": "", "no access": "", "no": "", "view own centres": "own", "own": "own",
+                   "view all centres": "all", "all": "all", "manage": "manage"}
+INSURANCE_LABEL = {"": "None", "own": "View own centres", "all": "View all centres", "manage": "Manage"}
 ROLE_LABEL = {User.REQUESTER: "Requester", User.AGENT: "Agent", User.DEPT_HEAD: "Department head",
               User.CENTRE_MANAGER: "Centre manager", User.AREA_MANAGER: "Area manager",
               User.MANAGEMENT: "Management", User.ADMIN: "Administrator"}
@@ -74,6 +77,8 @@ SHEETS = {
         ("Mobile", "mobile", False, "With country code, for SMS and WhatsApp: 919876543210"),
         ("Role", "role", True, "Requester, Agent, Department head, Centre manager, Area manager, Management "
                                "or Administrator"),
+        ("Insurance access", "insurance_access", False, "None, View own centres, View all centres or Manage. "
+                                                        "Empty leaves it as it is. Administrators always have access"),
         ("Centres", "centres", False, "Centre codes separated by commas, for example KKP, BJH. All for every centre"),
         ("Departments", "departments", False, "Only for agents and heads: department names separated by commas"),
         ("Active", "is_active", False, "No when someone has left. Never delete people who have tickets"),
@@ -336,6 +341,12 @@ def _check(plan):
         elif not role and not existing:
             r.errors.append("Role is empty.")
         fields["role"] = role
+        if v.get("insurance_access"):
+            level = INSURANCE_NAMES.get(v["insurance_access"].strip().lower())
+            if level is None:
+                r.errors.append("Insurance access: use None, View own centres, View all centres or Manage.")
+            else:
+                fields["insurance_access"] = level
         if v.get("centres"):
             codes = [c.upper() for c in _list(v["centres"])]
             if [c.lower() for c in codes] == ["all"]:
@@ -670,6 +681,8 @@ def workbook():
                 choices = '"Yes,No"'
             elif key == "role":
                 choices = '"' + ",".join(ROLE_LABEL.values()) + '"'
+            elif key == "insurance_access":
+                choices = '"' + ",".join(INSURANCE_LABEL.values()) + '"'
             elif key == "assignment_mode":
                 choices = '"Round robin,Least loaded,Manual"'
             if choices:
@@ -703,6 +716,7 @@ def _current_rows():
                         for d in Department.objects.select_related("head").order_by("name")],
         "People": [{"username": u.username, "first_name": u.first_name, "last_name": u.last_name, "email": u.email,
                     "mobile": u.mobile, "role": ROLE_LABEL.get(u.role, u.role),
+                    "insurance_access": INSURANCE_LABEL.get(u.insurance_access, ""),
                     "centres": ", ".join(c.code for c in u.centres.all()),
                     "departments": ", ".join(d.name for d in u.departments.all()), "is_active": _yn(u.is_active)}
                    for u in User.objects.prefetch_related("centres", "departments").order_by("username")],

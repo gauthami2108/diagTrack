@@ -7,7 +7,7 @@
     {% if can_edit %}
       {% if p.current %}<a class="btn" href="{% url 'insurance_new' %}?renew={{ p.pk }}">{% icon 'rotate-ccw' %}Renew</a>{% endif %}
       <a class="btn" href="{% url 'insurance_edit' p.pk %}">Edit</a>
-      <form method="post" action="{% url 'insurance_delete' p.pk %}">{% csrf_token %}<button class="btn btn-ghost btn-quiet-bad" type="submit" data-confirm="Delete this policy and its documents? This cannot be undone. To keep the history, use Renew or mark it cancelled instead.">Delete</button></form>
+      {% if can_admin %}<form method="post" action="{% url 'insurance_delete' p.pk %}">{% csrf_token %}<button class="btn btn-ghost btn-quiet-bad" type="submit" data-confirm="Delete this policy and its documents? This cannot be undone. To keep the history, use Renew or mark it cancelled instead.">Delete</button></form>{% endif %}
     {% endif %}
   </div>
 </div>

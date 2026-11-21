@@ -55,7 +55,7 @@ Secrets: `SECRET_KEY`, `DB_PASSWORD`, `FIELD_KEY`, `BACKUP_PASSPHRASE`, `ADMIN_P
 | `tickets/views_backup.py` | The Backups page; it only queues jobs and reads state |
 | `tickets/signin.py` | Wrong-password lock-out, active session invalidation (`invalidate_user_sessions`), the sign-in forms for main and admin login |
 | `tickets/bulk_import.py`, `tickets/views_import.py` | Import from Excel: the workbook with current data, row checks across sheets, one-transaction apply; the upload, preview and import screen |
-| `services.insurance_checks` | Daily insurance reminders, run by the worker next to `amc_checks`: stages from `insurance_stages(first)` (first reminder, 30, 7, 0 and -1 days), once each per expiry date (`alert_for`, `alert_stage`, stored +2); to administrators, the centre managers of the policy's centres and the responsible person; kind `insurance` |
+| `services.insurance_checks` | Daily insurance reminders, run by the worker next to `amc_checks`: stages from `insurance_stages(first)` (first reminder, 30, 7, 0 and -1 days), once each per expiry date (`alert_for`, `alert_stage`, stored +2); to administrators and users whose `insurance_access` lets them see the policy (all/manage, or own with a shared centre), plus the responsible person if they have access; kind `insurance` |
 | `tickets/views_insurance.py` | The Insurance register (Oversee > Insurance): `machine_policies` for the equipment page panel, list and filters (grouped query, so ordering is explicit), coverage grid (`_gaps`: centres by `InsuranceCoverType.core`, best live policy per cell), add, edit, renew, documents, cover types, Excel export; file checks and who-sees-what rules |
 | `tickets/wording.py` | Events, placeholders, built-in wording and the template renderer for email, SMS, WhatsApp and Telegram |
 | `tickets/reports.py` | Home, dashboard, centre matrix, equipment figures, PM schedule status, CAMC penalty calculation, and weekly management summary report generation |
@@ -183,7 +183,7 @@ import, and are removed after it or after a day.
 
 | URL | Returns |
 | --- | --- |
-| `/insurance/` | Insurance register, `?tab=types` for cover types (administrators), `/insurance/export.xlsx`, `/insurance/<id>/`, `/insurance/files/<id>/` for documents. Administrators and management see everything; centre and area managers only their own centres' policies and never the money figures |
+| `/insurance/` | Insurance register, `?tab=types` for cover types (administrators), `/insurance/export.xlsx`, `/insurance/<id>/`, `/insurance/files/<id>/` for documents. Access is `User.insurance_access` (`''`, `own`, `all`, `manage`; administrators always full), independent of role: properties `can_view_insurance`, `can_manage_insurance`, `insurance_sees_all`, `insurance_money`. Delete, cover types and money Settings are administrator only |
 | `/masters/` | Dedicated native Masters and rules management hub with quick-add dialogs and quick statistics (administrators) |
 | `/api/live/stream/` | Server-Sent Events (SSE) event stream for instant ticket and notification pushes |
 | `/api/live/?after=<id>` | New alerts for the signed-in person since that id, the unread count and the newest id (polling fallback) |

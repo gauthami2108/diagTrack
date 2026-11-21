@@ -1831,6 +1831,13 @@ def _pdf(name="policy.pdf"):
     return _InsFile(name, b"%PDF-1.4 test policy", content_type="application/pdf")
 
 
+def _grant_insurance(t):
+    """Insurance is only for people given access: view own centres for managers, view all for management."""
+    for u, level in ((t.cm, "own"), (t.am, "own"), (t.director, "all")):
+        User.objects.filter(pk=u.pk).update(insurance_access=level)
+        u.insurance_access = level
+
+
 class InsuranceTests(Base):
     @classmethod
     def setUpClass(cls):
@@ -1846,6 +1853,7 @@ class InsuranceTests(Base):
         super().tearDownClass()
 
     def setUp(self):
+        _grant_insurance(self)
         self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
         self.fire = InsuranceCoverType.objects.get(name="Fire")
         self.today = timezone.localdate()
@@ -1912,6 +1920,66 @@ class InsuranceTests(Base):
             self.assertEqual(self.client.get(reverse("insurance_new")).status_code, 403)
             self.assertEqual(self.client.get(reverse("insurance_edit", args=[p.pk])).status_code, 403)
             self.assertEqual(self.client.post(reverse("insurance_delete", args=[p.pk])).status_code, 403)
+
+    # --- who has access -------------------------------------------------
+    def test_no_access_means_no_page_menu_or_files_even_for_managers_and_management(self):
+        p = self.policy([self.kkp])
+        for u in (self.cm, self.am, self.director):
+            User.objects.filter(pk=u.pk).update(insurance_access="")
+        for u in (self.cm, self.am, self.director):
+            self.client.force_login(u)
+            self.assertEqual(self.client.get(reverse("insurance_list")).status_code, 403)
+            self.assertEqual(self.client.get(reverse("insurance_detail", args=[p.pk])).status_code, 403)
+            self.assertEqual(self.client.get(reverse("insurance_export")).status_code, 403)
+            self.assertNotContains(self.client.get(reverse("home")), reverse("insurance_list"))
+
+    def test_an_ordinary_user_can_be_given_access(self):
+        p = self.policy([self.kkp])
+        User.objects.filter(pk=self.ravi.pk).update(insurance_access="own")  # an agent
+        self.client.force_login(self.ravi)
+        self.assertEqual(self.client.get(reverse("insurance_list")).status_code, 200)
+        self.assertContains(self.client.get(reverse("home")), reverse("insurance_list"))
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[p.pk])).status_code, 404)  # not his centre
+
+    def test_view_all_sees_every_policy_but_cannot_change(self):
+        p = self.policy([self.sec], number="SEC")
+        self.client.force_login(self.director)  # view all
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[p.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("insurance_edit", args=[p.pk])).status_code, 403)
+        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "Renew")
+
+    def test_manage_can_add_edit_renew_and_add_documents_but_not_delete_or_change_types(self):
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="manage")
+        self.client.force_login(self.cm)
+        self.assertEqual(self.post_new(centres=[self.sec.pk]).status_code, 302)  # sees and adds beyond own centre
+        p = InsurancePolicy.objects.get()
+        self.assertEqual(self.client.get(reverse("insurance_edit", args=[p.pk])).status_code, 200)
+        self.assertEqual(self.client.post(reverse("insurance_doc_add", args=[p.pk]), {"files": _pdf("x.pdf")}).status_code, 302)
+        self.assertEqual(p.documents.count(), 2)
+        self.assertEqual(self.client.post(reverse("insurance_delete", args=[p.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse("insurance_types_action"), {"action": "add", "name": "X"}).status_code, 403)
+        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "Delete this policy")
+
+    def test_the_money_follows_the_level(self):
+        p = self.policy([self.kkp])
+        for level, who, shown in (("own", self.cm, False), ("all", self.director, True),
+                                  ("manage", self.cm, True), ("own", self.am, False)):
+            User.objects.filter(pk=who.pk).update(insurance_access=level)
+            self.client.force_login(who)
+            page = self.client.get(reverse("insurance_detail", args=[p.pk]))
+            self.assertEqual("₹42000" in page.content.decode(), shown, (level, who.username))
+
+    def test_administrators_set_access_in_masters(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse("masters_action", kwargs={"section": "users"}), {"do": "edit", "id": self.ravi.pk,
+                                                       "first_name": "Ravi", "role": User.AGENT,
+                                                       "insurance_access": "manage"})
+        self.ravi.refresh_from_db()
+        self.assertEqual(self.ravi.insurance_access, "manage")
+        self.client.post(reverse("masters_action", kwargs={"section": "users"}), {"do": "edit", "id": self.ravi.pk,
+                                                   "first_name": "Ravi", "role": User.AGENT, "insurance_access": "bogus"})
+        self.ravi.refresh_from_db()
+        self.assertEqual(self.ravi.insurance_access, "manage")  # an unknown value changes nothing
 
     # --- adding ---------------------------------------------------------
     def test_a_policy_needs_a_document_and_dates(self):
@@ -2108,6 +2176,7 @@ class InsuranceTests(Base):
 
 class InsuranceReminderTests(Base):
     def setUp(self):
+        _grant_insurance(self)
         self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
         self.sec_cm = User.objects.create_user("sec_cm", password="Demo@12345", role=User.CENTRE_MANAGER,
                                                email="sec@example.com")
@@ -2153,20 +2222,30 @@ class InsuranceReminderTests(Base):
         self.assertEqual(self.run_on(5), 1)  # nothing before, so one alert for where it stands now
         self.assertEqual(self.run_on(4), 0)
 
-    def test_goes_to_admins_the_centre_manager_and_the_person_responsible(self):
+    def test_goes_to_admins_and_people_with_insurance_access_for_that_centre(self):
         self.policy([self.kkp], responsible=self.accounts)
         self.run_on(20)
-        self.assertEqual(self.who(), self.admins() | {"imran", "accounts"})  # not Secunderabad's manager, area manager or director
+        # Imran and Kavitha may view their centres, the director views all. Secunderabad's manager and the
+        # responsible agent have no Insurance access, so neither is told.
+        self.assertEqual(self.who(), self.admins() | {"imran", "kavitha", "director"})
 
-    def test_every_centre_manager_of_a_multi_centre_policy(self):
+    def test_the_responsible_person_is_told_when_they_have_access(self):
+        User.objects.filter(pk=self.accounts.pk).update(insurance_access="own")
+        self.policy([self.kkp], responsible=self.accounts)
+        self.run_on(20)
+        self.assertIn("accounts", self.who())
+
+    def test_view_own_only_for_centres_the_policy_covers(self):
+        User.objects.filter(pk=self.sec_cm.pk).update(insurance_access="own")
         self.policy([self.kkp, self.sec])
         self.run_on(20)
-        self.assertEqual(self.who(), self.admins() | {"imran", "sec_cm"})
+        self.assertEqual(self.who(), self.admins() | {"imran", "kavitha", "director", "sec_cm"})
 
-    def test_a_policy_for_all_centres_goes_to_admins_and_the_responsible_person(self):
+    def test_a_policy_for_all_centres_goes_to_admins_and_those_who_view_all(self):
+        User.objects.filter(pk=self.accounts.pk).update(insurance_access="manage")
         self.policy([], responsible=self.accounts)
         self.run_on(20)
-        self.assertEqual(self.who(), self.admins() | {"accounts"})
+        self.assertEqual(self.who(), self.admins() | {"director", "accounts"})  # view-own people cannot see it
 
     def test_the_policys_own_first_reminder_replaces_the_settings_number(self):
         self.policy([self.kkp], remind_days=14)
@@ -2231,6 +2310,7 @@ class InsuranceReminderTests(Base):
 
 class InsuranceGridTests(Base):
     def setUp(self):
+        _grant_insurance(self)
         self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
         self.types = {n: InsuranceCoverType.objects.get(name=n) for n in ("Fire", "Building", "Cyber")}
         self.today = timezone.localdate()
@@ -2328,6 +2408,7 @@ class InsuranceLinkTests(Base):
     """Phase 4: the machine page panel, the unlinked machines column and the 'No document' marker."""
 
     def setUp(self):
+        _grant_insurance(self)
         self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
         self.eq_cover = InsuranceCoverType.objects.get(name="Equipment / machinery breakdown")
         self.today = timezone.localdate()
@@ -2405,6 +2486,7 @@ class InsuranceImportTests(Base):
     """Phase 4: the Insurance sheet of the Excel import."""
 
     def setUp(self):
+        _grant_insurance(self)
         self.fire = InsuranceCoverType.objects.get(name="Fire")
         self.building = InsuranceCoverType.objects.get(name="Building")
 
@@ -2454,6 +2536,27 @@ class InsuranceImportTests(Base):
         self.assertEqual(plan.errors, [])
         self.assertTrue(plan.empty)
         self.assertEqual(plan.counts("Insurance")["same"], 2)
+
+    def test_people_sheet_sets_insurance_access_and_exports_it(self):
+        from . import bulk_import
+        wb = self.book()
+        self.add(wb, {"User name": "meera", "Role": "Agent", "Insurance access": "View all centres"}, "People")
+        ws = wb["People"]  # the workbook already lists everyone: change Ravi's cell
+        heads = [c.value.rstrip(" *") for c in ws[1]]
+        for row in ws.iter_rows(min_row=2):
+            if row[heads.index("User name")].value == "ravi":
+                row[heads.index("Insurance access")].value = "Manage"
+        plan = self.read(wb)
+        self.assertEqual(self.errors(plan), [])
+        bulk_import.apply(plan)
+        self.assertEqual(User.objects.get(username="meera").insurance_access, "all")
+        self.assertEqual(User.objects.get(username="ravi").insurance_access, "manage")
+        rows = {r["username"]: r["insurance_access"] for r in bulk_import._current_rows()["People"]}
+        self.assertEqual(rows["ravi"], "Manage")
+        self.assertEqual(rows["imran"], "View own centres")
+        bad = self.book()
+        self.add(bad, {"User name": "zed", "Role": "Agent", "Insurance access": "Everything"}, "People")
+        self.assertIn("Insurance access", " ".join(self.errors(self.read(bad))))
 
     def test_new_policies_are_added_with_their_centres_and_responsible_person(self):
         from . import bulk_import

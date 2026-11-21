@@ -30,17 +30,18 @@ SIGNATURES = {"pdf": b"%PDF", "jpg": b"\xff\xd8\xff", "jpeg": b"\xff\xd8\xff", "
 STATUS_FILTERS = [("", "Current (not renewed or cancelled)"), ("active", "Active"), ("expiring", "Expiring soon"),
                   ("expired", "Expired"), ("renewed", "Renewed"), ("cancelled", "Cancelled"), ("all", "Everything")]
 
-viewer = role_required(lambda u: u.sees_everything or u.role in (User.CENTRE_MANAGER, User.AREA_MANAGER))
+viewer = role_required(lambda u: u.can_view_insurance)
+manager = role_required(lambda u: u.can_manage_insurance)
 
 
 def _show_money(user, cfg=None):
     cfg = cfg or SiteSettings.load()
-    return bool(user.sees_everything and cfg.insurance_show_money)
+    return bool(user.insurance_money and cfg.insurance_show_money)
 
 
 def _scoped(user):
     qs = InsurancePolicy.objects.select_related("cover_type", "responsible").prefetch_related("centres")
-    return qs if user.sees_everything else qs.filter(centres__in=user.centres.all()).distinct()
+    return qs if user.insurance_sees_all else qs.filter(centres__in=user.centres.all()).distinct()
 
 
 def _soon(policy, cfg):
@@ -168,13 +169,13 @@ def insurance_list(request):
         return redirect("insurance_list")
     money = _show_money(user, cfg)
     centres = Centre.objects.filter(active=True)
-    if not user.sees_everything:
+    if not user.insurance_sees_all:
         centres = centres.filter(pk__in=user.centres.all())
     today = timezone.localdate()
     live = [p for p in _scoped(user) if p.current]
     status = [p.status_on(today, _soon(p, cfg)) for p in live]
     ctx = {"tab": tab, "money": money, "centres": centres, "status_filters": STATUS_FILTERS,
-           "cover_types": InsuranceCoverType.objects.all(), "can_edit": user.is_admin,
+           "cover_types": InsuranceCoverType.objects.all(), "can_edit": user.can_manage_insurance, "can_admin": user.is_admin,
            "expiring_count": status.count(InsurancePolicy.EXPIRING),
            "expired_count": status.count(InsurancePolicy.EXPIRED), "current_count": len(live)}
     if tab == "policies":
@@ -240,13 +241,13 @@ def insurance_detail(request, pk):
     p.status = p.status_on(today, _soon(p, cfg))
     p.days_left = (p.expiry_date - today).days
     return render(request, "insurance_detail.html", {
-        "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.is_admin,
+        "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.can_manage_insurance, "can_admin": request.user.is_admin,
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
         "stages": insurance_stages(_soon(p, cfg)),
         "renewed_from": p.renewed_from, "renewals": p.renewals.all(), "max_mb": MAX_FILE_MB})
 
 
-@admin_only
+@manager
 def insurance_new(request):
     cfg = SiteSettings.load()
     money = _show_money(request.user, cfg)
@@ -287,7 +288,7 @@ def insurance_new(request):
                                                    "max_mb": MAX_FILE_MB, "new": True})
 
 
-@admin_only
+@manager
 def insurance_edit(request, pk):
     p = get_object_or_404(InsurancePolicy, pk=pk)
     money = _show_money(request.user)
@@ -321,7 +322,7 @@ def insurance_delete(request, pk):
 # --------------------------------------------------------------------------
 # Documents
 # --------------------------------------------------------------------------
-@admin_only
+@manager
 @require_POST
 def insurance_doc_add(request, pk):
     p = get_object_or_404(InsurancePolicy, pk=pk)
@@ -336,7 +337,7 @@ def insurance_doc_add(request, pk):
     return redirect("insurance_detail", pk=p.pk)
 
 
-@admin_only
+@manager
 @require_POST
 def insurance_doc_delete(request, pk):
     d = get_object_or_404(InsuranceDocument, pk=pk)
@@ -363,7 +364,7 @@ def insurance_doc(request, pk):
 
 def machine_policies(user, equipment):
     """The current policies that list this machine, for its page. None when the person may not see insurance."""
-    if not (user.sees_everything or user.role in (User.CENTRE_MANAGER, User.AREA_MANAGER)):
+    if not user.can_view_insurance:
         return None
     cfg = SiteSettings.load()
     today = timezone.localdate()

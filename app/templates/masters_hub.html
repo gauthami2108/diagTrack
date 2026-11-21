@@ -391,7 +391,7 @@
               data-set-id="{{ u.pk }}" data-set-username="{{ u.username }}"
               data-set-first_name="{{ u.first_name }}" data-set-last_name="{{ u.last_name }}"
               data-set-email="{{ u.email }}" data-set-mobile="{{ u.mobile }}"
-              data-set-telegram_chat_id="{{ u.telegram_chat_id }}" data-set-role="{{ u.role }}"
+              data-set-telegram_chat_id="{{ u.telegram_chat_id }}" data-set-role="{{ u.role }}" data-set-insurance_access="{{ u.insurance_access }}"
               data-set-centres="{% for c in u.centres.all %}{{ c.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
               data-set-departments="{% for d in u.departments.all %}{{ d.pk }}{% if not forloop.last %},{% endif %}{% endfor %}"
               data-set-active="{% if u.is_active %}on{% endif %}">Edit</button>
@@ -1044,6 +1044,14 @@
     <label class="field"><span>Telegram Chat ID</span><input type="text" name="telegram_chat_id" placeholder="Personal or group Chat ID"></label>
   </div>
   <div class="field-row">
+    <label class="field"><span>Insurance access</span>
+      <select name="insurance_access">
+        {% for k, l in insurance_access_choices %}<option value="{{ k }}">{{ l }}</option>{% endfor %}
+      </select>
+      <small class="muted">Who sees the Insurance register. Administrators always can. Applies on top of the role above, so one person can hold a role and also look after insurance.</small>
+    </label>
+  </div>
+  <div class="field-row">
     <label class="field"><span>Email</span><input type="email" name="email" placeholder="staff@hospital.org"></label>
     <label class="field"><span>Mobile (SMS/WhatsApp)</span><input type="text" name="mobile" placeholder="919876543210"></label>
   </div>
@@ -1099,6 +1107,14 @@
       </select>
     </label>
     <label class="field"><span>Telegram Chat ID</span><input type="text" name="telegram_chat_id" placeholder="Optional chat ID"></label>
+  </div>
+  <div class="field-row">
+    <label class="field"><span>Insurance access</span>
+      <select name="insurance_access">
+        {% for k, l in insurance_access_choices %}<option value="{{ k }}">{{ l }}</option>{% endfor %}
+      </select>
+      <small class="muted">Who sees the Insurance register. Administrators always can. Applies on top of the role above, so one person can hold a role and also look after insurance.</small>
+    </label>
   </div>
   <div class="field-row">
     <label class="field"><span>Email</span><input type="email" name="email"></label>
