@@ -306,6 +306,7 @@ a yellow warning. Edit the claim as it moves along; status changes are written t
 administrator can remove a claim. The **Claims** tab of the register lists every claim the person may open, open ones by
 default (filter by status, search, Excel), with a count of open claims on the tab. Amounts follow the same rule as other money
 figures, and the history says only "amounts changed".
+A claim may carry documents (the claim form, photos, estimates, the insurer's letter): choose files when adding or editing the claim, open them in the same viewer, and remove them from the claim's edit page. They are optional, follow the policy's access rules, and additions and removals appear in the policy's change history.
 
 **Insurance on the Home page.** People with Insurance access see an Insurance card on Home: how many policies have expired
 without being renewed, how many end within the reminder period, premiums due within 14 days or overdue, centres missing an

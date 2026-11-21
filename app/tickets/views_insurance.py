@@ -20,7 +20,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import (Centre, Equipment, InsuranceClaim, InsuranceCoverType, InsuranceDocument, InsurancePolicy, SiteSettings,
+from .models import (Centre, ClaimDocument, Equipment, InsuranceClaim, InsuranceCoverType, InsuranceDocument, InsurancePolicy, SiteSettings,
                      User)
 from . import insurance_log as ilog
 from .services import insurance_stages
@@ -262,7 +262,7 @@ def _claims(request):
     if cstatus not in ("open", "all", *dict(InsuranceClaim.STATUSES)):
         cstatus = "open"
     qs = (InsuranceClaim.objects.filter(policy__in=_scoped(request.user))
-          .select_related("policy", "policy__cover_type", "equipment").prefetch_related("policy__centres"))
+          .select_related("policy", "policy__cover_type", "equipment").prefetch_related("policy__centres", "documents"))
     if cstatus == "open":
         qs = qs.filter(status__in=InsuranceClaim.OPEN)
     elif cstatus != "all":
@@ -337,12 +337,19 @@ def _claim_form(request, p, claim):
         before = (claim.status, claim.claim_number, claim.incident_date, claim.claimed_on, claim.equipment_id,
                   claim.description, claim.amount_claimed, claim.amount_settled)
     form = ClaimForm(request.POST or None, instance=claim, policy=p, show_money=money)
-    if request.method == "POST" and form.is_valid():
+    files = request.FILES.getlist("files")
+    problems = check_files(files) if request.method == "POST" and files else []
+    if request.method == "POST" and form.is_valid() and not problems:
         c = form.save(commit=False)
         c.policy = p
         if not claim:
             c.created_by = request.user
         c.save()
+        for f in files:
+            ClaimDocument.objects.create(claim=c, file=f, name=f.name[:200], size=f.size, uploaded_by=request.user)
+        if files:
+            ilog.record(p, request.user, f"Added {len(files)} document{'s' if len(files) != 1 else ''} to claim "
+                                         f"{_claim_line(c)}: " + ", ".join(f.name for f in files)[:200])
         if not claim:
             ilog.record(p, request.user, f"Claim added: {_claim_line(c)}")
         else:
@@ -364,7 +371,9 @@ def _claim_form(request, p, claim):
         return redirect("insurance_detail", pk=p.pk)
     if request.method == "POST":
         messages.error(request, "The claim was not saved. Check the marked fields.")
-    return render(request, "insurance_claim_form.html", {"form": form, "p": p, "claim": claim, "money": money})
+    return render(request, "insurance_claim_form.html", {"form": form, "p": p, "claim": claim, "money": money,
+                                                         "problems": problems, "max_mb": MAX_FILE_MB,
+                                                         "docs": claim.documents.all() if claim else []})
 
 
 @admin_only
@@ -373,6 +382,8 @@ def claim_delete(request, pk):
     c = get_object_or_404(InsuranceClaim.objects.select_related("policy"), pk=pk)
     p = c.policy
     ilog.record(p, request.user, f"Claim removed: {_claim_line(c)}")
+    for d in c.documents.all():
+        d.file.delete(save=False)
     c.delete()
     messages.success(request, "Claim removed.")
     return redirect("insurance_detail", pk=p.pk)
@@ -481,7 +492,7 @@ def insurance_detail(request, pk):
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
         "premium_days": (p.premium_due - today).days if p.premium_due else None,
         "log": p.log.select_related("actor")[:40],
-        "claims": p.claims.select_related("equipment"),
+        "claims": p.claims.select_related("equipment").prefetch_related("documents"),
         "stages": insurance_stages(_soon(p, cfg)),
         "renewed_from": p.renewed_from, "renewals": p.renewals.all(), "max_mb": MAX_FILE_MB})
 
@@ -566,6 +577,8 @@ def insurance_delete(request, pk):
     p = get_object_or_404(InsurancePolicy, pk=pk)
     for d in p.documents.all():
         d.file.delete(save=False)
+    for d in ClaimDocument.objects.filter(claim__policy=p):
+        d.file.delete(save=False)
     if p.renewed_from_id and not p.renewals.exists():  # deleting a renewal: the earlier policy is current again
         InsurancePolicy.objects.filter(pk=p.renewed_from_id).update(renewed=False)
     p.delete()
@@ -633,6 +646,28 @@ def insurance_doc(request, pk):
     if not _scoped(request.user).filter(pk=d.policy_id).exists():
         raise Http404
     return serve_document(request, d)
+
+
+@viewer
+def claim_doc(request, pk):
+    d = get_object_or_404(ClaimDocument.objects.select_related("claim"), pk=pk)
+    if not _scoped(request.user).filter(pk=d.claim.policy_id).exists():
+        raise Http404
+    return serve_document(request, d)
+
+
+@manager
+@require_POST
+def claim_doc_delete(request, pk):
+    d = get_object_or_404(ClaimDocument.objects.select_related("claim__policy"), pk=pk)
+    p = d.claim.policy
+    if not _scoped(request.user).filter(pk=p.pk).exists():
+        raise Http404
+    ilog.record(p, request.user, f"Removed document {d.name} from claim {_claim_line(d.claim)}")
+    d.file.delete(save=False)
+    d.delete()
+    messages.success(request, "Document removed.")
+    return redirect("claim_edit", pk=d.claim_id)
 
 
 def home_card(user):

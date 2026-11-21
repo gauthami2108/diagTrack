@@ -697,6 +697,10 @@ class InsuranceDocument(models.Model):
         return self.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png", "webp")
 
 
+def claim_path(instance, filename):
+    return f"claims/{instance.claim_id}/{timezone.now():%Y%m%d%H%M%S}-{filename}"
+
+
 class InsuranceClaim(models.Model):
     """A claim made on a policy: what happened, when, on which machine, and how it ended."""
     FILED, REVIEW, APPROVED, SETTLED, REJECTED, WITHDRAWN = "filed", "review", "approved", "settled", "rejected", "withdrawn"
@@ -816,6 +820,23 @@ class InsuranceLog(models.Model):
 
     class Meta:
         ordering = ["-at", "-pk"]
+
+
+class ClaimDocument(models.Model):
+    """A claim form, photo, estimate or the insurer's letter. Optional on a claim."""
+    claim = models.ForeignKey(InsuranceClaim, on_delete=models.CASCADE, related_name="documents")
+    file = models.FileField(upload_to=claim_path, max_length=300)
+    name = models.CharField(max_length=200)
+    size = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+
+    @property
+    def is_image(self):
+        return self.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png", "webp")
 
 
 class LicenceLog(models.Model):
