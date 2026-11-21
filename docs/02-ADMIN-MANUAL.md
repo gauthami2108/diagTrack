@@ -261,9 +261,22 @@ Open **Insurance** under **Oversee**. Each row is one policy: the type of cover 
 where it applies, the insurer, the dates and the status: Active, Expiring soon, Expired, Renewed or Cancelled.
 
 **Adding a policy** (administrators and people with Manage access). Choose **Add policy**. The type of cover, insurer, policy number, start date,
-expiry date and at least one document are required. Choose one centre, several centres (hold Ctrl, or Command on a Mac),
-or none for a policy that covers every centre or the head office. **Responsible** may name several people the same way. Documents may be PDF, JPG, PNG or WebP, up to 20 MB
-each; add more later for endorsements or receipts. Every policy keeps at least one document.
+expiry date and at least one document are required. **Centres**, **Responsible** and **Machines covered** are lists of tick boxes
+with **Select all**, **Clear** and a search box; tick none of the centres for a policy that covers every centre or the head office.
+Once centres are ticked, the machine list shows only their machines. **Covers** is a free line for what the policy covers
+(for example Building and contents, MRI room); it shows in the list and can be searched. **+1 year** beside the expiry date fills in
+a date one year after the start. Unusual dates (a policy over three years or under a month long, one that has already ended, or a
+premium date outside the policy) show a yellow note while you type and again after saving; they never stop you saving. A policy
+with the same insurer, policy number and start date as one already in the register is refused, so nothing is entered twice.
+Documents may be PDF, JPG, PNG or WebP, up to 20 MB each; add more later for endorsements or receipts. Every policy keeps at least one document.
+
+**Next premium due** is for policies paid in instalments. Enter the date of the next instalment; a reminder goes out 7 days before and on
+the day, to the same people as the expiry reminders (the amount is never in the message). After paying, change the date to the next
+instalment and the reminders start again. Leave it empty for a policy paid once a year.
+
+**Opening a document.** On the policy page, choosing a file name shows it in a viewer inside DiagTrack, so it also stays in the app
+when DiagTrack is installed on a phone or desktop. The viewer has **Open in new tab** and **Download**; both are also beside each file.
+Some phones cannot show a PDF inside a page: use Download or Open in new tab there.
 
 **Renewing.** Open the policy and choose **Renew**. The new policy starts the day after the old one ends and runs a year;
 change whatever differs and add the new document. The old policy is kept and marked Renewed, so the history stays.
@@ -477,4 +490,4 @@ policies at once, for example when setting up all the centres, or when a new cen
 | New people | Use **Initial password**, or leave it empty: DiagTrack makes a password and shows it once, after the import. Print that page or copy the passwords, and ask each person to change theirs under **My profile** |
 | Existing people | Initial password is ignored. Set a new password under Masters and rules, Users |
 | Dates | Day-month-year, for example 31-03-2027, or an Excel date |
-| Insurance | One row per policy. **Cover type** must be a name from the Cover types tab. **Centres** are codes separated by commas, or `All` (also when left empty on a new row) for every centre or the head office. Put **Yes** under **Renewed** for a policy a later one has replaced, so it sends no reminders. Policy documents cannot come from Excel: add them on each policy's page. Until then the policy shows **No document** in the list |
+| Insurance | One row per policy. **Cover type** must be a name from the Cover types tab. **Centres** are codes separated by commas, or `All` (also when left empty on a new row) for every centre or the head office. **Covers** is free text and **Next premium due** a date. Put **Yes** under **Renewed** for a policy a later one has replaced, so it sends no reminders. Policy documents cannot come from Excel: add them on each policy's page. Until then the policy shows **No document** in the list |

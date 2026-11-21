@@ -1822,6 +1822,7 @@ import shutil as _ins_shutil
 import tempfile as _ins_tempfile
 from datetime import date as _ins_date
 
+from django.contrib.messages import get_messages
 from django.core.files.uploadedfile import SimpleUploadedFile as _InsFile
 
 from .models import InsuranceCoverType, InsuranceDocument, InsurancePolicy
@@ -1941,6 +1942,96 @@ class InsuranceTests(Base):
         self.client.force_login(self.admin)
         self.assertEqual(self.post_new().status_code, 302)
         self.assertEqual(InsurancePolicy.objects.get().responsible.count(), 0)
+
+    # --- the add form ---------------------------------------------------
+    def test_form_offers_tick_lists_select_all_and_plus_one_year(self):
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("insurance_new")).content.decode()
+        for needle in ('type="checkbox" name="centres"', 'type="checkbox" name="equipment"', 'type="checkbox" name="responsible"',
+                       'data-check-all="ins-centres"', 'data-check-all="ins-machines"', 'data-check-all="ins-people"',
+                       "data-plus-year", f'data-centre="{self.kkp.pk}"', "MRI 1.5T · "):
+            self.assertIn(needle, page)
+        self.assertIn("id_premium_due", page)
+        self.assertIn('name="covers"', page)
+
+    def test_ticked_boxes_are_kept_when_the_form_comes_back_with_an_error(self):
+        self.client.force_login(self.admin)
+        r = self.post_new(centres=[self.sec.pk, self.kkp.pk], equipment=[self.mri.pk], expiry_date="2026-01-01")
+        self.assertEqual(r.status_code, 200)  # expiry before start: not saved
+        page = r.content.decode()
+        self.assertRegex(page, rf'name="centres" value="{self.sec.pk}" checked')
+        self.assertRegex(page, rf'name="equipment" value="{self.mri.pk}" checked')
+
+    def test_covers_and_next_premium_due_are_saved_and_shown(self):
+        self.client.force_login(self.admin)
+        self.post_new(covers="Building and contents, MRI room", premium_due="2026-12-01")
+        p = InsurancePolicy.objects.get()
+        self.assertEqual((p.covers, p.premium_due), ("Building and contents, MRI room", _ins_date(2026, 12, 1)))
+        page = self.client.get(reverse("insurance_detail", args=[p.pk]))
+        self.assertContains(page, "Building and contents, MRI room")
+        self.assertContains(page, "01 Dec 2026")
+        self.assertContains(self.client.get(reverse("insurance_list")), "MRI room")
+        self.assertContains(self.client.get(reverse("insurance_list"), {"q": "MRI room"}), "FIRE-9")
+
+    def test_the_same_policy_cannot_be_added_twice(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.post_new().status_code, 302)
+        r = self.post_new(insurer="new india", policy_number="fire-9")  # same insurer, number and start date
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "already in the register")
+        self.assertEqual(InsurancePolicy.objects.count(), 1)
+        self.assertEqual(self.post_new(start_date="2027-04-01", expiry_date="2028-03-31").status_code, 302)  # next year is fine
+        p = InsurancePolicy.objects.get(start_date=_ins_date(2026, 4, 1))  # editing a policy is not a duplicate of itself
+        r = self.client.post(reverse("insurance_edit", args=[p.pk]), {
+            "cover_type": self.fire.pk, "insurer": "New India", "policy_number": "FIRE-9", "start_date": "2026-04-01",
+            "expiry_date": "2027-03-31", "centres": [self.kkp.pk], "notes": "ok"})
+        self.assertEqual(r.status_code, 302)
+
+    def test_unusual_dates_warn_but_do_not_block(self):
+        self.client.force_login(self.admin)
+        r = self.post_new(policy_number="LONG", start_date="2026-04-01", expiry_date="2031-03-31", premium_due="2032-01-01")
+        self.assertEqual(r.status_code, 302)  # saved
+        msgs = [str(m) for m in get_messages(r.wsgi_request)]
+        self.assertTrue(any("years" in m for m in msgs), msgs)
+        self.assertTrue(any("premium due date is outside" in m for m in msgs), msgs)
+        r = self.post_new(policy_number="SHORT", start_date="2026-04-01", expiry_date="2026-04-10")
+        self.assertTrue(any("only 10 days" in str(m) for m in get_messages(r.wsgi_request)))
+        self.client.get(reverse("insurance_list"))  # the page shows (and clears) the messages so far
+        r = self.post_new(policy_number="ORDINARY", start_date=str(timezone.localdate()), expiry_date=str(timezone.localdate() + timedelta(days=364)))
+        self.assertEqual(r.status_code, 302)
+        page = self.client.get(reverse("insurance_list")).content.decode()
+        self.assertIn("Policy saved.", page)
+        self.assertNotIn("toast warning", page)
+
+    def test_one_year_later_handles_leap_day(self):
+        from .views_insurance import _plus_year
+        self.assertEqual(_plus_year(_ins_date(2026, 4, 1)), _ins_date(2027, 3, 31))
+        self.assertEqual(_plus_year(_ins_date(2028, 2, 29)), _ins_date(2029, 2, 28))
+
+    # --- documents --------------------------------------------------------
+    def test_documents_open_in_the_app_with_new_tab_and_download_choices(self):
+        self.client.force_login(self.admin)
+        self.post_new()
+        p = InsurancePolicy.objects.get()
+        url = reverse("insurance_doc", args=[p.documents.get().pk])
+        page = self.client.get(reverse("insurance_detail", args=[p.pk])).content.decode()
+        self.assertIn("data-doc-view", page)
+        self.assertIn('id="doc-viewer"', page)
+        self.assertIn(f'href="{url}" target="_blank"', page)        # Open in new tab
+        self.assertIn(f'href="{url}?download=1"', page)             # Download
+
+    def test_a_pdf_can_be_shown_inside_the_app_but_not_by_other_sites(self):
+        self.client.force_login(self.admin)
+        self.post_new()
+        url = reverse("insurance_doc", args=[InsurancePolicy.objects.get().documents.get().pk])
+        r = self.client.get(url)
+        self.assertEqual(r["X-Frame-Options"], "SAMEORIGIN")
+        self.assertEqual(r["Content-Security-Policy"], "frame-ancestors 'self'")
+        self.assertEqual(r["X-Content-Type-Options"], "nosniff")
+        self.assertIn("inline", r["Content-Disposition"])
+        d = self.client.get(url + "?download=1")
+        self.assertIn("attachment", d["Content-Disposition"])
+        self.assertIn("default-src 'none'", d["Content-Security-Policy"])  # a download keeps the strict rule
 
     # --- who has access -------------------------------------------------
     def test_no_access_means_no_page_menu_or_files_even_for_managers_and_management(self):
@@ -2267,6 +2358,63 @@ class InsuranceReminderTests(Base):
         self.run_on(20)
         self.assertEqual(self.who(), self.admins() | {"director", "accounts", "other"})
 
+    def premium_policy(self, due, **kw):
+        p = self.policy([self.kkp], **kw)
+        p.premium_due = due
+        p.save()
+        return p
+
+    def premium_notes(self):
+        return list(Notification.objects.filter(kind="insurance", title__startswith="Premium"))
+
+    def test_premium_reminders_come_7_days_before_and_on_the_day_once_each(self):
+        due = _ins_date(2027, 1, 15)
+        p = self.premium_policy(due)
+        services.insurance_checks(due - timedelta(days=10))
+        self.assertEqual(self.premium_notes(), [])
+        services.insurance_checks(due - timedelta(days=7))
+        first = len(self.premium_notes())
+        self.assertGreater(first, 0)
+        self.assertIn("due in 7 days", self.premium_notes()[0].title)
+        services.insurance_checks(due - timedelta(days=7))  # same day again: nothing new
+        services.insurance_checks(due - timedelta(days=3))
+        self.assertEqual(len(self.premium_notes()), first)
+        services.insurance_checks(due)
+        self.assertEqual(len(self.premium_notes()), first * 2)
+        self.assertTrue(any("due today" in n.title for n in self.premium_notes()))
+        services.insurance_checks(due + timedelta(days=1))  # past due: the reminder stays quiet
+        self.assertEqual(len(self.premium_notes()), first * 2)
+
+    def test_the_premium_alert_goes_to_the_same_people_and_never_shows_the_amount(self):
+        User.objects.filter(pk=self.accounts.pk).update(insurance_access="own")
+        due = _ins_date(2027, 1, 15)
+        self.premium_policy(due, responsible=self.accounts)
+        services.insurance_checks(due)
+        self.assertEqual({n.user.username for n in self.premium_notes()}, self.admins() | {"imran", "kavitha", "director", "accounts"})
+        for n in self.premium_notes():
+            self.assertNotIn("₹", n.title + n.body)
+
+    def test_changing_the_due_date_after_paying_starts_the_reminders_again(self):
+        due = _ins_date(2027, 1, 15)
+        p = self.premium_policy(due)
+        services.insurance_checks(due)
+        count = len(self.premium_notes())
+        p.refresh_from_db()
+        p.premium_due = _ins_date(2027, 4, 15)  # next instalment
+        p.save()
+        services.insurance_checks(_ins_date(2027, 4, 8))
+        self.assertGreater(len(self.premium_notes()), count)
+
+    def test_no_premium_alert_without_a_due_date_or_for_cancelled_policies(self):
+        self.policy([self.kkp])
+        services.insurance_checks(_ins_date(2027, 1, 15))
+        self.assertEqual(self.premium_notes(), [])
+        p = self.premium_policy(_ins_date(2027, 1, 15))
+        p.cancelled = True
+        p.save()
+        services.insurance_checks(_ins_date(2027, 1, 15))
+        self.assertEqual(self.premium_notes(), [])
+
     def test_view_own_only_for_centres_the_policy_covers(self):
         User.objects.filter(pk=self.sec_cm.pk).update(insurance_access="own")
         self.policy([self.kkp, self.sec])
@@ -2590,6 +2738,22 @@ class InsuranceImportTests(Base):
         bad = self.book()
         self.add(bad, {"User name": "zed", "Role": "Agent", "Insurance access": "Everything"}, "People")
         self.assertIn("Insurance access", " ".join(self.errors(self.read(bad))))
+
+    def test_covers_and_next_premium_due_come_in_and_go_out(self):
+        from . import bulk_import
+        wb = self.book()
+        self.add(wb, self.row(**{"Covers": "Building and contents", "Next premium due": "15-01-2027"}))
+        plan = self.read(wb)
+        self.assertEqual(self.errors(plan), [])
+        bulk_import.apply(plan)
+        p = InsurancePolicy.objects.get()
+        self.assertEqual((p.covers, p.premium_due), ("Building and contents", _ins_date(2027, 1, 15)))
+        row = bulk_import._current_rows()["Insurance"][0]
+        self.assertEqual((row["covers"], row["premium_due"]), ("Building and contents", _ins_date(2027, 1, 15)))
+        self.assertEqual([r.action for r in self.read(self.book()).rows["Insurance"]], ["same"])
+        bad = self.book()
+        self.add(bad, self.row(**{"Policy number": "Z", "Next premium due": "soon"}))
+        self.assertIn("Next premium due", " ".join(self.errors(self.read(bad))))
 
     def test_several_responsible_people_are_read_changed_and_exported(self):
         from . import bulk_import

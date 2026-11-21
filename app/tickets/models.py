@@ -623,6 +623,14 @@ class InsurancePolicy(models.Model):
     responsible = models.ManyToManyField(
         User, blank=True, related_name="insurance_policies",
         help_text="Optional. One or more people. They also receive the expiry reminders if they have Insurance access.")
+    covers = models.CharField(
+        max_length=200, blank=True,
+        help_text="Optional. What is covered, for example: building and contents, MRI room, 2nd floor.")
+    premium_due = models.DateField(
+        "next premium due", null=True, blank=True,
+        help_text="Optional. For policies paid in instalments. Reminders come 7 days before and on the day. Change it after each payment.")
+    premium_alert_for = models.DateField(null=True, blank=True, editable=False)
+    premium_alert_stage = models.PositiveSmallIntegerField(default=0, editable=False)
     remind_days = models.PositiveSmallIntegerField(
         "first reminder (days before expiry)", null=True, blank=True,
         help_text="Optional. Leave empty to use the number on the Settings page. Further reminders follow 30 and 7 days before, and on the expiry date.")

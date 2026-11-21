@@ -660,12 +660,27 @@ def insurance_stages(first):
     return sorted({d for d in (first, 30, 7, 0, -1) if d <= first}, reverse=True)
 
 
+PREMIUM_STAGES = (7, 0)  # days before the next premium is due
+
+
+def _insurance_people(p, admins, holders):
+    """Who hears about a policy: administrators, people with Insurance access who can see it, and the responsible people."""
+    covered = {c.pk for c in p.centres.all()}
+    people = list(admins)
+    for u in holders:
+        if u.insurance_access in ("all", "manage") or covered & {c.pk for c in u.centres.all()}:
+            people.append(u)
+    people += [u for u in p.responsible.all() if u.is_active and u.can_view_insurance]
+    return people
+
+
 def insurance_checks(today=None):
-    """Once a day: warn about insurance policies that are ending or have ended.
+    """Once a day: warn about insurance policies that are ending or have ended, and about premiums falling due.
 
     Goes to the administrators, people given Insurance access who can see the policy (all or manage level, or view-own
     for a centre it covers) and the people responsible, if they have Insurance access.
-    Each stage is sent once; changing the expiry date (or renewing, which makes a new policy) starts again.
+    Each stage is sent once; changing the expiry date (or renewing, which makes a new policy) starts again, and
+    changing the next premium due date starts that reminder again.
     A policy that was already long over when it was recorded is not announced."""
     today = today or timezone.localdate()
     default_first = SiteSettings.load().insurance_alert_days or 60
@@ -684,19 +699,31 @@ def insurance_checks(today=None):
             if p.alert_stage == 0 and left < -30:
                 pass  # recorded long after it ended: no point announcing it
             else:
-                covered = {c.pk for c in p.centres.all()}
-                people = list(admins)
-                for u in holders:
-                    if u.insurance_access in ("all", "manage") or covered & {c.pk for c in u.centres.all()}:
-                        people.append(u)
-                people += [u for u in p.responsible.all() if u.is_active and u.can_view_insurance]
                 when = "has expired" if left < 0 else "ends today" if left == 0 else f"ends in {left} days"
-                nt.notify(people, None, f"{p.cover_type.name} insurance for {p.location} {when}",
+                nt.notify(_insurance_people(p, admins, holders), None,
+                          f"{p.cover_type.name} insurance for {p.location} {when}",
                           f"Policy {p.policy_number} with {p.insurer}. Expiry {p.expiry_date:%d %b %Y}.",
                           urgent=left <= 7, kind="insurance", link=f"/insurance/{p.pk}/")
                 sent += 1
             p.alert_stage = stage
-        p.save(update_fields=["alert_for", "alert_stage"])
+
+        # Premium paid in instalments: 7 days before and on the day. The amount is never put in the alert.
+        if p.premium_alert_for != p.premium_due:
+            p.premium_alert_for, p.premium_alert_stage = p.premium_due, 0
+        if p.premium_due:
+            pleft = (p.premium_due - today).days
+            pdue = [st for st in PREMIUM_STAGES if pleft <= st] if pleft >= 0 else []
+            pstage = (min(pdue) + 2) if pdue else 0
+            if pdue and (p.premium_alert_stage == 0 or pstage < p.premium_alert_stage):
+                when = "is due today" if pleft == 0 else f"is due in {pleft} days"
+                nt.notify(_insurance_people(p, admins, holders), None,
+                          f"Premium for {p.cover_type.name} insurance at {p.location} {when}",
+                          f"Policy {p.policy_number} with {p.insurer}. Premium due {p.premium_due:%d %b %Y}. "
+                          "After paying, set the next premium due date on the policy.",
+                          urgent=pleft <= 1, kind="insurance", link=f"/insurance/{p.pk}/")
+                sent += 1
+                p.premium_alert_stage = pstage
+        p.save(update_fields=["alert_for", "alert_stage", "premium_alert_for", "premium_alert_stage"])
     return sent
 
 

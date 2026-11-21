@@ -479,6 +479,8 @@ a.band-cell:hover { background: var(--surface-2); text-decoration: none; }
 .callout ul { list-style: disc; padding-left: 18px; margin-top: 4px; }
 .callout-bad { background: var(--bad-soft); color: var(--bad); }
 .callout-info { background: var(--accent-soft); color: var(--accent-text); }
+.callout-warn { background: var(--warn-soft); color: var(--warn); }
+.callout[hidden] { display: none; }
 .hint { color: var(--ink-2); font-size: 13.5px; background: var(--surface-2); padding: 10px 12px; border-radius: 9px; }
 
 /* switches */
@@ -1173,3 +1175,23 @@ textarea.mono, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Conso
 .count-bad { background: var(--bad-soft); color: var(--bad); }
 .grid-table th, .grid-table td { padding-left: 12px; padding-right: 12px; }
 .grid-table th { white-space: normal; vertical-align: bottom; }
+
+/* ---------- insurance form: tick lists, +1 year, document viewer ---------- */
+.check-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.check-head > span { font-weight: 500; font-size: 13.5px; }
+.check-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.check-tools .check-search { width: 180px; flex: 0 0 180px; height: 32px; }
+.check-tools .btn { white-space: nowrap; }
+.check-grid.check-tall { max-height: 220px; }
+.check-pill.scoped-out { display: none; }
+.field-with-btn { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.field-with-btn .btn { margin-bottom: 1px; }
+.doc-viewer { width: min(960px, calc(100vw - 16px)); height: min(88vh, 900px); }
+.doc-viewer[open] { display: flex; flex-direction: column; }
+.doc-viewer header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.doc-viewer header h2 { flex: 1; min-width: 120px; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-viewer .doc-body { flex: 1; min-height: 0; display: grid; background: var(--surface-2); }
+.doc-viewer iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+.doc-viewer img { max-width: 100%; max-height: 100%; margin: auto; object-fit: contain; }
+.doc-viewer .doc-note { margin: 0; padding: 8px 14px; font-size: 12.5px; color: var(--ink-3); border-top: 1px solid var(--line); }
+.doc-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: 6px; }

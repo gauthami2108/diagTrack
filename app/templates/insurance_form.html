@@ -7,13 +7,18 @@
   {% csrf_token %}
   {% if old %}<input type="hidden" name="renew" value="{{ old.pk }}">{% endif %}
   {% if problems or form.errors %}<div class="callout callout-bad" role="alert">{% icon 'circle-alert' %}<div><strong>The policy was not saved.</strong><ul>{% for e in problems %}<li>{{ e }}</li>{% endfor %}{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% if form.errors and not problems %}<p class="sub">Check the marked fields below.</p>{% endif %}</div></div>{% endif %}
-  <div class="field-row">{% include "_field.html" with f=form.cover_type %}{% include "_field.html" with f=form.centres %}</div>
+  <div class="field-row">{% include "_field.html" with f=form.cover_type %}{% include "_field.html" with f=form.covers %}</div>
+  {% include "_checklist.html" with title="Centres" name="centres" uid="ins-centres" items=form.centres_items errors=form.centres.errors hint=form.centres.help_text %}
   <div class="field-row">{% include "_field.html" with f=form.insurer %}{% include "_field.html" with f=form.policy_number %}</div>
   {% include "_field.html" with f=form.contact %}
-  <div class="field-row">{% include "_field.html" with f=form.start_date %}{% include "_field.html" with f=form.expiry_date %}</div>
+  <div class="field-row">{% include "_field.html" with f=form.start_date %}
+    <div class="field-with-btn">{% include "_field.html" with f=form.expiry_date %}<button class="btn btn-s" type="button" data-plus-year data-start="id_start_date" data-end="id_expiry_date" title="Set the expiry date to one year after the start date">+1 year</button></div></div>
+  <div class="callout callout-warn" data-date-warn role="status" hidden>{% icon 'triangle-alert' %}<div></div></div>
+  {% include "_field.html" with f=form.premium_due %}
   {% if money %}<div class="field-row">{% include "_field.html" with f=form.sum_insured %}{% include "_field.html" with f=form.premium %}</div>{% endif %}
-  <div class="field-row">{% include "_field.html" with f=form.responsible %}{% include "_field.html" with f=form.remind_days %}</div>
-  {% include "_field.html" with f=form.equipment %}
+  {% include "_field.html" with f=form.remind_days %}
+  {% include "_checklist.html" with title="Responsible" name="responsible" uid="ins-people" items=form.responsible_items errors=form.responsible.errors hint=form.responsible.help_text %}
+  {% include "_checklist.html" with title="Machines covered (optional)" name="equipment" uid="ins-machines" items=form.equipment_items errors=form.equipment.errors hint="Tick the machines this policy covers. When centres are ticked above, only their machines are listed." %}
   {% include "_field.html" with f=form.notes %}
   {% if not new %}<label class="check"><input type="checkbox" name="cancelled" {% if form.cancelled.value %}checked{% endif %}><span><b>{{ form.cancelled.label|capfirst }}</b><small>{{ form.cancelled.help_text }}</small></span></label>{% endif %}
 

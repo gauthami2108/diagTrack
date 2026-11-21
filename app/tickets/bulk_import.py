@@ -106,6 +106,8 @@ SHEETS = {
         ("Start date", "start_date", True, "A date, for example 01-04-2026"),
         ("Expiry date", "expiry_date", True, "A date, for example 31-03-2027"),
         ("Broker or agent", "contact", False, "Name and phone number"),
+        ("Covers", "covers", False, "What is covered, for example Building and contents, MRI room"),
+        ("Next premium due", "premium_due", False, "A date. Only for policies paid in instalments. Reminders come 7 days before and on the day"),
         ("Sum insured", "sum_insured", False, "Rupees, for example 5000000. Shown to administrators and management only"),
         ("Premium", "premium", False, "Rupees"),
         ("Responsible (user names)", "responsible", False, "One or more user names separated by commas. They also receive the expiry reminders"),
@@ -436,7 +438,7 @@ def _check(plan):
         if not number:
             r.errors.append("Policy number is empty.")
         dates = {}
-        for key, label in (("start_date", "Start date"), ("expiry_date", "Expiry date")):
+        for key, label in (("start_date", "Start date"), ("expiry_date", "Expiry date"), ("premium_due", "Next premium due")):
             if v.get(key):
                 try:
                     dates[key] = _date(r.values[key])
@@ -453,7 +455,7 @@ def _check(plan):
         end = dates.get("expiry_date") or (existing.expiry_date if existing else None)
         if end and dates.get("start_date") and end < dates["start_date"]:
             r.errors.append("The expiry date is before the start date.")
-        fields = {"insurer": insurer, "policy_number": number, "contact": v.get("contact"), **dates}
+        fields = {"insurer": insurer, "policy_number": number, "contact": v.get("contact"), "covers": v.get("covers"), **dates}
         for key, label, digits in (("sum_insured", "Sum insured", 12), ("premium", "Premium", 10)):
             if v.get(key):
                 try:
@@ -690,7 +692,7 @@ def workbook():
                 dv = DataValidation(type="list", formula1=choices, allow_blank=True)
                 dv.add(f"{letter}2:{letter}{last}")
                 ws.add_data_validation(dv)
-            if key in ("amc_expiry", "start_date", "expiry_date"):
+            if key in ("amc_expiry", "start_date", "expiry_date", "premium_due"):
                 for i in range(2, len(data[sheet]) + 2):
                     ws.cell(row=i, column=j).number_format = "DD-MM-YYYY"
             if key in ("mobile", "serial_no", "phone", "code", "policy_number"):
@@ -727,7 +729,7 @@ def _current_rows():
                       for e in Equipment.objects.select_related("centre", "vendor").order_by("centre__code", "name")],
         "Insurance": [{"cover_type": p.cover_type.name, "centres": ", ".join(c.code for c in p.centres.all()) or "All",
                        "insurer": p.insurer, "policy_number": p.policy_number, "start_date": p.start_date,
-                       "expiry_date": p.expiry_date, "contact": p.contact,
+                       "expiry_date": p.expiry_date, "contact": p.contact, "covers": p.covers, "premium_due": p.premium_due,
                        "sum_insured": float(p.sum_insured) if p.sum_insured is not None else None,
                        "premium": float(p.premium) if p.premium is not None else None,
                        "responsible": ", ".join(u.username for u in p.responsible.all()), "remind_days": p.remind_days,
