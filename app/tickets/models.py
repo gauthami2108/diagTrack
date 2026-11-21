@@ -722,6 +722,88 @@ class InsuranceClaim(models.Model):
         return self.status in self.OPEN
 
 
+def licence_path(instance, filename):
+    return f"licences/{instance.licence_id}/{timezone.now():%Y%m%d%H%M%S}-{filename}"
+
+
+class Licence(models.Model):
+    """A licence, registration or certificate that runs out and must be renewed: AERB, biomedical waste, fire NOC and so on."""
+    ACTIVE, EXPIRING, EXPIRED, RENEWED, CLOSED = "active", "expiring", "expired", "renewed", "closed"
+    STATUS_LABELS = {ACTIVE: "Valid", EXPIRING: "Expiring soon", EXPIRED: "Expired", RENEWED: "Renewed", CLOSED: "Closed"}
+    DEFAULT_FIRST_REMINDER = 90
+    SUGGESTIONS = ["AERB licence (radiation)", "AERB registration of equipment", "Biomedical waste authorisation",
+                   "Fire NOC", "Pollution control board consent", "Clinical establishment registration",
+                   "Trade licence", "Lift licence", "NABL accreditation", "NABH accreditation", "PC-PNDT registration",
+                   "Radiation safety officer approval", "Lead apron / TLD calibration certificate"]
+    name = models.CharField("licence or certificate", max_length=120)
+    issuer = models.CharField("issued by", max_length=120, blank=True, help_text="The authority, for example AERB or the pollution control board.")
+    reference_number = models.CharField("number", max_length=80, blank=True)
+    centres = models.ManyToManyField(Centre, blank=True, related_name="licences",
+                                     help_text="Leave empty for one that covers every centre or the head office.")
+    equipment = models.ForeignKey("Equipment", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                  verbose_name="machine", help_text="Only if it belongs to one machine.")
+    issued_on = models.DateField("issued on")
+    valid_until = models.DateField("valid until")
+    responsible = models.ManyToManyField(User, blank=True, related_name="licences",
+                                         help_text="Optional. One or more people. They also receive the reminders if they have Insurance access.")
+    remind_days = models.PositiveSmallIntegerField("first reminder (days before it ends)", null=True, blank=True,
+                                                   help_text="Optional. Empty uses 90 days. Then 30, 7, 0 and the day after.")
+    notes = models.TextField(blank=True)
+    closed = models.BooleanField("no longer needed", default=False)
+    renewed = models.BooleanField(default=False)
+    renewed_from = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="renewals")
+    alert_for = models.DateField(null=True, blank=True, editable=False)
+    alert_stage = models.PositiveSmallIntegerField(default=0, editable=False)
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["valid_until", "name", "pk"]
+
+    def __str__(self):
+        return f"{self.name} {self.reference_number}".strip()
+
+    @property
+    def location(self):
+        names = [c.name for c in self.centres.all()]
+        return ", ".join(names) if names else "All centres"
+
+    @property
+    def current(self):
+        return not (self.closed or self.renewed)
+
+    @property
+    def first_reminder(self):
+        return self.remind_days or self.DEFAULT_FIRST_REMINDER
+
+    def status_on(self, today):
+        if self.closed:
+            return self.CLOSED
+        if self.renewed:
+            return self.RENEWED
+        if self.valid_until < today:
+            return self.EXPIRED
+        if (self.valid_until - today).days <= self.first_reminder:
+            return self.EXPIRING
+        return self.ACTIVE
+
+
+class LicenceDocument(models.Model):
+    licence = models.ForeignKey(Licence, on_delete=models.CASCADE, related_name="documents")
+    file = models.FileField(upload_to=licence_path, max_length=300)
+    name = models.CharField(max_length=200)
+    size = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+
+    @property
+    def is_image(self):
+        return self.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png", "webp")
+
+
 class InsuranceLog(models.Model):
     """Who changed what on a policy. Shown on the policy page to everyone who may open it."""
     policy = models.ForeignKey(InsurancePolicy, on_delete=models.CASCADE, related_name="log")

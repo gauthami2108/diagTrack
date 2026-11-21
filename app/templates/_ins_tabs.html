@@ -1,0 +1,6 @@
+<div class="tabs" role="tablist">
+  <a role="tab" href="{% url 'insurance_list' %}?tab=policies">Policies</a>
+  <a role="tab" href="{% url 'insurance_list' %}?tab=gaps">Coverage grid</a>
+  <a role="tab" href="{% url 'insurance_list' %}?tab=claims">Claims</a>
+  <a role="tab" href="{% url 'licence_list' %}" {% if licences_tab %}aria-selected="true"{% endif %}>Licences</a>
+</div>

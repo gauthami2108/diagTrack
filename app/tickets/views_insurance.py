@@ -594,11 +594,8 @@ def insurance_doc_delete(request, pk):
     return redirect("insurance_detail", pk=p.pk)
 
 
-@viewer
-def insurance_doc(request, pk):
-    d = get_object_or_404(InsuranceDocument.objects.select_related("policy"), pk=pk)
-    if not _scoped(request.user).filter(pk=d.policy_id).exists():
-        raise Http404
+def serve_document(request, d):
+    """Sends a stored policy or licence document: inline for PDFs and images, otherwise (or with ?download=1) as a download."""
     is_pdf = d.name.lower().endswith(".pdf")
     download = request.GET.get("download") == "1"
     try:
@@ -613,6 +610,14 @@ def insurance_doc(request, pk):
         resp["Content-Security-Policy"] = "frame-ancestors 'self'"
         resp["X-Frame-Options"] = "SAMEORIGIN"
     return resp
+
+
+@viewer
+def insurance_doc(request, pk):
+    d = get_object_or_404(InsuranceDocument.objects.select_related("policy"), pk=pk)
+    if not _scoped(request.user).filter(pk=d.policy_id).exists():
+        raise Http404
+    return serve_document(request, d)
 
 
 def home_card(user):

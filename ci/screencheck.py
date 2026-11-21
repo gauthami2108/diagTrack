@@ -36,7 +36,7 @@ DEMO_PASSWORD = "Demo@12345"
 COMMON = ["/", "/tickets/", "/tickets/{ticket}/", "/alerts/", "/me/", "/password/"]
 RESOLVER = COMMON + ["/tickets/new/", "/tickets/board/", "/equipment/", "/equipment/{equipment}/"]
 OVERSEER = RESOLVER + ["/dashboard/", "/centres/", "/reports/"]
-ADMIN = OVERSEER + ["/insurance/", "/insurance/new/", "/insurance/{policy}/", "/insurance/{policy}/edit/", "/insurance/?tab=claims", "/insurance/{policy}/claims/new/", "/insurance/?tab=gaps", "/insurance/?tab=types", "/reports/print/", "/equipment/labels/", "/settings/", "/settings/templates/", "/settings/backups/", "/settings/import/",
+ADMIN = OVERSEER + ["/insurance/", "/insurance/new/", "/insurance/{policy}/", "/insurance/{policy}/edit/", "/insurance/?tab=claims", "/insurance/{policy}/claims/new/", "/licences/", "/licences/new/", "/licences/{licence}/", "/licences/{licence}/edit/", "/insurance/?tab=gaps", "/insurance/?tab=types", "/reports/print/", "/equipment/labels/", "/settings/", "/settings/templates/", "/settings/backups/", "/settings/import/",
                     "/admin/", "/admin/tickets/user/", "/admin/tickets/user/add/", "/admin/tickets/equipment/",
                     "/admin/tickets/equipment/add/", "/admin/tickets/centre/", "/admin/tickets/department/",
                     "/admin/tickets/category/", "/admin/tickets/slapolicy/", "/admin/tickets/escalationrule/",
@@ -120,9 +120,11 @@ def main():
                              "p.centres.set(Centre.objects.all()[:2]); p.responsible.set(User.objects.filter(role='admin')[:1]);"
                              "InsuranceClaim.objects.create(policy=p, incident_date=t - timedelta(days=12), description='Compressor failure in the MRI', status='filed', amount_claimed=250000);"
                              "d = InsuranceDocument(policy=p, name='policy.pdf', size=20); d.file.save('policy.pdf', ContentFile(b'%PDF-1.4 demo')); d.save();"
-                             "print(p.pk)"],
-                            cwd=APP, env=env, check=True, capture_output=True, text=True).stdout.strip().splitlines()[-1]
-    fill = {"tickets": json.loads(tickets), "equipment": equipment, "policy": policy}
+                             "l = Licence.objects.create(name='Fire NOC', issuer='Fire services', reference_number='FS/2026/18', issued_on=t - timedelta(days=200), valid_until=t + timedelta(days=45));"
+                             "l.centres.set(Centre.objects.all()[:1]); ld = LicenceDocument(licence=l, name='noc.pdf', size=20); ld.file.save('noc.pdf', ContentFile(b'%PDF-1.4 demo')); ld.save();"
+                             "print(p.pk, l.pk)"],
+                            cwd=APP, env=env, check=True, capture_output=True, text=True).stdout.strip().splitlines()[-1].split()
+    fill = {"tickets": json.loads(tickets), "equipment": equipment, "policy": policy[0], "licence": policy[1]}
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"
@@ -175,7 +177,7 @@ def check(sync_playwright, base, fill):
                 page.click("button[type=submit]")
                 page.wait_for_load_state("networkidle")
                 for url in urls:
-                    url = url.format(ticket=fill["tickets"][login], equipment=fill["equipment"], policy=fill["policy"])
+                    url = url.format(ticket=fill["tickets"][login], equipment=fill["equipment"], policy=fill["policy"], licence=fill["licence"])
                     errors.clear()
                     page.goto(base + url)
                     page.wait_for_load_state("networkidle")

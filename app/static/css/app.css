@@ -1165,7 +1165,7 @@ textarea.mono, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Conso
 .ins-active { background: var(--good-soft); color: var(--good); }
 .ins-expiring { background: var(--warn-soft); color: var(--warn); }
 .ins-expired { background: var(--bad-soft); color: var(--bad); }
-.ins-renewed, .ins-cancelled { background: var(--line-2); color: var(--ink-2); }
+.ins-renewed, .ins-cancelled, .ins-closed { background: var(--line-2); color: var(--ink-2); }
 .band-cell.is-warn .band-n { color: var(--warn); }
 .inline-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .inline-row input[type="text"] { flex: 1; min-width: 200px; }

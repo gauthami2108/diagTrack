@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth import views as auth
 from django.urls import path
 
-from tickets import views, views_backup, views_import, views_insurance
+from tickets import views, views_backup, views_import, views_insurance, views_licence
 from tickets.signin import SignInForm
 
 handler403 = "tickets.views.error_403"
@@ -26,6 +26,15 @@ urlpatterns = [
     path("insurance/", views_insurance.insurance_list, name="insurance_list"),
     path("insurance/new/", views_insurance.insurance_new, name="insurance_new"),
     path("insurance/export.xlsx", views_insurance.insurance_export, name="insurance_export"),
+    path("licences/", views_licence.licence_list, name="licence_list"),
+    path("licences/new/", views_licence.licence_new, name="licence_new"),
+    path("licences/export.xlsx", views_licence.licence_export, name="licence_export"),
+    path("licences/files/<int:pk>/", views_licence.licence_doc, name="licence_doc"),
+    path("licences/files/<int:pk>/delete/", views_licence.licence_doc_delete, name="licence_doc_delete"),
+    path("licences/<int:pk>/", views_licence.licence_detail, name="licence_detail"),
+    path("licences/<int:pk>/edit/", views_licence.licence_edit, name="licence_edit"),
+    path("licences/<int:pk>/delete/", views_licence.licence_delete, name="licence_delete"),
+    path("licences/<int:pk>/files/", views_licence.licence_doc_add, name="licence_doc_add"),
     path("insurance/claims.xlsx", views_insurance.claims_export, name="claims_export"),
     path("insurance/claims/<int:pk>/edit/", views_insurance.claim_edit, name="claim_edit"),
     path("insurance/claims/<int:pk>/delete/", views_insurance.claim_delete, name="claim_delete"),
