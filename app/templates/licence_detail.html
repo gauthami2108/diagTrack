@@ -25,6 +25,12 @@
       </dl>
       {% if x.notes %}<p class="note-text">{{ x.notes|linebreaksbr }}</p>{% endif %}
     </section>
+
+    <section class="panel"><header><h2>Change history</h2></header>
+      {% if log %}<ul class="plain log-list">{% for e in log %}
+        <li>{{ e.text }}<small class="muted"> {{ e.actor.display_name|default:"System" }}, {{ e.at|date:"d M Y, H:i" }}</small></li>{% endfor %}</ul>
+      {% else %}<p class="empty">No changes recorded yet.</p>{% endif %}
+    </section>
   </div>
   <div class="stack">
     <section class="panel"><header><h2>Documents</h2></header>

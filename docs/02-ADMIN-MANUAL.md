@@ -283,7 +283,8 @@ the document (required, as for policies). **Renew** continues the dates from the
 marks the old one Renewed. Reminders go to the same people as insurance: the first one 90 days before it ends (or the licence's
 own number), then 30 days, 7 days, the last day and the day after if it was not renewed, each once. A licence that is
 no longer needed can be marked Closed, which stops reminders. Documents open in the same in-app viewer. The list has filters
-and an Excel export. Only an administrator deletes a licence.
+and an Excel export. Each licence page has a **Change history** (who changed which date, number, centre or document, and
+renewals), as policies do; money is not involved. Only an administrator deletes a licence.
 
 **Uninsured machine check.** Give a machine its **value** (Masters, Equipment; optional). On the **Coverage grid** tab, a
 panel lists every active machine worth at least the amount in Settings (**Flag uninsured machines worth at least**, default

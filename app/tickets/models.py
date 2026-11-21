@@ -818,6 +818,17 @@ class InsuranceLog(models.Model):
         ordering = ["-at", "-pk"]
 
 
+class LicenceLog(models.Model):
+    """Who changed what on a licence or certificate. Shown on its page to everyone who may open it."""
+    licence = models.ForeignKey(Licence, on_delete=models.CASCADE, related_name="log")
+    actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    at = models.DateTimeField(default=timezone.now)
+    text = models.CharField(max_length=500)
+
+    class Meta:
+        ordering = ["-at", "-pk"]
+
+
 class SiteSettings(models.Model):
     """One row only. Edited on the Settings screen."""
     org_name = models.CharField("organisation name", max_length=120, default="Pramodini Medicare Limited")

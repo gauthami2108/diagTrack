@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from . import insurance_log as ilog
 from .models import Centre, Equipment, Licence, LicenceDocument, User
 from .views import admin_only
 from .views_insurance import MAX_FILE_MB, PolicyForm, check_files, manager, serve_document, viewer, _plus_year
@@ -157,7 +158,7 @@ def licence_detail(request, pk):
     x.days_left = (x.valid_until - today).days
     x.status = x.status_on(today)
     return render(request, "licence_detail.html", {
-        "x": x, "docs": x.documents.all(), "can_edit": request.user.can_manage_insurance, "can_admin": request.user.is_admin,
+        "x": x, "docs": x.documents.all(), "log": x.log.select_related("actor")[:50], "can_edit": request.user.can_manage_insurance, "can_admin": request.user.is_admin,
         "renewed_from": x.renewed_from, "renewals": x.renewals.all(), "max_mb": MAX_FILE_MB,
         "reminders": sorted({d for d in (x.first_reminder, 30, 7, 0) if d <= x.first_reminder}, reverse=True)})
 
@@ -194,6 +195,11 @@ def licence_new(request):
             if old:
                 old.renewed = True
                 old.save(update_fields=["renewed"])
+                ilog.licence_record(x, request.user, f"Added as the renewal of {old.reference_number or old.name} "
+                                                     f"(ended {old.valid_until:%d %b %Y})")
+                ilog.licence_record(old, request.user, f"Renewed by {x.reference_number or x.name} (valid until {x.valid_until:%d %b %Y})")
+            else:
+                ilog.licence_record(x, request.user, f"Added, with {len(files)} document{'s' if len(files) != 1 else ''}")
             messages.success(request, "Saved." if not old else "Renewed. The old one is marked Renewed.")
             return redirect("licence_detail", pk=x.pk)
         messages.error(request, "It was not saved. Check the marked fields.")
@@ -204,12 +210,16 @@ def licence_new(request):
 @manager
 def licence_edit(request, pk):
     x = get_object_or_404(_scoped(request.user), pk=pk)
+    before = ilog.licence_snapshot(x)  # taken first: validating the form changes the object in memory
     form = LicenceForm(request.POST or None, instance=x)
     files = request.FILES.getlist("files")
     problems = check_files(files) if request.method == "POST" and files else []
     if request.method == "POST":
         if form.is_valid() and not problems:
             form.save()
+            ilog.licence_record_changes(x, request.user, before)
+            if files:
+                ilog.licence_record(x, request.user, f"Added {len(files)} document{'s' if len(files) != 1 else ''}")
             save_files(x, files, request.user)
             messages.success(request, "Saved.")
             return redirect("licence_detail", pk=x.pk)
@@ -240,6 +250,8 @@ def licence_doc_add(request, pk):
             messages.error(request, p)
     else:
         save_files(x, files, request.user)
+        ilog.licence_record(x, request.user, f"Added {len(files)} document{'s' if len(files) != 1 else ''}: "
+                                             + ", ".join(f.name for f in files)[:300])
         messages.success(request, f"{len(files)} file{'s' if len(files) != 1 else ''} added.")
     return redirect("licence_detail", pk=x.pk)
 
@@ -252,8 +264,10 @@ def licence_doc_delete(request, pk):
     if x.documents.count() <= 1:
         messages.error(request, "It must keep at least one document. Add the new one first, then remove this one.")
     else:
+        name = d.name
         d.file.delete(save=False)
         d.delete()
+        ilog.licence_record(x, request.user, f"Removed document {name}")
         messages.success(request, "Document removed.")
     return redirect("licence_detail", pk=x.pk)
 
