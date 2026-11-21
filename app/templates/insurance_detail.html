@@ -17,6 +17,7 @@
     <section class="panel"><header><h2>Policy</h2></header>
       <dl class="kv">
         <div><dt>Type of cover</dt><dd>{{ p.cover_type.name }}</dd></div>
+        {% if p.covers %}<div><dt>Covers</dt><dd>{{ p.covers }}</dd></div>{% endif %}
         <div><dt>Where</dt><dd>{{ p.location }}</dd></div>
         <div><dt>Insurer</dt><dd>{{ p.insurer }}</dd></div>
         <div><dt>Policy number</dt><dd>{{ p.policy_number }}</dd></div>
@@ -27,6 +28,7 @@
           {% if p.sum_insured is not None %}<div><dt>Sum insured</dt><dd>₹{{ p.sum_insured|floatformat:0 }}</dd></div>{% endif %}
           {% if p.premium is not None %}<div><dt>Premium</dt><dd>₹{{ p.premium|floatformat:0 }}</dd></div>{% endif %}
         {% endif %}
+        {% if p.premium_due %}<div><dt>Next premium due</dt><dd>{{ p.premium_due|date:"d M Y" }}{% if premium_days is not None %} <small class="muted">({% if premium_days > 0 %}in {{ premium_days }} day{{ premium_days|pluralize }}{% elif premium_days == 0 %}today{% else %}{{ premium_days|abs }} day{{ premium_days|abs|pluralize }} ago{% endif %})</small>{% endif %}</dd></div>{% endif %}
         <div><dt>Responsible</dt><dd>{% if p.responsible.all %}{% for u in p.responsible.all %}{{ u.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}<span class="muted">Not set</span>{% endif %}</dd></div>
         <div><dt>Reminders</dt><dd>{% for s in stages %}{% if s > 0 %}{{ s }} days before{% elif s == 0 %}on the expiry date{% else %}the day after if not renewed{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if not p.remind_days %} <small class="muted">(first one from Settings)</small>{% endif %}</dd></div>
       </dl>
@@ -44,7 +46,8 @@
   <div class="stack">
     <section class="panel"><header><h2>Documents</h2></header>
       {% if docs %}<ul class="plain">{% for d in docs %}
-        <li><a href="{% url 'insurance_doc' d.pk %}" target="_blank" rel="noopener">{% icon 'paperclip' %}{{ d.name }}</a> <small class="muted">{{ d.size|filesizeformat }}, added {{ d.created_at|date:"d M Y" }}</small>
+        <li><a href="{% url 'insurance_doc' d.pk %}" data-doc-view data-name="{{ d.name }}" data-kind="{% if d.is_image %}image{% else %}pdf{% endif %}">{% icon 'paperclip' %}{{ d.name }}</a> <small class="muted">{{ d.size|filesizeformat }}, added {{ d.created_at|date:"d M Y" }}</small>
+          <span class="doc-actions"><a class="btn btn-ghost btn-s" href="{% url 'insurance_doc' d.pk %}" target="_blank" rel="noopener">Open in new tab</a><a class="btn btn-ghost btn-s" href="{% url 'insurance_doc' d.pk %}?download=1">Download</a></span>
           {% if can_edit %}<form method="post" action="{% url 'insurance_doc_delete' d.pk %}" style="display:inline">{% csrf_token %}<button class="btn btn-ghost btn-quiet-bad btn-s" type="submit" data-confirm="Remove {{ d.name }}?">Remove</button></form>{% endif %}</li>{% endfor %}</ul>
       {% else %}<p class="empty">No document yet.{% if can_edit %} Add the policy document below.{% endif %}</p>{% endif %}
       {% if can_edit %}<form method="post" action="{% url 'insurance_doc_add' p.pk %}" enctype="multipart/form-data" class="inline-row" style="margin-top:12px">{% csrf_token %}
@@ -58,4 +61,12 @@
     </section>{% endif %}
   </div>
 </div>
+<dialog class="dialog doc-viewer" id="doc-viewer" aria-label="Policy document">
+  <header><h2 data-doc-name></h2>
+    <a class="btn btn-s" data-doc-open href="#" target="_blank" rel="noopener">Open in new tab</a>
+    <a class="btn btn-s" data-doc-download href="#">Download</a>
+    <button class="btn btn-s btn-ghost" type="button" data-doc-close>Close</button></header>
+  <div class="doc-body" data-doc-body></div>
+  <p class="doc-note">If the document does not appear here (some phones cannot show a PDF inside a page), use Download or Open in new tab.</p>
+</dialog>
 {% endblock %}

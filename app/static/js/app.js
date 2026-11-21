@@ -185,6 +185,72 @@
   $("[data-lb-next]").addEventListener("click", () => lbMove(1));
   lb.addEventListener("click", e => { if (e.target === lb) lb.hidden = true; });
 
+  /* ---------- insurance form: tick lists, +1 year, date warnings ---------- */
+  const skipped = el => el.hidden || el.classList.contains("scoped-out");
+  $$("[data-check-all], [data-check-none]").forEach(b => b.addEventListener("click", () => {
+    const t = document.getElementById(b.dataset.checkAll || b.dataset.checkNone); if (!t) return;
+    const on = b.hasAttribute("data-check-all");
+    $$("label", t).forEach(l => { const i = $("input[type=checkbox]", l); if (i && !skipped(l)) { i.checked = on; i.dispatchEvent(new Event("change", { bubbles: true })); } });
+  }));
+  const insC = $("#ins-centres"), insM = $("#ins-machines");
+  if (insC && insM) {
+    const scope = () => {
+      const on = $$("input:checked", insC).map(i => i.value);
+      $$("label[data-centre]", insM).forEach(l => {
+        const ticked = $("input", l).checked;
+        l.classList.toggle("scoped-out", on.length > 0 && !on.includes(l.dataset.centre) && !ticked);
+      });
+    };
+    insC.addEventListener("change", scope); scope();
+  }
+  const isoPlusYear = (iso) => { const [y, m, d] = iso.split("-").map(Number); const t = new Date(Date.UTC(y + 1, m - 1, d)); t.setUTCDate(t.getUTCDate() - 1); return t.toISOString().slice(0, 10); };
+  $$("[data-plus-year]").forEach(b => b.addEventListener("click", () => {
+    const st = document.getElementById(b.dataset.start), en = document.getElementById(b.dataset.end);
+    if (!st || !en) return;
+    if (!st.value) { st.focus(); return; }
+    en.value = isoPlusYear(st.value); en.dispatchEvent(new Event("input", { bubbles: true }));
+  }));
+  const warnBox = $("[data-date-warn]");
+  if (warnBox) {
+    const g = id => (document.getElementById(id) || {}).value || "";
+    const check = () => {
+      const st = g("id_start_date"), en = g("id_expiry_date"), due = g("id_premium_due"), out = [];
+      if (st && en && en >= st) {
+        const days = Math.round((Date.parse(en) - Date.parse(st)) / 864e5) + 1;
+        if (days > 1096) out.push(`The policy runs for about ${(days / 365).toFixed(1)} years. Most policies run for one year.`);
+        else if (days < 30) out.push(`The policy runs for only ${days} day${days === 1 ? "" : "s"}.`);
+        if (en < new Date().toISOString().slice(0, 10)) out.push("The expiry date has already passed, so this policy will show as Expired.");
+      }
+      if (st && en && en < st) out.push("The expiry date is before the start date.");
+      if (due && st && en && (due < st || due > en)) out.push("The next premium due date is outside the policy dates.");
+      warnBox.hidden = !out.length;
+      $("div", warnBox).innerHTML = out.map(esc).join("<br>");
+    };
+    ["id_start_date", "id_expiry_date", "id_premium_due"].forEach(id => { const e = document.getElementById(id); if (e) { e.addEventListener("input", check); e.addEventListener("change", check); } });
+    check();
+  }
+
+  /* ---------- policy document viewer (stays inside the app, also when installed as an app) ---------- */
+  const dv = $("#doc-viewer");
+  if (dv) {
+    const body = $("[data-doc-body]", dv);
+    $$("a[data-doc-view]").forEach(a => a.addEventListener("click", e => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+      e.preventDefault();
+      $("[data-doc-name]", dv).textContent = a.dataset.name;
+      $("[data-doc-open]", dv).href = a.href;
+      $("[data-doc-download]", dv).href = a.href + (a.href.includes("?") ? "&" : "?") + "download=1";
+      body.innerHTML = "";
+      const el = document.createElement(a.dataset.kind === "image" ? "img" : "iframe");
+      if (a.dataset.kind === "image") el.alt = a.dataset.name; else el.title = a.dataset.name;
+      el.src = a.href; body.appendChild(el);
+      dv.showModal();
+    }));
+    $$("[data-doc-close]", dv).forEach(b => b.addEventListener("click", () => dv.close()));
+    dv.addEventListener("close", () => { body.innerHTML = ""; });
+    dv.addEventListener("click", e => { if (e.target === dv) dv.close(); });
+  }
+
   /* ---------- command palette ---------- */
   const pal = $("#palette"), palIn = $("[data-palette-input]"), palList = $("[data-palette-list]");
   let screens = []; try { screens = JSON.parse($("#palette-screens").textContent); } catch (e) {}

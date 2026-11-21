@@ -36,7 +36,7 @@
   <thead><tr><th>Cover</th><th>Where</th><th>Insurer</th><th>Started</th><th>Expires</th><th>Status</th>{% if money %}<th class="num-col">Sum insured</th>{% endif %}</tr></thead>
   <tbody>{% for p in rows %}
   <tr data-href="{% url 'insurance_detail' p.pk %}">
-    <td class="cell-title"><a href="{% url 'insurance_detail' p.pk %}">{{ p.cover_type.name }}</a><small>{{ p.policy_number }}{% if not p.doc_count %} <span class="warn-text">No document</span>{% endif %}</small></td>
+    <td class="cell-title"><a href="{% url 'insurance_detail' p.pk %}">{{ p.cover_type.name }}</a><small>{{ p.policy_number }}{% if p.covers %} · {{ p.covers }}{% endif %}{% if not p.doc_count %} <span class="warn-text">No document</span>{% endif %}</small></td>
     <td data-l="Where">{{ p.location }}</td>
     <td data-l="Insurer">{{ p.insurer }}</td>
     <td data-l="Started">{{ p.start_date|date:"d M Y" }}</td>

@@ -36,7 +36,7 @@ DEMO_PASSWORD = "Demo@12345"
 COMMON = ["/", "/tickets/", "/tickets/{ticket}/", "/alerts/", "/me/", "/password/"]
 RESOLVER = COMMON + ["/tickets/new/", "/tickets/board/", "/equipment/", "/equipment/{equipment}/"]
 OVERSEER = RESOLVER + ["/dashboard/", "/centres/", "/reports/"]
-ADMIN = OVERSEER + ["/insurance/", "/insurance/new/", "/insurance/?tab=gaps", "/insurance/?tab=types", "/reports/print/", "/equipment/labels/", "/settings/", "/settings/templates/", "/settings/backups/", "/settings/import/",
+ADMIN = OVERSEER + ["/insurance/", "/insurance/new/", "/insurance/{policy}/", "/insurance/{policy}/edit/", "/insurance/?tab=gaps", "/insurance/?tab=types", "/reports/print/", "/equipment/labels/", "/settings/", "/settings/templates/", "/settings/backups/", "/settings/import/",
                     "/admin/", "/admin/tickets/user/", "/admin/tickets/user/add/", "/admin/tickets/equipment/",
                     "/admin/tickets/equipment/add/", "/admin/tickets/centre/", "/admin/tickets/department/",
                     "/admin/tickets/category/", "/admin/tickets/slapolicy/", "/admin/tickets/escalationrule/",
@@ -47,7 +47,7 @@ ROLES = {  # role: (login, password, screens)
     "agent": ("ravi", DEMO_PASSWORD, RESOLVER),
     "requester": ("meena", DEMO_PASSWORD, COMMON + ["/tickets/new/"]),
     "management": ("director", DEMO_PASSWORD, ["/", "/tickets/", "/tickets/board/", "/dashboard/", "/centres/",
-                                              "/reports/", "/equipment/", "/insurance/", "/alerts/", "/me/"]),
+                                              "/reports/", "/equipment/", "/insurance/", "/insurance/{policy}/", "/alerts/", "/me/"]),
 }
 VIEWS = [("desktop", 1280, 800, "light"), ("phone", 390, 844, "light"),
          ("desktop-dark", 1280, 800, "dark"), ("phone-dark", 390, 844, "dark")]
@@ -108,7 +108,20 @@ def main():
                           " Equipment.objects.first().pk)"],
                          cwd=APP, env=env, check=True, capture_output=True, text=True).stdout.strip().splitlines()[-1]
     tickets, equipment = out.rsplit(" ", 1)
-    fill = {"tickets": json.loads(tickets), "equipment": equipment}
+    # Insurance is only for people given access: let the director view all, and add one policy with a document
+    policy = subprocess.run([sys.executable, "manage.py", "shell", "-c",
+                             "from datetime import date, timedelta; from django.core.files.base import ContentFile;"
+                             "from tickets.models import *;"
+                             "User.objects.filter(username='director').update(insurance_access='all');"
+                             "t = date.today(); c = InsuranceCoverType.objects.first();"
+                             "p = InsurancePolicy.objects.create(cover_type=c, insurer='New India Assurance', policy_number='0012/34',"
+                             " start_date=t - timedelta(days=300), expiry_date=t + timedelta(days=65), covers='Building and contents, MRI room',"
+                             " premium_due=t + timedelta(days=20), sum_insured=5000000, premium=42000);"
+                             "p.centres.set(Centre.objects.all()[:2]); p.responsible.set(User.objects.filter(role='admin')[:1]);"
+                             "d = InsuranceDocument(policy=p, name='policy.pdf', size=20); d.file.save('policy.pdf', ContentFile(b'%PDF-1.4 demo')); d.save();"
+                             "print(p.pk)"],
+                            cwd=APP, env=env, check=True, capture_output=True, text=True).stdout.strip().splitlines()[-1]
+    fill = {"tickets": json.loads(tickets), "equipment": equipment, "policy": policy}
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"
@@ -161,7 +174,7 @@ def check(sync_playwright, base, fill):
                 page.click("button[type=submit]")
                 page.wait_for_load_state("networkidle")
                 for url in urls:
-                    url = url.format(ticket=fill["tickets"][login], equipment=fill["equipment"])
+                    url = url.format(ticket=fill["tickets"][login], equipment=fill["equipment"], policy=fill["policy"])
                     errors.clear()
                     page.goto(base + url)
                     page.wait_for_load_state("networkidle")

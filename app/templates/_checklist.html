@@ -1,0 +1,16 @@
+<div class="field {% if errors %}has-error{% endif %}">
+  <div class="check-head">
+    <span>{{ title }}</span>
+    <div class="check-tools">
+      <button class="btn btn-s btn-ghost" type="button" data-check-all="{{ uid }}">Select all</button>
+      <button class="btn btn-s btn-ghost" type="button" data-check-none="{{ uid }}">Clear</button>
+      <input type="search" class="check-search" data-filter-target="{{ uid }}" placeholder="Search..." aria-label="Search {{ title|lower }}">
+    </div>
+  </div>
+  <div class="check-grid check-tall" id="{{ uid }}">
+    {% for i in items %}<label class="check-pill"{% if i.centre %} data-centre="{{ i.centre }}"{% endif %}><input type="checkbox" name="{{ name }}" value="{{ i.value }}"{% if i.checked %} checked{% endif %}><span>{{ i.label }}</span></label>
+    {% empty %}<p class="check-grid-empty">Nothing to choose from yet.</p>{% endfor %}
+    <p class="check-grid-empty" hidden>Nothing matches.</p>
+  </div>
+  {% if hint %}<small>{{ hint }}</small>{% endif %}{% for e in errors %}<small class="bad-text">{{ e }}</small>{% endfor %}
+</div>

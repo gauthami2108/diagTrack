@@ -56,8 +56,8 @@ def _get_visible(user, pk):
 def _plus_year(d):
     try:
         return d.replace(year=d.year + 1) - timedelta(days=1)
-    except ValueError:  # 29 February
-        return d.replace(year=d.year + 1, day=28) - timedelta(days=1)
+    except ValueError:  # 29 February: the next year has no such day, so the policy ends on 28 February
+        return date(d.year + 1, 3, 1) - timedelta(days=1)
 
 
 # --------------------------------------------------------------------------
@@ -94,14 +94,16 @@ class PolicyForm(forms.ModelForm):
     class Meta:
         model = InsurancePolicy
         fields = ["centres", "cover_type", "insurer", "policy_number", "contact", "start_date", "expiry_date",
-                  "sum_insured", "premium", "responsible", "remind_days", "equipment", "notes", "cancelled"]
+                  "sum_insured", "premium", "premium_due", "responsible", "remind_days", "equipment", "covers", "notes",
+                  "cancelled"]
         widgets = {
             "start_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "premium_due": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "expiry_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "notes": forms.Textarea(attrs={"rows": 3}),
-            "equipment": forms.SelectMultiple(attrs={"size": 6}),
-            "responsible": forms.SelectMultiple(attrs={"size": 5}),
-            "centres": forms.SelectMultiple(attrs={"size": 6}),
+            "equipment": forms.CheckboxSelectMultiple,
+            "responsible": forms.CheckboxSelectMultiple,
+            "centres": forms.CheckboxSelectMultiple,
         }
 
     def __init__(self, *args, show_money=True, **kwargs):
@@ -110,25 +112,71 @@ class PolicyForm(forms.ModelForm):
         self.fields["remind_days"].help_text = (
             "Optional. Leave empty to use the number on the Settings page. Reminders then follow 30 and 7 days "
             "before expiry, on the day and the day after, as far as they come after this number.")
-        self.fields["centres"].help_text = ("Hold Ctrl (Command on a Mac) to choose several. Choose none for a policy "
+        self.warnings = []
+        self.fields["centres"].help_text = ("Tick the centres this policy covers, or Select all. Tick none for a policy "
                                             "that covers all centres or the head office.")
         types = InsuranceCoverType.objects.filter(active=True)
         if self.instance.pk:
             types = InsuranceCoverType.objects.filter(Q(active=True) | Q(pk=self.instance.cover_type_id))
         self.fields["cover_type"].queryset = types
         self.fields["responsible"].queryset = User.objects.filter(is_active=True).exclude(role=User.REQUESTER)
-        self.fields["responsible"].help_text = ("Optional. Hold Ctrl (Command on a Mac) to choose several. They also "
-                                                "receive the expiry reminders if they have Insurance access.")
+        self.fields["responsible"].help_text = ("Optional. Tick one or more people. They also receive the expiry and "
+                                                "premium reminders if they have Insurance access.")
         self.fields["equipment"].queryset = Equipment.objects.filter(active=True).select_related("centre")
         if not show_money:
             del self.fields["sum_insured"], self.fields["premium"]
+
+    def checklist(self, name):
+        """The choices of a tick-list field as plain dicts, so the page can draw them as tick boxes."""
+        selected = {str(getattr(v, "pk", v)) for v in (self[name].value() or [])}
+        items = []
+        for o in self.fields[name].queryset:
+            if name == "centres":
+                label = f"{o.name} ({o.code})"
+            elif name == "equipment":
+                label = f"{o.name} · {o.centre.code}"
+            else:
+                label = o.display_name
+            items.append({"value": o.pk, "label": label, "checked": str(o.pk) in selected,
+                          "centre": o.centre_id if name == "equipment" else ""})
+        return items
+
+    centres_items = property(lambda self: self.checklist("centres"))
+    responsible_items = property(lambda self: self.checklist("responsible"))
+    equipment_items = property(lambda self: self.checklist("equipment"))
 
     def clean(self):
         data = super().clean()
         start, end = data.get("start_date"), data.get("expiry_date")
         if start and end and end < start:
             self.add_error("expiry_date", "The expiry date cannot be before the start date.")
+        insurer, number = (data.get("insurer") or "").strip(), (data.get("policy_number") or "").strip()
+        if insurer and number and start:
+            same = InsurancePolicy.objects.filter(insurer__iexact=insurer, policy_number__iexact=number, start_date=start)
+            if self.instance.pk:
+                same = same.exclude(pk=self.instance.pk)
+            if same.exists():
+                self.add_error("policy_number", "This policy is already in the register (same insurer, policy number and "
+                                                "start date). Open it instead of adding it twice.")
+        self.warnings = self._date_warnings(data, start, end)
         return data
+
+    def _date_warnings(self, data, start, end):
+        """Dates that are possible but unusual. They never block saving: the page shows them live and again after saving."""
+        out = []
+        today = timezone.localdate()
+        if start and end and end >= start:
+            days = (end - start).days + 1
+            if days > 1096:
+                out.append(f"The policy runs for about {days / 365:.1f} years. Most policies run for one year.")
+            elif days < 30:
+                out.append(f"The policy runs for only {days} day{'s' if days != 1 else ''}.")
+            if end < today and (not self.instance.pk or "expiry_date" in self.changed_data):
+                out.append("The expiry date has already passed, so this policy will show as Expired.")
+        due = data.get("premium_due")
+        if due and start and end and not (start <= due <= end):
+            out.append("The next premium due date is outside the policy dates.")
+        return out
 
 
 # --------------------------------------------------------------------------
@@ -144,7 +192,7 @@ def _filtered(request):
     qs = _scoped(request.user).annotate(doc_count=Count("documents", distinct=True)).order_by("expiry_date", "insurer", "pk")  # a grouped query ignores the model's own ordering
     if f["q"]:
         qs = qs.filter(Q(insurer__icontains=f["q"]) | Q(policy_number__icontains=f["q"]) |
-                       Q(contact__icontains=f["q"]) | Q(notes__icontains=f["q"]))
+                       Q(contact__icontains=f["q"]) | Q(notes__icontains=f["q"]) | Q(covers__icontains=f["q"]))
     if f["centre"] == "0":
         qs = qs.filter(centres__isnull=True)
     elif f["centre"].isdigit():
@@ -246,6 +294,7 @@ def insurance_detail(request, pk):
     return render(request, "insurance_detail.html", {
         "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.can_manage_insurance, "can_admin": request.user.is_admin,
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
+        "premium_days": (p.premium_due - today).days if p.premium_due else None,
         "stages": insurance_stages(_soon(p, cfg)),
         "renewed_from": p.renewed_from, "renewals": p.renewals.all(), "max_mb": MAX_FILE_MB})
 
@@ -285,6 +334,8 @@ def insurance_new(request):
                 old.renewed = True
                 old.save(update_fields=["renewed"])
             messages.success(request, "Policy saved." if not old else "Policy renewed. The old policy is marked Renewed.")
+            for w in form.warnings:
+                messages.warning(request, w)
             return redirect("insurance_detail", pk=p.pk)
         messages.error(request, "The policy was not saved. Check the marked fields.")
     return render(request, "insurance_form.html", {"form": form, "old": old, "problems": problems, "money": money,
@@ -303,6 +354,8 @@ def insurance_edit(request, pk):
             form.save()
             save_files(p, files, request.user)
             messages.success(request, "Policy saved.")
+            for w in form.warnings:
+                messages.warning(request, w)
             return redirect("insurance_detail", pk=p.pk)
         messages.error(request, "The policy was not saved. Check the marked fields.")
     return render(request, "insurance_form.html", {"form": form, "p": p, "problems": problems, "money": money,
@@ -359,10 +412,20 @@ def insurance_doc(request, pk):
     d = get_object_or_404(InsuranceDocument.objects.select_related("policy"), pk=pk)
     if not _scoped(request.user).filter(pk=d.policy_id).exists():
         raise Http404
+    is_pdf = d.name.lower().endswith(".pdf")
+    download = request.GET.get("download") == "1"
     try:
-        return _safe(FileResponse(d.file.open("rb"), filename=d.name, as_attachment=not (d.is_image or d.name.lower().endswith(".pdf"))))
+        resp = FileResponse(d.file.open("rb"), filename=d.name,
+                            as_attachment=download or not (d.is_image or is_pdf))
     except FileNotFoundError:
         raise Http404
+    resp = _safe(resp)
+    if is_pdf and not download:
+        # The in-app viewer shows the PDF in a frame of this site. The browser's PDF viewer does not start under the
+        # strict "default-src 'none'" rule, so a PDF gets the narrower one: it may be framed by this site only.
+        resp["Content-Security-Policy"] = "frame-ancestors 'self'"
+        resp["X-Frame-Options"] = "SAMEORIGIN"
+    return resp
 
 
 def machine_policies(user, equipment):
@@ -420,7 +483,7 @@ def insurance_export(request):
     ws = wb.active
     ws.title = "Insurance"
     head = ["Centres", "Cover type", "Insurer", "Policy number", "Broker or agent", "Start date", "Expiry date",
-            "Days left", "Status", "Responsible", "Machines covered"]
+            "Days left", "Status", "Responsible", "Machines covered", "Covers", "Next premium due"]
     if money:
         head += ["Sum insured", "Premium"]
     ws.append(head)
@@ -430,15 +493,15 @@ def insurance_export(request):
         line = [p.location, p.cover_type.name, p.insurer, p.policy_number,
                 p.contact, p.start_date, p.expiry_date, p.days_left, InsurancePolicy.STATUS_LABELS[p.status],
                 ", ".join(u.display_name for u in p.responsible.all()),
-                ", ".join(e.name for e in p.equipment.all())]
+                ", ".join(e.name for e in p.equipment.all()), p.covers, p.premium_due]
         if money:
             line += [float(p.sum_insured) if p.sum_insured is not None else None,
                      float(p.premium) if p.premium is not None else None]
         ws.append(line)
-    for col in ("F", "G"):
+    for col in ("F", "G", "M"):
         for cell in ws[col][1:]:
             cell.number_format = "dd mmm yyyy"
-    for i, w in enumerate([22, 24, 24, 20, 24, 14, 14, 10, 14, 20, 40, 16, 14][:len(head)], start=1):
+    for i, w in enumerate([22, 24, 24, 20, 24, 14, 14, 10, 14, 20, 40, 30, 14, 16, 14][:len(head)], start=1):
         ws.column_dimensions[chr(64 + i)].width = w
     buf = io.BytesIO()
     wb.save(buf)
