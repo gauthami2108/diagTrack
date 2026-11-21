@@ -2814,6 +2814,28 @@ class LicenceTests(Base):
         self.assertContains(dup, "already in the register")
         self.assertEqual(Licence.objects.count(), 1)
 
+    def test_licence_changes_are_recorded_and_shown(self):
+        self.client.force_login(self.admin)
+        self.client.post(reverse("licence_new"), self.data())
+        x = Licence.objects.get()
+        self.assertTrue(x.log.filter(text__startswith="Added, with 1 document").exists())
+        self.client.post(reverse("licence_edit", args=[x.pk]), self.data(valid_until="2027-06-30", issuer="AERB", files=[]))
+        texts = [e.text for e in x.log.all()]
+        self.assertTrue(any("Valid until: 31 Mar 2027 → 30 Jun 2027" in t for t in texts), texts)
+        self.assertTrue(any(t.startswith("Issued by:") for t in texts))
+        page = self.client.get(reverse("licence_detail", args=[x.pk]))
+        self.assertContains(page, "Change history")
+        self.assertContains(page, "30 Jun 2027")
+        self.assertEqual(x.log.first().actor, self.admin)
+
+    def test_renewal_is_recorded_on_both_licences(self):
+        self.client.force_login(self.admin)
+        old = self.lic([self.kkp], days=30)
+        self.client.post(reverse("licence_new"), self.data(renew=old.pk, name=old.name, reference_number="L-2"))
+        new = Licence.objects.get(reference_number="L-2")
+        self.assertTrue(new.log.filter(text__startswith="Added as the renewal").exists())
+        self.assertTrue(old.log.filter(text__startswith="Renewed by").exists())
+
     def test_who_can_see_and_change_licences(self):
         mine = self.lic([self.kkp], number="MINE")
         other = self.lic([self.sec], number="OTHER")

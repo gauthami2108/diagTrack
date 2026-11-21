@@ -1,5 +1,5 @@
 """The change history of insurance policies: what a policy looked like before, what changed, and who did it."""
-from .models import InsuranceLog
+from .models import InsuranceLog, LicenceLog
 
 MONEY = ("Sum insured", "Premium")
 
@@ -56,4 +56,32 @@ def record_changes(policy, actor, before, prefix=""):
     lines = changes(before, snapshot(policy))
     for line in lines:
         record(policy, actor, prefix + line)
+    return lines
+
+
+# --- licences and certificates: the same idea ---------------------------------
+def licence_snapshot(x):
+    return {
+        "Name": x.name,
+        "Issued by": x.issuer or "none",
+        "Number": x.reference_number or "none",
+        "Issued on": _d(x.issued_on),
+        "Valid until": _d(x.valid_until),
+        "First reminder (days)": str(x.remind_days) if x.remind_days else "90",
+        "No longer needed": "Yes" if x.closed else "No",
+        "Notes": x.notes or "",
+        "Centres": sorted(c.name for c in x.centres.all()) or ["all centres"],
+        "Responsible": sorted(u.display_name for u in x.responsible.all()),
+        "Machine": x.equipment.name if x.equipment_id else "none",
+    }
+
+
+def licence_record(x, actor, text):
+    return LicenceLog.objects.create(licence=x, actor=actor, text=text[:500])
+
+
+def licence_record_changes(x, actor, before, prefix=""):
+    lines = changes(before, licence_snapshot(x))
+    for line in lines:
+        licence_record(x, actor, prefix + line)
     return lines

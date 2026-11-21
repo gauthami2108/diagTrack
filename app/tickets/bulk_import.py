@@ -804,15 +804,22 @@ def apply(plan):
         if r.action not in ("new", "change"):
             continue
         f = dict(r.values["_fields"])
+        before = None
         if r.action == "new":
             x = Licence.objects.create(**f)
         else:
             x = r.obj
+            before = ilog.licence_snapshot(x)
             _update(x, f)
         if "_centres" in r.values:
             x.centres.set([centres[c] for c in r.values["_centres"]])
         if r.values.get("_responsible"):
             x.responsible.set([users[n] for n in r.values["_responsible"]])
+        x = Licence.objects.get(pk=x.pk)
+        if before is None:
+            ilog.licence_record(x, None, "Added from the Excel import")
+        else:
+            ilog.licence_record_changes(x, None, before, prefix="Excel import. ")
     all_policies = list(InsurancePolicy.objects.all())
     for r in plan.rows["Claims"]:
         if r.action not in ("new", "change"):
