@@ -2137,6 +2137,43 @@ class InsuranceTests(Base):
         self.client.force_login(self.cm)
         self.assertContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "01 Jan 2028")
 
+    # --- home card ----------------------------------------------------------
+    def test_home_shows_what_needs_attention_to_people_with_access(self):
+        today = timezone.localdate()
+        self.policy([self.kkp], number="GONE", days=-5)
+        self.policy([self.kkp], number="SOON", days=12)
+        late = self.policy([self.kkp], number="PREM", days=200)
+        late.premium_due = today - timedelta(days=2)
+        late.save()
+        self.policy([self.sec], number="OTHER", days=-9)  # not Imran's centre
+        self.client.force_login(self.cm)  # view own: Kukatpally
+        card = self.client.get(reverse("home")).context["insurance"]
+        self.assertEqual((card["expired"], card["expiring"], card["premiums"]), (1, 1, 1))
+        self.assertEqual([i["kind"] for i in card["items"]], ["premium", "expired", "expiring"])
+        page = self.client.get(reverse("home")).content.decode()
+        self.assertIn("Insurance", page)
+        self.assertIn("overdue by 2 days", page)
+        self.assertIn("Expired 5 days ago", page)
+        self.assertIn("Ends in 12 days", page)
+        self.assertNotIn("5000000", page)
+
+    def test_home_card_is_absent_without_access_and_calm_when_all_is_well(self):
+        self.client.force_login(self.ravi)  # an agent with no access
+        self.assertIsNone(self.client.get(reverse("home")).context["insurance"])
+        self.assertNotContains(self.client.get(reverse("home")), "Open register")
+        self.client.force_login(self.admin)
+        # no policies yet, so every centre is missing the expected covers: that is not "nothing"
+        page = self.client.get(reverse("home"))
+        self.assertGreater(page.context["insurance"]["gaps"], 0)
+        self.assertNotContains(page, "Nothing needs attention.")
+        InsuranceCoverType.objects.update(core=False)  # nothing is expected, so nothing is missing
+        self.assertContains(self.client.get(reverse("home")), "Nothing needs attention.")
+
+    def test_a_requester_with_access_sees_the_home_card(self):
+        User.objects.filter(pk=self.req.pk).update(insurance_access="all")
+        self.client.force_login(self.req)
+        self.assertContains(self.client.get(reverse("home")), "Open register")
+
     def test_a_requester_given_access_sees_the_menu_item_and_the_page(self):
         p = self.policy([self.kkp])
         self.req.centres.add(self.kkp)
