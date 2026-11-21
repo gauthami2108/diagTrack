@@ -1495,6 +1495,7 @@ def masters_hub(request):
             u.is_locked = f"user:{u.username}" in locks
         ctx["staff"] = staff_list
         ctx["roles"] = User.ROLES
+        ctx["insurance_access_choices"] = User.INSURANCE_ACCESS
 
     elif tab == "locks":
         qs = SignInLock.objects.all()
@@ -1841,6 +1842,8 @@ def masters_action(request, section):
             first_name = p.get("first_name", "").strip()
             last_name = p.get("last_name", "").strip()
             role = p.get("role", User.REQUESTER)
+            ins_access = p.get("insurance_access", "")
+            ins_access = ins_access if ins_access in dict(User.INSURANCE_ACCESS) else ""
             email = p.get("email", "").strip()
             mobile = p.get("mobile", "").strip()
             telegram_chat_id = p.get("telegram_chat_id", "").strip()
@@ -1852,7 +1855,8 @@ def masters_action(request, section):
                 return redirect(back)
             new_u = User.objects.create_user(
                 username=username, password=password, first_name=first_name, last_name=last_name,
-                email=email, mobile=mobile, telegram_chat_id=telegram_chat_id, role=role
+                email=email, mobile=mobile, telegram_chat_id=telegram_chat_id, role=role,
+                insurance_access=ins_access,
             )
             if role == User.ADMIN:
                 new_u.is_staff = new_u.is_superuser = True
@@ -1869,6 +1873,9 @@ def masters_action(request, section):
             first_name = p.get("first_name", "").strip()
             last_name = p.get("last_name", "").strip()
             role = p.get("role", target_user.role)
+            ins_access = p.get("insurance_access", target_user.insurance_access)
+            if ins_access not in dict(User.INSURANCE_ACCESS):
+                ins_access = target_user.insurance_access
             email = p.get("email", "").strip()
             mobile = p.get("mobile", "").strip()
             telegram_chat_id = p.get("telegram_chat_id", "").strip()
@@ -1878,6 +1885,7 @@ def masters_action(request, section):
             target_user.first_name = first_name
             target_user.last_name = last_name
             target_user.role = role
+            target_user.insurance_access = ins_access
             target_user.email = email
             target_user.mobile = mobile
             target_user.telegram_chat_id = telegram_chat_id

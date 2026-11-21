@@ -121,6 +121,15 @@ class User(AbstractUser):
         (ADMIN, "Administrator"),
     ]
     role = models.CharField(max_length=20, choices=ROLES, default=REQUESTER)
+    INSURANCE_ACCESS = [
+        ("", "No access"),
+        ("own", "View: policies of own centres"),
+        ("all", "View: all centres"),
+        ("manage", "Manage: view all, add, edit and renew"),
+    ]
+    insurance_access = models.CharField(
+        max_length=10, blank=True, default="", choices=INSURANCE_ACCESS,
+        help_text="Who may see the Insurance register. Administrators always have full access.")
     mobile = models.CharField(max_length=15, blank=True,
                               help_text="With country code, for SMS and WhatsApp alerts. Example: 919876543210")
     telegram_chat_id = models.CharField("Telegram chat ID", max_length=60, blank=True,
@@ -164,6 +173,29 @@ class User(AbstractUser):
     @property
     def sees_everything(self):
         return self.is_admin or self.role == self.MANAGEMENT
+
+    @property
+    def insurance_level(self):
+        """'admin', 'manage', 'all', 'own' or '' (no access). Only administrators and people given access see Insurance."""
+        return "admin" if self.is_admin else self.insurance_access
+
+    @property
+    def can_view_insurance(self):
+        return bool(self.insurance_level)
+
+    @property
+    def can_manage_insurance(self):
+        return self.insurance_level in ("admin", "manage")
+
+    @property
+    def insurance_sees_all(self):
+        return self.insurance_level in ("admin", "manage", "all")
+
+    @property
+    def insurance_money(self):
+        """Sum insured and premium: administrators, Manage level, and management with access."""
+        return bool(self.is_admin or self.insurance_access == "manage"
+                    or (self.role == self.MANAGEMENT and self.insurance_access))
 
     @property
     def is_management_only(self):

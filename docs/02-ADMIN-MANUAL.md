@@ -6,7 +6,7 @@ screen in the browser; no programming is needed.
 Sign in as an administrator. The side menu then shows extra items under **Administer**:
 
 - **Masters and rules**: the unified native management hub with dedicated multi-line pill tabs for all 13 administrative entities: Centres, Departments, Categories & questions, SLA policies, Escalation rules, Users & access, Sign-in locks, Vendors, Equipment register, Preventive maintenance schedules, Sent alerts, Ticket history audit trail, and Vendor calls. Features native tables, instant auto-submitting filters, multi-column sorting, search, pagination, and modal quick-add dialogs in one cohesive interface.
-- **Insurance** (under **Oversee**, also open to management and to centre and area managers for their own centres): every insurance policy with its dates and documents. See section 7a.
+- **Insurance** (under **Oversee**, only for administrators and people you give Insurance access): every insurance policy with its dates and documents. See section 7a.
 - **Import from Excel**: add or change centres, vendors, departments, people, equipment and insurance policies from one workbook.
 - **Backups**: backup folders, schedules, retention, Back up now, restores and moving to another server.
 - **Message templates**: the wording of email, SMS, WhatsApp and Telegram alerts, and which alerts go out on each channel.
@@ -260,7 +260,7 @@ account; the provider guides you through both.
 Open **Insurance** under **Oversee**. Each row is one policy: the type of cover (Fire, Building, Equipment and so on),
 where it applies, the insurer, the dates and the status: Active, Expiring soon, Expired, Renewed or Cancelled.
 
-**Adding a policy** (administrators only). Choose **Add policy**. The type of cover, insurer, policy number, start date,
+**Adding a policy** (administrators and people with Manage access). Choose **Add policy**. The type of cover, insurer, policy number, start date,
 expiry date and at least one document are required. Choose one centre, several centres (hold Ctrl, or Command on a Mac),
 or none for a policy that covers every centre or the head office. Documents may be PDF, JPG, PNG or WebP, up to 20 MB
 each; add more later for endorsements or receipts. Every policy keeps at least one document.
@@ -269,15 +269,27 @@ each; add more later for endorsements or receipts. Every policy keeps at least o
 change whatever differs and add the new document. The old policy is kept and marked Renewed, so the history stays.
 A policy cancelled before its end is marked with the Cancelled tick on its Edit page.
 
-**Sum insured and premium** are optional, and are shown only to administrators and management. Untick
+**Sum insured and premium** are optional, and are shown only to administrators, people with Manage access, and management with any access. Untick
 **Show sum insured and premium on the Insurance page** under Settings, General, to hide them everywhere.
 
-**Who sees what.** Administrators and management see every policy. Centre and area managers see policies that include
-one of their centres, without money figures. Everyone else does not see the Insurance item.
+**Who sees what.** Insurance is not tied to a role. Administrators always have full access. Anyone else needs
+**Insurance access**, which you set under **Masters and rules, People** when you add or edit someone (or in the
+People sheet of the Excel import). It sits on top of the person's role, so one person can be, say, a centre manager and also look
+after insurance. The levels are:
+
+- **No access** (the default): no Insurance menu item, and the page, documents and export are closed. Management and
+  managers lose Insurance when this release is installed until you grant it.
+- **View: policies of own centres**: sees policies that include one of their centres. Policies for all centres are not shown.
+- **View: all centres**: sees every policy, read only.
+- **Manage**: sees every policy and may add, edit, renew, cancel and add or remove documents. Deleting a policy, the Cover
+  types tab and the Settings switch stay with administrators.
+
+Sum insured and premium follow the same rule as above, and the Settings switch can hide them for everyone.
+Reminders go to administrators, to people with access who can see the policy, and to the person responsible if they have access.
 
 **Machines.** On a policy's Edit page, tick the machines it covers under **Machines covered**. Each machine's page then has an
-**Insurance** panel saying "Insured until ..." (and flagging cover that ends soon or has ended), visible to administrators,
-management and the managers of that centre. The Coverage grid has a last column, **Machines not linked**, counting the
+**Insurance** panel saying "Insured until ..." (and flagging cover that ends soon or has ended), visible to administrators and
+anyone with Insurance access to that machine's centre. The Coverage grid has a last column, **Machines not linked**, counting the
 active machines at each centre that are not listed on any current policy. A blanket equipment policy may cover machines
 without listing them, so treat the column as a prompt, not a verdict.
 

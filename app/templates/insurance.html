@@ -2,7 +2,7 @@
 {% block title %}Insurance{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Insurance</h1><p class="sub">Every policy, by centre and type of cover, with its dates and documents.{% if not request.user.sees_everything %} You see the policies of your own centres.{% endif %}</p></div>
+  <div><h1>Insurance</h1><p class="sub">Every policy, by centre and type of cover, with its dates and documents.{% if not request.user.insurance_sees_all %} You see the policies of your own centres.{% endif %}</p></div>
   <div class="head-actions">
     {% if tab == 'policies' %}<a class="btn" href="{% url 'insurance_export' %}?{{ request.GET.urlencode }}">{% icon 'download' %}Excel</a>{% endif %}
     {% if can_edit %}<a class="btn btn-primary" href="{% url 'insurance_new' %}">{% icon 'circle-plus' %}Add policy</a>{% endif %}
@@ -19,14 +19,14 @@
 <div class="tabs" role="tablist">
   <a role="tab" href="?tab=policies" {% if tab == 'policies' %}aria-selected="true"{% endif %}>Policies</a>
   <a role="tab" href="?tab=gaps" {% if tab == 'gaps' %}aria-selected="true"{% endif %}>Coverage grid{% if gap_total %} <span class="count count-bad">{{ gap_total }}</span>{% endif %}</a>
-  {% if can_edit %}<a role="tab" href="?tab=types" {% if tab == 'types' %}aria-selected="true"{% endif %}>Cover types</a>{% endif %}
+  {% if can_admin %}<a role="tab" href="?tab=types" {% if tab == 'types' %}aria-selected="true"{% endif %}>Cover types</a>{% endif %}
 </div>
 
 {% if tab == 'policies' %}
 <form class="filters" method="get" data-autosubmit>
   <input type="search" name="q" value="{{ f.q }}" placeholder="Insurer or policy number" aria-label="Search policies">
   <select name="centre" aria-label="Centre"><option value="">All centres</option>
-    {% if request.user.sees_everything %}<option value="0" {% if f.centre == '0' %}selected{% endif %}>Policies for all centres</option>{% endif %}
+    {% if request.user.insurance_sees_all %}<option value="0" {% if f.centre == '0' %}selected{% endif %}>Policies for all centres</option>{% endif %}
     {% for c in centres %}<option value="{{ c.pk }}" {% if f.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
   <select name="cover" aria-label="Type of cover"><option value="">All types of cover</option>{% for t in cover_types %}<option value="{{ t.pk }}" {% if f.cover == t.pk|stringformat:"s" %}selected{% endif %}>{{ t.name }}</option>{% endfor %}</select>
   <select name="status" aria-label="Status">{% for v, l in status_filters %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
@@ -50,7 +50,7 @@
 {% endif %}
 
 {% elif tab == 'gaps' %}
-<p class="sub tab-intro">Which centres have which cover. The columns are the types marked <b>expected at every centre</b>{% if can_edit %} on the Cover types tab{% endif %}. A policy for all centres counts for every centre. Missing or expired cover shows in red. A machine counts as linked when it is listed on a current policy; a blanket equipment policy may cover machines without listing them.</p>
+<p class="sub tab-intro">Which centres have which cover. The columns are the types marked <b>expected at every centre</b>{% if can_admin %} on the Cover types tab{% endif %}. A policy for all centres counts for every centre. Missing or expired cover shows in red. A machine counts as linked when it is listed on a current policy; a blanket equipment policy may cover machines without listing them.</p>
 {% if gap_rows and gap_types %}
 <div class="table-wrap"><table class="table grid-table">
   <thead><tr><th>Centre</th>{% for t in gap_types %}<th>{{ t.name }}</th>{% endfor %}<th>Machines not linked</th></tr></thead>
@@ -64,7 +64,7 @@
   </tr>{% endfor %}</tbody>
 </table></div>
 {% elif not gap_types %}
-<div class="empty-big">{% icon 'shield-check' %}<h2>No cover types are marked as expected</h2><p>{% if can_edit %}On the Cover types tab, tick <b>Expected at every centre</b> for the types every centre should have, such as Fire and Building.{% else %}Ask the administrator to mark the types every centre should have.{% endif %}</p></div>
+<div class="empty-big">{% icon 'shield-check' %}<h2>No cover types are marked as expected</h2><p>{% if can_admin %}On the Cover types tab, tick <b>Expected at every centre</b> for the types every centre should have, such as Fire and Building.{% else %}Ask the administrator to mark the types every centre should have.{% endif %}</p></div>
 {% else %}
 <div class="empty-big">{% icon 'building-2' %}<h2>No centres to show</h2></div>
 {% endif %}

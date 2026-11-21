@@ -47,7 +47,7 @@ d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini
       <a href="{% url 'centres' %}" data-tooltip="Centres" {% if p == 'centres' %}aria-current="page"{% endif %}>{% icon 'building-2' %}<span>Centres</span></a>
       <a href="{% url 'reports' %}" data-tooltip="Reports" {% if p == 'reports' %}aria-current="page"{% endif %}>{% icon 'file-text' %}<span>Reports</span></a>
       <a href="{% url 'equipment_list' %}" data-tooltip="Equipment" {% if p == 'equipment_list' or p == 'equipment_detail' %}aria-current="page"{% endif %}>{% icon 'scan-line' %}<span>Equipment</span></a>
-      {% if request.user.sees_everything or r == 'centre_manager' or r == 'area_manager' %}<a href="{% url 'insurance_list' %}" data-tooltip="Insurance" {% if p|slice:":9" == 'insurance' %}aria-current="page"{% endif %}>{% icon 'shield-check' %}<span>Insurance</span></a>{% endif %}
+      {% if request.user.can_view_insurance %}<a href="{% url 'insurance_list' %}" data-tooltip="Insurance" {% if p|slice:":9" == 'insurance' %}aria-current="page"{% endif %}>{% icon 'shield-check' %}<span>Insurance</span></a>{% endif %}
       {% endif %}
       {% if request.user.is_admin %}
       <p class="nav-group">Administer</p>
@@ -153,7 +153,7 @@ d.dataset.theme=t;if(localStorage.getItem('dt-nav')==='mini')d.dataset.nav='mini
   {"t":"Centres","u":"{% url 'centres' %}","i":"building-2"},
   {"t":"Reports","u":"{% url 'reports' %}","i":"file-text"},
   {"t":"Equipment","u":"{% url 'equipment_list' %}","i":"scan-line"},
-  {% if request.user.sees_everything or request.user.role == 'centre_manager' or request.user.role == 'area_manager' %}{"t":"Insurance","u":"{% url 'insurance_list' %}","i":"shield-check"},{% endif %}{% endif %}
+  {% if request.user.can_view_insurance %}{"t":"Insurance","u":"{% url 'insurance_list' %}","i":"shield-check"},{% endif %}{% endif %}
   {% if request.user.is_admin %}{"t":"Masters and rules","u":"{% url 'masters_hub' %}","i":"sliders-horizontal"},
   {"t":"Import from Excel","u":"{% url 'import_page' %}","i":"upload"},
   {"t":"Backups","u":"{% url 'backups' %}","i":"hard-drive"},

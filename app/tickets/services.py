@@ -663,12 +663,14 @@ def insurance_stages(first):
 def insurance_checks(today=None):
     """Once a day: warn about insurance policies that are ending or have ended.
 
-    Goes to the administrators, the managers of the centres the policy covers and the person responsible for it.
+    Goes to the administrators, people given Insurance access who can see the policy (all or manage level, or view-own
+    for a centre it covers) and the person responsible, if they have Insurance access.
     Each stage is sent once; changing the expiry date (or renewing, which makes a new policy) starts again.
     A policy that was already long over when it was recorded is not announced."""
     today = today or timezone.localdate()
     default_first = SiteSettings.load().insurance_alert_days or 60
-    admins = list(User.objects.filter(role=User.ADMIN, is_active=True))
+    admins = list(User.objects.filter(is_active=True).filter(Q(role=User.ADMIN) | Q(is_superuser=True)))
+    holders = list(User.objects.filter(is_active=True, insurance_access__in=["own", "all", "manage"]).prefetch_related("centres"))
     sent = 0
     live = InsurancePolicy.objects.filter(cancelled=False, renewed=False).select_related(
         "cover_type", "responsible").prefetch_related("centres")
@@ -682,9 +684,13 @@ def insurance_checks(today=None):
             if p.alert_stage == 0 and left < -30:
                 pass  # recorded long after it ended: no point announcing it
             else:
-                people = list(admins) + [p.responsible]
-                for c in p.centres.all():
-                    people += nt.users_with_role(User.CENTRE_MANAGER, c)
+                covered = {c.pk for c in p.centres.all()}
+                people = list(admins)
+                for u in holders:
+                    if u.insurance_access in ("all", "manage") or covered & {c.pk for c in u.centres.all()}:
+                        people.append(u)
+                if p.responsible and p.responsible.is_active and p.responsible.can_view_insurance:
+                    people.append(p.responsible)
                 when = "has expired" if left < 0 else "ends today" if left == 0 else f"ends in {left} days"
                 nt.notify(people, None, f"{p.cover_type.name} insurance for {p.location} {when}",
                           f"Policy {p.policy_number} with {p.insurer}. Expiry {p.expiry_date:%d %b %Y}.",
