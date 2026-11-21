@@ -62,6 +62,14 @@
         <small class="muted">PDF, JPG, PNG or WebP, up to {{ max_mb }} MB each.</small>{% endif %}
     </section>
 
+    <section class="panel"><header><h2>Claims</h2>{% if can_edit %}<a href="{% url 'claim_new' p.pk %}">Add a claim</a>{% endif %}</header>
+      {% if claims %}<ul class="plain log-list">{% for c in claims %}
+        <li><span><span class="claim-chip claim-{{ c.status }}">{{ c.get_status_display }}</span> {{ c.description }}</span>
+          <small class="muted">Incident {{ c.incident_date|date:"d M Y" }}{% if c.equipment %}, {{ c.equipment.name }}{% endif %}{% if c.claim_number %}, ref {{ c.claim_number }}{% endif %}{% if money and c.amount_claimed is not None %}, claimed ₹{{ c.amount_claimed|floatformat:0 }}{% endif %}{% if money and c.amount_settled is not None %}, settled ₹{{ c.amount_settled|floatformat:0 }}{% endif %}</small>
+          {% if can_edit %}<span class="doc-actions"><a class="btn btn-ghost btn-s" href="{% url 'claim_edit' c.pk %}">Edit</a>{% if can_admin %}<form method="post" action="{% url 'claim_delete' c.pk %}" onsubmit="return confirm('Remove this claim?')">{% csrf_token %}<button class="btn btn-ghost btn-s" type="submit">Remove</button></form>{% endif %}</span>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="empty">No claims on this policy.</p>{% endif %}
+    </section>
+
     {% if machines %}<section class="panel"><header><h2>Machines covered</h2></header>
       <ul class="plain">{% for e in machines %}<li><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a> <small class="muted">{{ e.centre.name }}</small></li>{% endfor %}</ul>
     </section>{% endif %}

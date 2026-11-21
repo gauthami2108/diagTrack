@@ -694,6 +694,34 @@ class InsuranceDocument(models.Model):
         return self.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png", "webp")
 
 
+class InsuranceClaim(models.Model):
+    """A claim made on a policy: what happened, when, on which machine, and how it ended."""
+    FILED, REVIEW, APPROVED, SETTLED, REJECTED, WITHDRAWN = "filed", "review", "approved", "settled", "rejected", "withdrawn"
+    STATUSES = [(FILED, "Filed"), (REVIEW, "Under review"), (APPROVED, "Approved, awaiting payment"),
+                (SETTLED, "Settled"), (REJECTED, "Rejected"), (WITHDRAWN, "Withdrawn")]
+    OPEN = (FILED, REVIEW, APPROVED)
+    policy = models.ForeignKey(InsurancePolicy, on_delete=models.CASCADE, related_name="claims")
+    claim_number = models.CharField("claim number", max_length=60, blank=True, help_text="The insurer's reference, once you have it.")
+    incident_date = models.DateField("date of the incident")
+    claimed_on = models.DateField("date filed with the insurer", null=True, blank=True)
+    equipment = models.ForeignKey("Equipment", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                  verbose_name="machine")
+    description = models.CharField(max_length=300, help_text="What happened, in a line.")
+    status = models.CharField(max_length=12, choices=STATUSES, default=FILED)
+    amount_claimed = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    amount_settled = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-incident_date", "-pk"]
+
+    @property
+    def is_open(self):
+        return self.status in self.OPEN
+
+
 class InsuranceLog(models.Model):
     """Who changed what on a policy. Shown on the policy page to everyone who may open it."""
     policy = models.ForeignKey(InsurancePolicy, on_delete=models.CASCADE, related_name="log")
