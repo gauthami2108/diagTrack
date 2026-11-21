@@ -26,9 +26,11 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
+from django.utils import timezone
 
 from . import insurance_log as ilog
-from .models import Centre, Department, Equipment, InsuranceCoverType, InsurancePolicy, User, Vendor
+from .models import (Centre, Department, Equipment, InsuranceClaim, InsuranceCoverType, InsurancePolicy, Licence, User,
+                     Vendor)
 
 ROLE_NAMES = {
     "requester": User.REQUESTER, "agent": User.AGENT, "department head": User.DEPT_HEAD, "head": User.DEPT_HEAD,
@@ -94,6 +96,7 @@ SHEETS = {
         ("Serial number", "serial_no", False, "Recommended: it tells two machines with the same name apart"),
         ("Vendor", "vendor", False, "A vendor name, from the Vendors sheet or DiagTrack"),
         ("AMC expiry date", "amc_expiry", False, "A date, for example 31-03-2027"),
+        ("Value", "value", False, "Rupees, for example 30000000. Used to flag valuable machines that have no insurance"),
         ("Active", "active", False, "Yes or No"),
     ],
     "Insurance": [
@@ -117,7 +120,36 @@ SHEETS = {
         ("Cancelled", "cancelled", False, "Yes if the policy was cancelled before it ended"),
     ],
 }
-ORDER = ["Centres", "Vendors", "Departments", "People", "Equipment", "Insurance"]
+SHEETS["Licences"] = [
+    ("Licence or certificate", "name", True, "For example AERB licence (radiation), Fire NOC. Documents cannot come from Excel: add them on each page"),
+    ("Centres", "centres", False, "Centre codes separated by commas. All (or empty on a new row) for every centre"),
+    ("Issued by", "issuer", False, "The authority, for example AERB"),
+    ("Number", "reference_number", False, "With the name and the issue date it tells licences apart. Keep those three as they are to change one"),
+    ("Issued on", "issued_on", True, "A date, for example 01-04-2026"),
+    ("Valid until", "valid_until", True, "A date, for example 31-03-2027"),
+    ("Responsible (user names)", "responsible", False, "One or more user names separated by commas"),
+    ("First reminder (days)", "remind_days", False, "Days before it ends. Empty uses 90"),
+    ("Renewed", "renewed", False, "Yes when a later one has replaced this one: it then sends no reminders"),
+    ("No longer needed", "closed", False, "Yes to stop reminders for one that is not needed any more"),
+]
+SHEETS["Claims"] = [
+    ("Insurer", "insurer", True, "The insurer of the policy the claim is on"),
+    ("Policy number", "policy_number", True, "The policy must be in DiagTrack or on the Insurance sheet of this file"),
+    ("Policy start date", "policy_start", False, "Only when the same policy number has more than one policy"),
+    ("Date of incident", "incident_date", True, "A date, for example 14-08-2026"),
+    ("What happened", "description", True, "A line. With the policy and the incident date it tells claims apart"),
+    ("Machine", "machine", False, "The machine's name, or Name (CENTRE CODE) when two have the same name"),
+    ("Claim number", "claim_number", False, "The insurer's reference"),
+    ("Date filed", "claimed_on", False, "A date"),
+    ("Status", "status", False, "Filed, Under review, Approved, Settled, Rejected or Withdrawn. Empty is Filed on a new claim"),
+    ("Amount claimed", "amount_claimed", False, "Rupees. Shown to administrators and management only"),
+    ("Amount settled", "amount_settled", False, "Rupees"),
+    ("Notes", "notes", False, ""),
+]
+CLAIM_STATUS = {"filed": "filed", "under review": "review", "review": "review", "approved": "approved",
+                "approved, awaiting payment": "approved", "settled": "settled", "rejected": "rejected",
+                "withdrawn": "withdrawn"}
+ORDER = ["Centres", "Vendors", "Departments", "People", "Equipment", "Insurance", "Licences", "Claims"]
 
 
 class ImportFileError(Exception):
@@ -399,6 +431,11 @@ def _check(plan):
         if v.get("vendor") and v["vendor"].lower() not in vendors and v["vendor"].lower() not in new_vendors:
             r.errors.append(f"Vendor: no vendor called '{v['vendor']}' in DiagTrack or on the Vendors sheet.")
         fields = {k: v.get(k) for k in ("name", "make", "model", "serial_no")}
+        if v.get("value"):
+            try:
+                fields["value"] = _money(v["value"], 14)
+            except ValueError as exc:
+                r.errors.append(f"Value: {exc}")
         if v.get("amc_expiry"):
             try:
                 fields["amc_expiry"] = _date(r.values["amc_expiry"])
@@ -497,6 +534,148 @@ def _check(plan):
                 r.action = "change"
     seen_twice("Insurance", lambda r: (_text(r.values.get("insurer")).lower(), _text(r.values.get("policy_number")).lower(),
                                        _text(r.values.get("start_date"))))
+
+    # ---- Licences ----
+    licences = list(Licence.objects.prefetch_related("centres", "responsible"))
+    for r in plan.rows["Licences"]:
+        if r.action == "error":
+            continue
+        v = {k: _text(x) for k, x in r.values.items()}
+        name, number = v.get("name", ""), v.get("reference_number", "")
+        r.label = f"{name} {number}".strip()
+        if not name:
+            r.errors.append("Licence or certificate is empty.")
+        dates = {}
+        for key, label in (("issued_on", "Issued on"), ("valid_until", "Valid until")):
+            if v.get(key):
+                try:
+                    dates[key] = _date(r.values[key])
+                except ValueError as exc:
+                    r.errors.append(f"{label}: {exc}")
+        if not v.get("issued_on"):
+            r.errors.append("Issued on is empty.")
+        existing = None
+        if name and dates.get("issued_on"):
+            existing = next((x for x in licences if x.name.lower() == name.lower()
+                             and x.reference_number.lower() == number.lower() and x.issued_on == dates["issued_on"]), None)
+        if not v.get("valid_until") and not existing:
+            r.errors.append("Valid until is empty.")
+        end = dates.get("valid_until") or (existing.valid_until if existing else None)
+        if end and dates.get("issued_on") and end < dates["issued_on"]:
+            r.errors.append("It cannot end before it was issued.")
+        fields = {"name": name, "reference_number": number, "issuer": v.get("issuer"), **dates}
+        if v.get("remind_days"):
+            if v["remind_days"].isdigit() and 1 <= int(v["remind_days"]) <= 365:
+                fields["remind_days"] = int(v["remind_days"])
+            else:
+                r.errors.append("First reminder: use a whole number of days between 1 and 365.")
+        if v.get("responsible"):
+            names = [n.lower() for n in _list(v["responsible"])]
+            bad = [n for n in names if n not in users and n not in new_users]
+            if bad:
+                r.errors.append(f"Responsible: no user called {', '.join(repr(n) for n in bad)}.")
+            r.values["_responsible"] = names
+        if v.get("centres"):
+            codes = [c.upper() for c in _list(v["centres"])]
+            if [c.lower() for c in codes] == ["all"]:
+                codes = []
+            bad = [c for c in codes if c not in centres and c not in new_centres]
+            if bad:
+                r.errors.append(f"Centres: no centre with the code {', '.join(bad)}.")
+            r.values["_centres"] = codes
+        elif not existing:
+            r.values["_centres"] = []
+        _compare(r, existing, fields, v, ("renewed", "closed"))
+        if existing and not r.errors:
+            if r.values.get("_responsible") and sorted(u.username.lower() for u in existing.responsible.all()) != sorted(set(r.values["_responsible"])):
+                r.changes.append("responsible")
+            if "_centres" in r.values and sorted(c.code for c in existing.centres.all()) != sorted(r.values["_centres"]):
+                r.changes.append("centres")
+            if r.changes and r.action == "same":
+                r.action = "change"
+    seen_twice("Licences", lambda r: (_text(r.values.get("name")).lower(), _text(r.values.get("reference_number")).lower(),
+                                      _text(r.values.get("issued_on"))))
+
+    # ---- Claims ----
+    in_file = [(_text(i.values.get("insurer")).lower(), _text(i.values.get("policy_number")).lower(),
+                _text(i.values.get("start_date"))) for i in plan.rows["Insurance"] if not i.errors]
+    all_claims = list(InsuranceClaim.objects.select_related("policy", "equipment"))
+    for r in plan.rows["Claims"]:
+        if r.action == "error":
+            continue
+        v = {k: _text(x) for k, x in r.values.items()}
+        insurer, number = v.get("insurer", ""), v.get("policy_number", "")
+        r.label = f"{number} {v.get('description', '')[:40]}".strip()
+        if not insurer:
+            r.errors.append("Insurer is empty.")
+        if not number:
+            r.errors.append("Policy number is empty.")
+        if not v.get("description"):
+            r.errors.append("What happened is empty.")
+        if not v.get("incident_date"):
+            r.errors.append("Date of incident is empty.")
+        dates = {}
+        for key, label in (("incident_date", "Date of incident"), ("claimed_on", "Date filed"), ("policy_start", "Policy start date")):
+            if v.get(key):
+                try:
+                    dates[key] = _date(r.values[key])
+                except ValueError as exc:
+                    r.errors.append(f"{label}: {exc}")
+        if dates.get("incident_date") and dates["incident_date"] > timezone.localdate():
+            r.errors.append("Date of incident: it cannot be in the future.")
+        policy = None
+        if insurer and number:
+            found = [p for p in policies if p.insurer.lower() == insurer.lower() and p.policy_number.lower() == number.lower()
+                     and (not dates.get("policy_start") or p.start_date == dates["policy_start"])]
+            if len(found) > 1:
+                r.errors.append("More than one policy has this insurer and number: fill in Policy start date.")
+            elif found:
+                policy = found[0]
+            else:
+                key = [t for t in in_file if t[0] == insurer.lower() and t[1] == number.lower()]
+                if not key:
+                    r.errors.append(f"No policy {number} of {insurer}. Add it on the Insurance sheet first, or fix the number.")
+        status = None
+        if v.get("status"):
+            status = CLAIM_STATUS.get(v["status"].lower())
+            if not status:
+                r.errors.append("Status: use Filed, Under review, Approved, Settled, Rejected or Withdrawn.")
+        fields = {"description": v.get("description"), "claim_number": v.get("claim_number"), "notes": v.get("notes"),
+                  "incident_date": dates.get("incident_date"), "claimed_on": dates.get("claimed_on"), "status": status}
+        for key, label in (("amount_claimed", "Amount claimed"), ("amount_settled", "Amount settled")):
+            if v.get(key):
+                try:
+                    fields[key] = _money(v[key], 12)
+                except ValueError as exc:
+                    r.errors.append(f"{label}: {exc}")
+        r.values["_machine"] = None
+        if v.get("machine"):
+            m = re.fullmatch(r"(.*?)\s*\(([A-Za-z0-9]{2,5})\)", v["machine"])
+            nm, code = (m.group(1), m.group(2).upper()) if m else (v["machine"], None)
+            hits = [e for e in machines if e.name.lower() == nm.lower() and (not code or e.centre.code == code)]
+            if len(hits) == 1:
+                r.values["_machine"] = hits[0].pk
+                fields["equipment_id"] = hits[0].pk
+            elif not hits:
+                r.errors.append(f"Machine: no machine called '{v['machine']}'.")
+            else:
+                r.errors.append(f"Machine: more than one machine is called '{nm}'. Write it as Name (CENTRE CODE).")
+        existing = None
+        if policy and dates.get("incident_date"):
+            existing = next((c for c in all_claims if c.policy_id == policy.pk and c.incident_date == dates["incident_date"]
+                             and c.description.lower() == v.get("description", "").lower()), None)
+        r.values["_status_given"] = bool(status)
+        _compare(r, existing, {k: x for k, x in fields.items() if k != "equipment_id"}, v)
+        if existing and not r.errors and "_machine" in r.values and r.values["_machine"] and existing.equipment_id != r.values["_machine"]:
+            r.changes.append("machine")
+            if r.action == "same":
+                r.action = "change"
+        if r.action == "new" and "status" not in r.values["_fields"]:
+            r.values["_fields"]["status"] = InsuranceClaim.FILED
+        if not r.errors:
+            r.values["_fields"]["_policy_key"] = (insurer.lower(), number.lower(), dates.get("policy_start"))
+    seen_twice("Claims", lambda r: (_text(r.values.get("insurer")).lower(), _text(r.values.get("policy_number")).lower(),
+                                    _text(r.values.get("incident_date")), _text(r.values.get("description")).lower()))
 
     for s in ORDER:
         for r in plan.rows[s]:
@@ -621,6 +800,39 @@ def apply(plan):
             ilog.record(p, None, "Policy added from the Excel import")
         else:
             ilog.record_changes(p, None, before, prefix="Excel import. ")
+    for r in plan.rows["Licences"]:
+        if r.action not in ("new", "change"):
+            continue
+        f = dict(r.values["_fields"])
+        if r.action == "new":
+            x = Licence.objects.create(**f)
+        else:
+            x = r.obj
+            _update(x, f)
+        if "_centres" in r.values:
+            x.centres.set([centres[c] for c in r.values["_centres"]])
+        if r.values.get("_responsible"):
+            x.responsible.set([users[n] for n in r.values["_responsible"]])
+    all_policies = list(InsurancePolicy.objects.all())
+    for r in plan.rows["Claims"]:
+        if r.action not in ("new", "change"):
+            continue
+        f = dict(r.values["_fields"])
+        ins, num, start = f.pop("_policy_key")
+        if r.action == "new":
+            found = [p for p in all_policies if p.insurer.lower() == ins and p.policy_number.lower() == num
+                     and (not start or p.start_date == start)]
+            policy = found[0] if len(found) == 1 else sorted(found, key=lambda p: p.start_date)[-1]
+            if r.values.get("_machine"):
+                f["equipment_id"] = r.values["_machine"]
+            c = InsuranceClaim.objects.create(policy=policy, **f)
+            ilog.record(policy, None, f"Claim added from the Excel import: {c.description[:80]}")
+        else:
+            c = r.obj
+            if r.values.get("_machine"):
+                f["equipment_id"] = r.values["_machine"]
+            _update(c, f)
+            ilog.record(c.policy, None, f"Claim updated from the Excel import: {c.description[:80]}")
     return {s: plan.counts(s) for s in ORDER}, passwords
 
 
@@ -688,22 +900,25 @@ def workbook():
         for j, (_, key, _, _) in enumerate(cols, start=1):
             letter = ws.cell(row=1, column=j).column_letter
             choices = None
-            if key in ("active", "is_active", "handles_equipment", "renewed", "cancelled"):
+            if key in ("active", "is_active", "handles_equipment", "renewed", "cancelled", "closed"):
                 choices = '"Yes,No"'
             elif key == "role":
                 choices = '"' + ",".join(ROLE_LABEL.values()) + '"'
             elif key == "insurance_access":
                 choices = '"' + ",".join(INSURANCE_LABEL.values()) + '"'
+            elif key == "status":
+                choices = '"Filed,Under review,Approved,Settled,Rejected,Withdrawn"'
             elif key == "assignment_mode":
                 choices = '"Round robin,Least loaded,Manual"'
             if choices:
                 dv = DataValidation(type="list", formula1=choices, allow_blank=True)
                 dv.add(f"{letter}2:{letter}{last}")
                 ws.add_data_validation(dv)
-            if key in ("amc_expiry", "start_date", "expiry_date", "premium_due"):
+            if key in ("amc_expiry", "start_date", "expiry_date", "premium_due", "issued_on", "valid_until",
+                       "incident_date", "claimed_on", "policy_start"):
                 for i in range(2, len(data[sheet]) + 2):
                     ws.cell(row=i, column=j).number_format = "DD-MM-YYYY"
-            if key in ("mobile", "serial_no", "phone", "code", "policy_number"):
+            if key in ("mobile", "serial_no", "phone", "code", "policy_number", "reference_number"):
                 for i in range(2, last + 1):
                     ws.cell(row=i, column=j).number_format = "@"  # text, so Excel keeps leading zeros
     out = io.BytesIO()
@@ -733,7 +948,8 @@ def _current_rows():
                    for u in User.objects.prefetch_related("centres", "departments").order_by("username")],
         "Equipment": [{"centre": e.centre.code, "name": e.name, "make": e.make, "model": e.model,
                        "serial_no": e.serial_no, "vendor": e.vendor.name if e.vendor else "",
-                       "amc_expiry": e.amc_expiry, "active": _yn(e.active)}
+                       "amc_expiry": e.amc_expiry, "value": float(e.value) if e.value is not None else None,
+                       "active": _yn(e.active)}
                       for e in Equipment.objects.select_related("centre", "vendor").order_by("centre__code", "name")],
         "Insurance": [{"cover_type": p.cover_type.name, "centres": ", ".join(c.code for c in p.centres.all()) or "All",
                        "insurer": p.insurer, "policy_number": p.policy_number, "start_date": p.start_date,
@@ -744,4 +960,16 @@ def _current_rows():
                        "renewed": _yn(p.renewed), "cancelled": _yn(p.cancelled)}
                       for p in InsurancePolicy.objects.select_related("cover_type")
                       .prefetch_related("centres", "responsible").order_by("cover_type__name", "expiry_date")],
+        "Licences": [{"name": x.name, "centres": ", ".join(c.code for c in x.centres.all()) or "All", "issuer": x.issuer,
+                      "reference_number": x.reference_number, "issued_on": x.issued_on, "valid_until": x.valid_until,
+                      "responsible": ", ".join(u.username for u in x.responsible.all()), "remind_days": x.remind_days,
+                      "renewed": _yn(x.renewed), "closed": _yn(x.closed)}
+                     for x in Licence.objects.prefetch_related("centres", "responsible").order_by("name", "valid_until")],
+        "Claims": [{"insurer": c.policy.insurer, "policy_number": c.policy.policy_number, "policy_start": c.policy.start_date,
+                    "incident_date": c.incident_date, "description": c.description,
+                    "machine": f"{c.equipment.name} ({c.equipment.centre.code})" if c.equipment else "",
+                    "claim_number": c.claim_number, "claimed_on": c.claimed_on, "status": c.get_status_display(),
+                    "amount_claimed": float(c.amount_claimed) if c.amount_claimed is not None else None,
+                    "amount_settled": float(c.amount_settled) if c.amount_settled is not None else None, "notes": c.notes}
+                   for c in InsuranceClaim.objects.select_related("policy", "equipment__centre").order_by("-incident_date")],
     }
