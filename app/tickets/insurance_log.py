@@ -27,6 +27,7 @@ def snapshot(p):
         "Centres": sorted(c.name for c in p.centres.all()) or ["all centres"],
         "Responsible": sorted(u.display_name for u in p.responsible.all()),
         "Machines": sorted(e.name for e in p.equipment.all()),
+        "Covers every machine": "Yes" if p.covers_all_machines else "No",
     }
 
 

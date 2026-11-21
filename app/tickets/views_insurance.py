@@ -99,8 +99,8 @@ class PolicyForm(forms.ModelForm):
     class Meta:
         model = InsurancePolicy
         fields = ["centres", "cover_type", "insurer", "policy_number", "contact", "start_date", "expiry_date",
-                  "sum_insured", "premium", "premium_due", "responsible", "remind_days", "equipment", "covers", "notes",
-                  "cancelled"]
+                  "sum_insured", "premium", "premium_due", "responsible", "remind_days", "equipment", "covers_all_machines",
+                  "covers", "notes", "cancelled"]
         widgets = {
             "start_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "premium_due": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
@@ -433,8 +433,7 @@ def _gaps(user, centres, cfg):
     for p in live:
         p.centre_ids = {c.pk for c in p.centres.all()}
     visible = set(_scoped(user).values_list("pk", flat=True))
-    linked = set(InsurancePolicy.equipment.through.objects.filter(
-        insurancepolicy_id__in=[p.pk for p in live if p.expiry_date >= today]).values_list("equipment_id", flat=True))
+    linked = covered_machine_ids(today)
     machines = {}
     for e in Equipment.objects.filter(active=True, centre__in=centres):
         machines.setdefault(e.centre_id, []).append(e.pk)
@@ -458,6 +457,19 @@ def _gaps(user, centres, cfg):
     return {"gap_types": types, "gap_rows": rows, "gap_total": gaps}
 
 
+def covered_machine_ids(today):
+    """Machines on a current policy: listed on it, or at a centre of a policy that covers every machine."""
+    pols = InsurancePolicy.objects.filter(cancelled=False, renewed=False, expiry_date__gte=today)
+    ids = set(InsurancePolicy.equipment.through.objects.filter(insurancepolicy__in=pols).values_list("equipment_id", flat=True))
+    for p in pols.filter(covers_all_machines=True).prefetch_related("centres"):
+        qs = Equipment.objects.filter(active=True)
+        centre_ids = [c.pk for c in p.centres.all()]
+        if centre_ids:
+            qs = qs.filter(centre__in=centre_ids)
+        ids |= set(qs.values_list("pk", flat=True))
+    return ids
+
+
 def uninsured(user, centres, cfg):
     """Active machines worth at least the Settings amount that no current policy lists. A blanket policy that lists no
     machines does not count as cover here, which is why the person decides. Empty when the check is switched off."""
@@ -465,9 +477,7 @@ def uninsured(user, centres, cfg):
     if not floor:
         return []
     today = timezone.localdate()
-    linked = set(InsurancePolicy.equipment.through.objects.filter(
-        insurancepolicy__cancelled=False, insurancepolicy__renewed=False,
-        insurancepolicy__expiry_date__gte=today).values_list("equipment_id", flat=True))
+    linked = covered_machine_ids(today)
     return [e for e in Equipment.objects.filter(active=True, centre__in=centres, value__gte=floor)
             .select_related("centre").order_by("-value", "name") if e.pk not in linked]
 
@@ -512,7 +522,7 @@ def insurance_new(request):
                    "policy_number": old.policy_number, "contact": old.contact, "start_date": start,
                    "expiry_date": _plus_year(start), "sum_insured": old.sum_insured, "premium": old.premium,
                    "responsible": list(old.responsible.all()), "remind_days": old.remind_days,
-                   "equipment": list(old.equipment.all())}
+                   "equipment": list(old.equipment.all()), "covers_all_machines": old.covers_all_machines}
     form = PolicyForm(request.POST or None, initial=initial, show_money=money)
     files = request.FILES.getlist("files")
     problems = []
@@ -716,7 +726,9 @@ def machine_policies(user, equipment):
         return None
     cfg = SiteSettings.load()
     today = timezone.localdate()
-    rows = list(_scoped(user).filter(equipment=equipment, cancelled=False, renewed=False))
+    rows = list(_scoped(user).filter(cancelled=False, renewed=False).filter(
+        Q(equipment=equipment) | Q(covers_all_machines=True) & (Q(centres=equipment.centre_id) | Q(centres__isnull=True))
+    ).distinct())
     for p in rows:
         p.status = p.status_on(today, _soon(p, cfg))
         p.days_left = (p.expiry_date - today).days
@@ -765,7 +777,7 @@ def insurance_export(request):
     ws = wb.active
     ws.title = "Insurance"
     head = ["Centres", "Cover type", "Insurer", "Policy number", "Broker or agent", "Start date", "Expiry date",
-            "Days left", "Status", "Responsible", "Machines covered", "Covers", "Next premium due"]
+            "Days left", "Status", "Responsible", "Machines covered", "Covers", "Next premium due", "Covers every machine"]
     if money:
         head += ["Sum insured", "Premium"]
     ws.append(head)
@@ -775,7 +787,8 @@ def insurance_export(request):
         line = [p.location, p.cover_type.name, p.insurer, p.policy_number,
                 p.contact, p.start_date, p.expiry_date, p.days_left, InsurancePolicy.STATUS_LABELS[p.status],
                 ", ".join(u.display_name for u in p.responsible.all()),
-                ", ".join(e.name for e in p.equipment.all()), p.covers, p.premium_due]
+                ", ".join(e.name for e in p.equipment.all()), p.covers, p.premium_due,
+                "Yes" if p.covers_all_machines else "No"]
         if money:
             line += [float(p.sum_insured) if p.sum_insured is not None else None,
                      float(p.premium) if p.premium is not None else None]

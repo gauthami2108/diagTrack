@@ -289,7 +289,7 @@ renewals), as policies do; money is not involved. Only an administrator deletes 
 **Uninsured machine check.** Give a machine its **value** (Masters, Equipment; optional). On the **Coverage grid** tab, a
 panel lists every active machine worth at least the amount in Settings (**Flag uninsured machines worth at least**, default
 ₹10,00,000; 0 switches the check off) that is not listed on any current policy. Expired or cancelled policies do not count.
-A blanket policy that lists no machines does not count either, so add the machines to the policy to clear the flag. The Home
+A blanket policy counts when you tick **Covers every machine at these centres** on it (every centre when none is ticked); otherwise add the machines to the policy to clear the flag. The Home
 card shows the number and the weekly summary lists them. Values show only to people who may see money figures.
 
 **Weekly insurance summary.** Every Monday each administrator and each person with Insurance access gets one email listing

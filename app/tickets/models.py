@@ -639,6 +639,9 @@ class InsurancePolicy(models.Model):
         help_text="Optional. Leave empty to use the number on the Settings page. Further reminders follow 30 and 7 days before, and on the expiry date.")
     equipment = models.ManyToManyField(Equipment, blank=True, related_name="insurance_policies",
                                        help_text="Optional. The machines this policy covers.")
+    covers_all_machines = models.BooleanField(
+        "covers every machine at these centres", default=False,
+        help_text="Tick for a blanket policy that covers all the machines at the centres above (every centre if none is ticked) without listing them.")
     notes = models.TextField(blank=True)
     cancelled = models.BooleanField(default=False, help_text="Tick if the policy was cancelled before it ended.")
     renewed = models.BooleanField(default=False, editable=False)
