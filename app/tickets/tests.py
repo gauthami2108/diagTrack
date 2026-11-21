@@ -1825,7 +1825,7 @@ from datetime import date as _ins_date
 from django.contrib.messages import get_messages
 from django.core.files.uploadedfile import SimpleUploadedFile as _InsFile
 
-from .models import InsuranceCoverType, InsuranceDocument, InsurancePolicy
+from .models import InsuranceCoverType, InsuranceDocument, InsurancePolicy, Licence, LicenceDocument
 
 
 def _pdf(name="policy.pdf"):
@@ -2759,7 +2759,201 @@ class InsuranceReminderTests(Base):
         self.client.force_login(self.admin)
         page = self.client.get(reverse("message_templates"), {"event": "insurance"})
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, "Insurance ending")
+        self.assertContains(page, "Insurance, licence or certificate ending")
+
+
+class LicenceTests(Base):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._media = _ins_tempfile.mkdtemp()
+        cls._override = override_settings(MEDIA_ROOT=cls._media)
+        cls._override.enable()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._override.disable()
+        _ins_shutil.rmtree(cls._media, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        _grant_insurance(self)
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
+        self.today = timezone.localdate()
+
+    def lic(self, centres=(), days=200, **kw):
+        who = kw.pop("responsible", None)
+        x = Licence.objects.create(name=kw.pop("name", "AERB licence (radiation)"), issuer="AERB",
+                                   reference_number=kw.pop("number", "L-1"),
+                                   issued_on=self.today - timedelta(days=365 - days),
+                                   valid_until=self.today + timedelta(days=days), **kw)
+        x.centres.set(centres)
+        if who:
+            x.responsible.set(who)
+        return x
+
+    def data(self, **over):
+        d = {"name": "Biomedical waste authorisation", "issuer": "Pollution control board", "reference_number": "BW-12",
+             "centres": [self.kkp.pk], "issued_on": "2026-04-01", "valid_until": "2027-03-31", "files": _pdf("bw.pdf")}
+        d.update(over)
+        return d
+
+    def test_adding_a_licence_needs_a_document_and_sensible_dates(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse("licence_new"), self.data(files=[]))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "It is required")
+        r = self.client.post(reverse("licence_new"), self.data(valid_until="2026-01-01"))
+        self.assertContains(r, "cannot end before it was issued")
+        self.assertEqual(Licence.objects.count(), 0)
+        r = self.client.post(reverse("licence_new"), self.data())
+        x = Licence.objects.get()
+        self.assertRedirects(r, reverse("licence_detail", args=[x.pk]))
+        self.assertEqual((x.documents.count(), x.created_by), (1, self.admin))
+        dup = self.client.post(reverse("licence_new"), self.data(name="biomedical WASTE authorisation", reference_number="bw-12", files=_pdf("again.pdf")))
+        self.assertContains(dup, "already in the register")
+        self.assertEqual(Licence.objects.count(), 1)
+
+    def test_who_can_see_and_change_licences(self):
+        mine = self.lic([self.kkp], number="MINE")
+        other = self.lic([self.sec], number="OTHER")
+        everywhere = self.lic([], number="ALL")
+        # no access: nothing, and the page is closed
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="")
+        self.client.force_login(self.cm)
+        self.assertEqual(self.client.get(reverse("licence_list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("licence_detail", args=[mine.pk])).status_code, 403)
+        # view own: own centre plus the all-centre ones
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="own")
+        page = self.client.get(reverse("licence_list"))
+        self.assertEqual({x.reference_number for x in page.context["rows"]}, {"MINE", "ALL"})
+        self.assertEqual(self.client.get(reverse("licence_detail", args=[other.pk])).status_code, 404)
+        self.assertEqual(self.client.get(reverse("licence_detail", args=[everywhere.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("licence_new")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("licence_edit", args=[mine.pk])).status_code, 403)
+        self.assertNotContains(self.client.get(reverse("licence_detail", args=[mine.pk])), "Renew")
+        # manage: sees all, may add and edit, cannot delete
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="manage")
+        self.assertEqual(len(self.client.get(reverse("licence_list")).context["rows"]), 3)
+        self.assertEqual(self.client.get(reverse("licence_edit", args=[other.pk])).status_code, 200)
+        self.assertEqual(self.client.post(reverse("licence_delete", args=[other.pk])).status_code, 403)
+        # a requester or agent with no access stays out
+        self.client.force_login(self.ravi)
+        self.assertEqual(self.client.get(reverse("licence_list")).status_code, 403)
+
+    def test_renewing_continues_the_dates_and_marks_the_old_one(self):
+        self.client.force_login(self.admin)
+        old = self.lic([self.kkp], days=30, responsible=[self.admin])
+        form = self.client.get(reverse("licence_new"), {"renew": old.pk}).context["form"]
+        self.assertEqual(form.initial["issued_on"], old.valid_until + timedelta(days=1))
+        self.assertEqual((form.initial["valid_until"] - form.initial["issued_on"]).days, (old.valid_until - old.issued_on).days)
+        r = self.client.post(reverse("licence_new"), self.data(renew=old.pk, name=old.name, reference_number="L-2",
+                                                              issued_on=str(form.initial["issued_on"]),
+                                                              valid_until=str(form.initial["valid_until"])))
+        new = Licence.objects.get(reference_number="L-2")
+        old.refresh_from_db()
+        self.assertEqual((old.renewed, new.renewed_from), (True, old))
+        self.assertContains(self.client.get(reverse("licence_detail", args=[old.pk])), "Renewed by")
+        current = {x.reference_number for x in self.client.get(reverse("licence_list")).context["rows"]}
+        self.assertEqual(current, {"L-2"})  # the renewed one drops out of the current list
+
+    def test_documents_are_viewed_added_and_kept(self):
+        self.client.force_login(self.admin)
+        self.client.post(reverse("licence_new"), self.data())
+        x = Licence.objects.get()
+        d = x.documents.get()
+        r = self.client.get(reverse("licence_doc", args=[d.pk]))
+        self.assertEqual((r["X-Frame-Options"], r["Content-Security-Policy"]), ("SAMEORIGIN", "frame-ancestors 'self'"))
+        self.assertIn("attachment", self.client.get(reverse("licence_doc", args=[d.pk]) + "?download=1")["Content-Disposition"])
+        page = self.client.get(reverse("licence_detail", args=[x.pk])).content.decode()
+        self.assertIn("data-doc-view", page)
+        self.assertIn('id="doc-viewer"', page)
+        # the last document cannot be removed
+        self.client.post(reverse("licence_doc_delete", args=[d.pk]))
+        self.assertEqual(x.documents.count(), 1)
+        self.client.post(reverse("licence_doc_add", args=[x.pk]), {"files": _pdf("receipt.pdf")})
+        self.assertEqual(x.documents.count(), 2)
+        self.client.post(reverse("licence_doc_delete", args=[d.pk]))
+        self.assertEqual(x.documents.count(), 1)
+        bad = self.client.post(reverse("licence_doc_add", args=[x.pk]), {"files": _InsFile("x.exe", b"MZ", content_type="application/octet-stream")})
+        self.assertEqual(x.documents.count(), 1)
+        # people who may not open the licence cannot open its files
+        other = self.lic([self.sec], number="OTHER")
+        od = LicenceDocument.objects.create(licence=other, file=_pdf("o.pdf"), name="o.pdf", size=5)
+        self.client.force_login(self.cm)
+        self.assertEqual(self.client.get(reverse("licence_doc", args=[od.pk])).status_code, 404)
+
+    def test_only_an_administrator_deletes_a_licence(self):
+        x = self.lic([self.kkp])
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.post(reverse("licence_delete", args=[x.pk])).status_code, 302)
+        self.assertEqual(Licence.objects.count(), 0)
+
+    def test_list_filters_status_and_export(self):
+        import io
+        from openpyxl import load_workbook
+        self.lic([self.kkp], number="SOON", days=40)       # first reminder is 90 days, so this is expiring
+        self.lic([self.kkp], number="FINE", days=400)
+        self.lic([self.kkp], number="GONE", days=-3)
+        self.lic([self.kkp], number="SHUT", days=100, closed=True)
+        self.client.force_login(self.admin)
+        rows = lambda **q: {x.reference_number for x in self.client.get(reverse("licence_list"), q).context["rows"]}
+        self.assertEqual(rows(), {"SOON", "FINE", "GONE"})
+        self.assertEqual(rows(status="expiring"), {"SOON"})
+        self.assertEqual(rows(status="expired"), {"GONE"})
+        self.assertEqual(rows(status="closed"), {"SHUT"})
+        self.assertEqual(rows(q="soon"), {"SOON"})
+        ws = load_workbook(io.BytesIO(self.client.get(reverse("licence_export")).content)).active
+        self.assertEqual(ws.max_row, 4)
+        self.assertEqual([c.value for c in ws[1]][:3], ["Licence or certificate", "Issued by", "Number"])
+
+    def test_the_menu_tab_and_page_link_up(self):
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("insurance_list")), reverse("licence_list"))
+        self.assertContains(self.client.get(reverse("licence_list")), reverse("insurance_list") + "?tab=claims")
+
+    # --- reminders ---------------------------------------------------------
+    def notes(self):
+        return list(Notification.objects.filter(kind="insurance", link__startswith="/licences/"))
+
+    def test_reminders_90_30_7_0_and_the_day_after_once_each(self):
+        x = self.lic([self.kkp], days=200)
+        end = x.valid_until
+        sent = lambda d: services.licence_checks(end - timedelta(days=d))
+        self.assertEqual(sent(120), 0)
+        self.assertEqual(sent(90), 1)
+        self.assertEqual(sent(90), 0)       # same day again
+        self.assertEqual(sent(60), 0)
+        self.assertEqual(sent(30), 1)
+        self.assertEqual(sent(7), 1)
+        self.assertEqual(sent(0), 1)
+        self.assertEqual(sent(-1), 1)       # day after, not renewed
+        self.assertEqual(sent(-2), 0)
+
+    def test_its_own_first_reminder_and_the_recipients(self):
+        x = self.lic([self.kkp], days=200, remind_days=45, responsible=[self.ravi])
+        User.objects.filter(pk=self.ravi.pk).update(insurance_access="own")
+        self.assertEqual(services.licence_checks(x.valid_until - timedelta(days=60)), 0)
+        self.assertEqual(services.licence_checks(x.valid_until - timedelta(days=45)), 1)
+        who = {n.user.username for n in self.notes()}
+        self.assertEqual(who, set(User.objects.filter(role=User.ADMIN).values_list("username", flat=True))
+                         | {"imran", "kavitha", "director", "ravi"})
+        self.assertIn("AERB licence", self.notes()[0].title)
+
+    def test_closed_and_renewed_licences_are_quiet_and_a_new_end_date_restarts_it(self):
+        x = self.lic([self.kkp], days=10, closed=True)
+        y = self.lic([self.kkp], days=10, number="L-2", renewed=True)
+        self.assertEqual(services.licence_checks(self.today), 0)
+        z = self.lic([self.kkp], days=10, number="L-3")
+        self.assertEqual(services.licence_checks(self.today), 1)
+        z.refresh_from_db()
+        z.valid_until += timedelta(days=365)
+        z.save()
+        self.assertEqual(services.licence_checks(z.valid_until - timedelta(days=30)), 1)  # a fresh cycle
+        old = self.lic([self.kkp], days=-90, number="L-4")  # recorded long after it ended
+        before = len(self.notes())
+        services.licence_checks(self.today)
+        self.assertEqual(len(self.notes()), before)
 
 
 class InsuranceGridTests(Base):

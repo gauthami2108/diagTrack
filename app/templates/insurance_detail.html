@@ -75,12 +75,5 @@
     </section>{% endif %}
   </div>
 </div>
-<dialog class="dialog doc-viewer" id="doc-viewer" aria-label="Policy document">
-  <header><h2 data-doc-name></h2>
-    <a class="btn btn-s" data-doc-open href="#" target="_blank" rel="noopener">Open in new tab</a>
-    <a class="btn btn-s" data-doc-download href="#">Download</a>
-    <button class="btn btn-s btn-ghost" type="button" data-doc-close>Close</button></header>
-  <div class="doc-body" data-doc-body></div>
-  <p class="doc-note">If the document does not appear here (some phones cannot show a PDF inside a page), use Download or Open in new tab.</p>
-</dialog>
+{% include "_doc_viewer.html" %}
 {% endblock %}

@@ -674,6 +674,35 @@ def _insurance_people(p, admins, holders):
     return people
 
 
+def licence_checks(today=None):
+    """Once a day: warn about licences and certificates that are ending or have ended. Same people and same stages as
+    insurance (the first reminder is the licence's own number, else 90 days, then 30, 7, 0 and the day after).
+    Each stage is sent once; changing the end date, or renewing (a new record), starts again."""
+    from .models import Licence
+    today = today or timezone.localdate()
+    admins = list(User.objects.filter(is_active=True).filter(Q(role=User.ADMIN) | Q(is_superuser=True)))
+    holders = list(User.objects.filter(is_active=True, insurance_access__in=["own", "all", "manage"]).prefetch_related("centres"))
+    sent = 0
+    for x in Licence.objects.filter(closed=False, renewed=False).prefetch_related("centres", "responsible"):
+        if x.alert_for != x.valid_until:
+            x.alert_for, x.alert_stage = x.valid_until, 0
+        left = (x.valid_until - today).days
+        due = [st for st in insurance_stages(x.first_reminder) if left <= st]
+        stage = (min(due) + 2) if due else 0
+        if due and (x.alert_stage == 0 or stage < x.alert_stage):
+            if not (x.alert_stage == 0 and left < -30):  # recorded long after it ended: not announced
+                when = "has expired" if left < 0 else "ends today" if left == 0 else f"ends in {left} days"
+                nt.notify(_insurance_people(x, admins, holders), None,
+                          f"{x.name} for {x.location} {when}",
+                          f"{x.issuer + ', ' if x.issuer else ''}{'no. ' + x.reference_number + '. ' if x.reference_number else ''}"
+                          f"Valid until {x.valid_until:%d %b %Y}. Renew it, then record the new one with Renew.",
+                          urgent=left <= 7, kind="insurance", link=f"/licences/{x.pk}/")
+                sent += 1
+            x.alert_stage = stage
+        x.save(update_fields=["alert_for", "alert_stage"])
+    return sent
+
+
 def insurance_checks(today=None):
     """Once a day: warn about insurance policies that are ending or have ended, and about premiums falling due.
 

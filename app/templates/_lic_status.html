@@ -1,0 +1,1 @@
+<span class="ins-chip ins-{{ x.status }}">{% if x.status == 'active' %}Valid{% elif x.status == 'expiring' %}Expiring soon{% elif x.status == 'expired' %}Expired{% elif x.status == 'renewed' %}Renewed{% else %}Closed{% endif %}</span>

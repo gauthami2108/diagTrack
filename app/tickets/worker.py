@@ -31,12 +31,15 @@ class Worker:
         if self.amc_day != today:  # once a day, and at start
             amc = services.amc_checks()
             ins = services.insurance_checks()
+            lic = services.licence_checks()
             pm_sent = services.run_pm_checks()
             self.amc_day = today
             if amc:
                 log.info("Sent %s AMC expiry alerts.", amc)
             if ins:
                 log.info("Sent %s insurance expiry alerts.", ins)
+            if lic:
+                log.info("Sent %s licence and certificate expiry alerts.", lic)
             if pm_sent:
                 log.info("Auto-generated %s PM tickets.", pm_sent)
 

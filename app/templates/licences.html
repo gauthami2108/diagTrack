@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Licences and certificates{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Insurance</h1><p class="sub">Licences, registrations and certificates that run out and must be renewed, with their documents.{% if not request.user.insurance_sees_all %} You see those of your own centres and those that cover every centre.{% endif %}</p></div>
+  <div class="head-actions">
+    <a class="btn" href="{% url 'licence_export' %}?{{ request.GET.urlencode }}">{% icon 'download' %}Excel</a>
+    {% if can_edit %}<a class="btn btn-primary" href="{% url 'licence_new' %}">{% icon 'circle-plus' %}Add licence</a>{% endif %}
+  </div>
+</div>
+
+<section class="band" aria-label="Summary">
+  <div class="band-cell"><span class="band-n">{{ current_count }}</span><span class="band-l">Current licences</span></div>
+  <div class="band-cell {% if expiring_count %}is-warn{% endif %}"><span class="band-n">{{ expiring_count }}</span><span class="band-l">Expiring soon</span></div>
+  <div class="band-cell {% if expired_count %}is-bad{% endif %}"><span class="band-n">{{ expired_count }}</span><span class="band-l">Expired, not renewed</span></div>
+</section>
+
+{% include "_ins_tabs.html" with licences_tab=True %}
+
+<form class="filters" method="get" data-autosubmit>
+  <input type="search" name="q" value="{{ f.q }}" placeholder="Name, authority or number" aria-label="Search licences">
+  <select name="centre" aria-label="Centre"><option value="">All centres</option>
+    <option value="0" {% if f.centre == '0' %}selected{% endif %}>Those for all centres</option>
+    {% for c in centres %}<option value="{{ c.pk }}" {% if f.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <select name="status" aria-label="Status">{% for v, l in status_filters %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+</form>
+{% if rows %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Licence or certificate</th><th>Where</th><th>Issued by</th><th>Issued</th><th>Valid until</th><th>Status</th></tr></thead>
+  <tbody>{% for x in rows %}
+  <tr data-href="{% url 'licence_detail' x.pk %}">
+    <td class="cell-title"><a href="{% url 'licence_detail' x.pk %}">{{ x.name }}</a><small>{% if x.reference_number %}{{ x.reference_number }}{% endif %}{% if x.equipment %} · {{ x.equipment.name }}{% endif %}{% if not x.doc_count %} <span class="warn-text">No document</span>{% endif %}</small></td>
+    <td data-l="Where">{{ x.location }}</td>
+    <td data-l="Issued by">{{ x.issuer|default:"-" }}</td>
+    <td data-l="Issued">{{ x.issued_on|date:"d M Y" }}</td>
+    <td data-l="Valid until">{{ x.valid_until|date:"d M Y" }}<br>{% include "_lic_when.html" %}</td>
+    <td data-l="Status">{% include "_lic_status.html" %}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}
+<div class="empty-big">{% icon 'shield-check' %}<h2>No licences found</h2><p>{% if can_edit %}Use Add licence to record the first one, or change the filters above.{% else %}Nothing matches. Change the filters, or ask the administrator to add it.{% endif %}</p></div>
+{% endif %}
+{% endblock %}

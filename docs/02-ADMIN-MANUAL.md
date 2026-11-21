@@ -274,6 +274,17 @@ Documents may be PDF, JPG, PNG or WebP, up to 20 MB each; add more later for end
 the day, to the same people as the expiry reminders (the amount is never in the message). After paying, change the date to the next
 instalment and the reminders start again. If the date has passed and nobody has moved it, one more alert goes out the day after, marked overdue, and then no more; a date that was already more than 30 days old when first recorded is not announced. Leave it empty for a policy paid once a year.
 
+**Licences and certificates.** The **Licences** tab of the Insurance page keeps the licences, registrations and
+certificates that run out: AERB licence, biomedical waste authorisation, fire NOC, pollution control consent, lift or trade
+licence, NABL and so on. The same people see it (administrators and anyone with Insurance access) under the same levels; it
+has no money fields. **Add licence** takes the name (suggestions are offered, any name works), the authority, number, centres
+(none means every centre), an optional machine, issued and valid-until dates, responsible people, an optional first reminder and
+the document (required, as for policies). **Renew** continues the dates from the end of the old one for the same length and
+marks the old one Renewed. Reminders go to the same people as insurance: the first one 90 days before it ends (or the licence's
+own number), then 30 days, 7 days, the last day and the day after if it was not renewed, each once. A licence that is
+no longer needed can be marked Closed, which stops reminders. Documents open in the same in-app viewer. The list has filters
+and an Excel export. Only an administrator deletes a licence.
+
 **Claims.** Each policy page has a **Claims** panel. People with Manage access (and administrators) choose **Add a claim**:
 date of the incident (not in the future), what happened in a line, the machine (from the policy's machines, or the centre's
 machines), the insurer's claim number, the date filed, status (Filed, Under review, Approved awaiting payment, Settled,

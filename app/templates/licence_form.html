@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}{% if new %}Add licence{% else %}Edit licence{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{% if old %}Renew licence{% elif new %}Add licence{% else %}Edit licence{% endif %}</h1>
+  <p class="sub">{% if old %}Renewing {{ old.name }}. The dates continue from the end of the old one, for the same length; change what differs. The old one is marked Renewed when you save.{% else %}Dates and the licence document are required.{% endif %}</p></div></div>
+<form class="form-card" method="post" enctype="multipart/form-data" novalidate>
+  {% csrf_token %}
+  {% if old %}<input type="hidden" name="renew" value="{{ old.pk }}">{% endif %}
+  <datalist id="licence-names">{% for s in suggestions %}<option value="{{ s }}">{% endfor %}</datalist>
+  {% if problems or form.errors %}<div class="callout callout-bad" role="alert">{% icon 'circle-alert' %}<div><strong>It was not saved.</strong><ul>{% for e in problems %}<li>{{ e }}</li>{% endfor %}{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% if form.errors and not problems %}<p class="sub">Check the marked fields below.</p>{% endif %}</div></div>{% endif %}
+  {% include "_field.html" with f=form.name %}
+  <div class="field-row">{% include "_field.html" with f=form.issuer %}{% include "_field.html" with f=form.reference_number %}</div>
+  {% include "_checklist.html" with title="Centres" name="centres" uid="lic-centres" items=form.centres_items errors=form.centres.errors hint=form.centres.help_text %}
+  {% include "_field.html" with f=form.equipment %}
+  <div class="field-row">{% include "_field.html" with f=form.issued_on %}
+    <div class="field-with-btn">{% include "_field.html" with f=form.valid_until %}<button class="btn btn-s" type="button" data-plus-year data-start="id_issued_on" data-end="id_valid_until" title="Set the end date to one year after the issue date">+1 year</button></div></div>
+  {% include "_field.html" with f=form.remind_days %}
+  {% include "_checklist.html" with title="Responsible" name="responsible" uid="lic-people" items=form.responsible_items errors=form.responsible.errors hint=form.responsible.help_text %}
+  {% include "_field.html" with f=form.notes %}
+  {% if not new %}<label class="check"><input type="checkbox" name="closed" {% if form.closed.value %}checked{% endif %}><span><b>{{ form.closed.label|capfirst }}</b><small>Tick this if you no longer need it (for example a machine was removed). Reminders stop.</small></span></label>{% endif %}
+
+  <div class="field"><span>Documents{% if new %} (required){% endif %}</span>
+    <label class="drop" data-drop>
+      <input type="file" name="files" multiple accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp">
+      {% icon 'upload' %}<span><b>Add the licence or certificate and any receipts</b><small>PDF, JPG, PNG or WebP. Up to {{ max_mb }} MB each. You can choose several files.</small></span>
+    </label>
+    <ul class="file-list" data-file-list></ul>
+    {% if not new and x.documents.exists %}<small class="muted">{{ x.documents.count }} file{{ x.documents.count|pluralize }} already attached. New files are added to them.</small>{% endif %}
+  </div>
+  <div class="form-foot"><a class="btn" href="{% if new %}{% url 'licence_list' %}{% else %}{% url 'licence_detail' x.pk %}{% endif %}">Cancel</a><button class="btn btn-primary" type="submit">{% if old %}Save renewal{% else %}Save{% endif %}</button></div>
+</form>
+{% endblock %}
