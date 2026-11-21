@@ -664,7 +664,7 @@ def insurance_checks(today=None):
     """Once a day: warn about insurance policies that are ending or have ended.
 
     Goes to the administrators, people given Insurance access who can see the policy (all or manage level, or view-own
-    for a centre it covers) and the person responsible, if they have Insurance access.
+    for a centre it covers) and the people responsible, if they have Insurance access.
     Each stage is sent once; changing the expiry date (or renewing, which makes a new policy) starts again.
     A policy that was already long over when it was recorded is not announced."""
     today = today or timezone.localdate()
@@ -673,7 +673,7 @@ def insurance_checks(today=None):
     holders = list(User.objects.filter(is_active=True, insurance_access__in=["own", "all", "manage"]).prefetch_related("centres"))
     sent = 0
     live = InsurancePolicy.objects.filter(cancelled=False, renewed=False).select_related(
-        "cover_type", "responsible").prefetch_related("centres")
+        "cover_type").prefetch_related("centres", "responsible")
     for p in live:
         if p.alert_for != p.expiry_date:  # new policy, or the expiry date was changed: start again
             p.alert_for, p.alert_stage = p.expiry_date, 0
@@ -689,8 +689,7 @@ def insurance_checks(today=None):
                 for u in holders:
                     if u.insurance_access in ("all", "manage") or covered & {c.pk for c in u.centres.all()}:
                         people.append(u)
-                if p.responsible and p.responsible.is_active and p.responsible.can_view_insurance:
-                    people.append(p.responsible)
+                people += [u for u in p.responsible.all() if u.is_active and u.can_view_insurance]
                 when = "has expired" if left < 0 else "ends today" if left == 0 else f"ends in {left} days"
                 nt.notify(people, None, f"{p.cover_type.name} insurance for {p.location} {when}",
                           f"Policy {p.policy_number} with {p.insurer}. Expiry {p.expiry_date:%d %b %Y}.",

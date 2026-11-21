@@ -262,7 +262,7 @@ where it applies, the insurer, the dates and the status: Active, Expiring soon, 
 
 **Adding a policy** (administrators and people with Manage access). Choose **Add policy**. The type of cover, insurer, policy number, start date,
 expiry date and at least one document are required. Choose one centre, several centres (hold Ctrl, or Command on a Mac),
-or none for a policy that covers every centre or the head office. Documents may be PDF, JPG, PNG or WebP, up to 20 MB
+or none for a policy that covers every centre or the head office. **Responsible** may name several people the same way. Documents may be PDF, JPG, PNG or WebP, up to 20 MB
 each; add more later for endorsements or receipts. Every policy keeps at least one document.
 
 **Renewing.** Open the policy and choose **Renew**. The new policy starts the day after the old one ends and runs a year;
@@ -285,7 +285,7 @@ after insurance. The levels are:
   types tab and the Settings switch stay with administrators.
 
 Sum insured and premium follow the same rule as above, and the Settings switch can hide them for everyone.
-Reminders go to administrators, to people with access who can see the policy, and to the person responsible if they have access.
+Reminders go to administrators, to people with access who can see the policy, and to the people responsible if they have access.
 
 **Machines.** On a policy's Edit page, tick the machines it covers under **Machines covered**. Each machine's page then has an
 **Insurance** panel saying "Insured until ..." (and flagging cover that ends soon or has ended), visible to administrators and
@@ -311,8 +311,8 @@ one or switch one off; policies already recorded keep their type.
 reminder (60 days before expiry to begin with), then 30 days and 7 days before, on the expiry date, and once more the
 day after if the policy has not been renewed. The first number is set under Settings, General (**warn about insurance
 expiry**) and can be changed for one policy with its **First reminder** box; a policy with 14 there gets 14, 7, 0 and the
-day after, nothing earlier. Alerts go to the administrators, the manager of each centre the policy covers (for a policy
-covering all centres, administrators only) and the person responsible, if one is chosen. They appear in the bell and
+day after, nothing earlier. Alerts go to the administrators, people with Insurance access who can see the policy (for a policy
+covering all centres, only those who view all centres or manage) and the people responsible, if they have access. They appear in the bell and
 by email, SMS, WhatsApp and Telegram as switched on under Settings; the wording is under **Message templates**
 (**Insurance ending**). Each reminder is sent once. Changing the expiry date starts the reminders again, and Renew starts a
 new policy with its own reminders. A policy recorded more than 30 days after it ended is not announced.
