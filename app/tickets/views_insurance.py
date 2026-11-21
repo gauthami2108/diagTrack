@@ -20,8 +20,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import (Centre, ClaimDocument, Equipment, InsuranceClaim, InsuranceCoverType, InsuranceDocument, InsurancePolicy, SiteSettings,
-                     User)
+from .models import (Centre, ClaimDocument, Equipment, InsuranceClaim, InsuranceCoverType, InsuranceDocument, InsurancePolicy, Licence,
+                     SiteSettings, User)
 from . import insurance_log as ilog
 from .services import insurance_stages
 from .views import _safe, admin_only, role_required
@@ -695,7 +695,16 @@ def home_card(user):
     items = ([{"p": p, "kind": "premium", "days": p.premium_days} for p in sorted(premiums, key=lambda x: x.premium_days)]
              + [{"p": p, "kind": "expired", "days": p.days_left} for p in sorted(expired, key=lambda x: -x.days_left)]
              + [{"p": p, "kind": "expiring", "days": p.days_left} for p in sorted(expiring, key=lambda x: x.days_left)])
+    from .views_licence import _scoped as _lic_scoped
+    lic_x, lic_e = [], []
+    for x in _lic_scoped(user).filter(closed=False, renewed=False):
+        st = x.status_on(today)
+        x.days_left = (x.valid_until - today).days
+        (lic_x if st == Licence.EXPIRED else lic_e if st == Licence.EXPIRING else []).append(x)
+    lic_items = ([{"l": x, "kind": "expired", "days": x.days_left} for x in sorted(lic_x, key=lambda x: -x.days_left)]
+                 + [{"l": x, "kind": "expiring", "days": x.days_left} for x in sorted(lic_e, key=lambda x: x.days_left)])
     return {"expired": len(expired), "expiring": len(expiring), "premiums": len(premiums),
+            "lic_expired": len(lic_x), "lic_expiring": len(lic_e), "lic_items": lic_items[:4], "lic_more": max(0, len(lic_items) - 4),
             "no_document": sum(1 for p in rows if not p.doc_count), "gaps": _gap_count(user, centres, cfg),
             "uninsured": len(uninsured(user, centres, cfg)),
             "items": items[:6], "more": max(0, len(items) - 6), "soon_days": cfg.insurance_alert_days or 60}

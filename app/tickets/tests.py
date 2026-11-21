@@ -2849,6 +2849,22 @@ class LicenceTests(Base):
         self.assertContains(dup, "already in the register")
         self.assertEqual(Licence.objects.count(), 1)
 
+    def test_home_card_shows_licences_in_scope(self):
+        from .views_insurance import home_card
+        self.lic([self.kkp], days=-3, number="OLD")
+        self.lic([self.kkp], days=20, number="SOON")
+        self.lic([self.sec], days=-9, number="ELSEWHERE")
+        self.lic([self.kkp], days=400, number="FINE")
+        card = home_card(self.admin)
+        self.assertEqual((card["lic_expired"], card["lic_expiring"]), (2, 1))
+        self.assertEqual([i["l"].reference_number for i in card["lic_items"]], ["OLD", "ELSEWHERE", "SOON"])
+        mine = home_card(self.cm)  # View own: own centre plus all-centre licences only
+        self.assertEqual((mine["lic_expired"], mine["lic_expiring"]), (1, 1))
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("home"))
+        self.assertContains(page, "Licences expired or ending")
+        self.assertContains(page, "AERB licence (radiation)")
+
     def test_licence_changes_are_recorded_and_shown(self):
         self.client.force_login(self.admin)
         self.client.post(reverse("licence_new"), self.data())

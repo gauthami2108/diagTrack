@@ -282,7 +282,7 @@ has no money fields. **Add licence** takes the name (suggestions are offered, an
 the document (required, as for policies). **Renew** continues the dates from the end of the old one for the same length and
 marks the old one Renewed. Reminders go to the same people as insurance: the first one 90 days before it ends (or the licence's
 own number), then 30 days, 7 days, the last day and the day after if it was not renewed, each once. A licence that is
-no longer needed can be marked Closed, which stops reminders. Documents open in the same in-app viewer. The list has filters
+no longer needed can be marked Closed, which stops reminders. The Home page's Insurance card also counts licences and certificates that are expired or ending soon and lists the most urgent, limited to what the person may see. Documents open in the same in-app viewer. The list has filters
 and an Excel export. Each licence page has a **Change history** (who changed which date, number, centre or document, and
 renewals), as policies do; money is not involved. Only an administrator deletes a licence.
 
