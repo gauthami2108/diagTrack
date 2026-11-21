@@ -944,6 +944,15 @@ SAFE_FILE_HEADERS = {"Content-Security-Policy": "default-src 'none'; img-src 'se
                      "X-Content-Type-Options": "nosniff"}
 
 
+def _money_or_none(v):
+    """A whole-rupee amount from a form field, or None when empty or not a number."""
+    try:
+        n = int(float(str(v).replace(",", "").strip()))
+        return n if n >= 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _safe(resp):
     """Files people upload are shown as files only: no scripts can run from them."""
     for k, v in SAFE_FILE_HEADERS.items():
@@ -1953,6 +1962,7 @@ def masters_action(request, section):
             uptime_val = float(p.get("uptime_guarantee_percent") or 95.0)
             penalty_val = float(p.get("penalty_rate_per_day") or 0.0)
             camc_val = float(p.get("annual_camc_cost") or 0.0)
+            value_val = _money_or_none(p.get("value"))
             if not centre_id or not name:
                 messages.error(request, "Centre and equipment name are required.")
                 return redirect(back)
@@ -1967,7 +1977,7 @@ def masters_action(request, section):
             eq = Equipment.objects.create(
                 centre=centre, name=name, make=make, model=model, serial_no=serial_no,
                 vendor=vendor, amc_expiry=amc_date, uptime_guarantee_percent=uptime_val,
-                penalty_rate_per_day=penalty_val, annual_camc_cost=camc_val
+                penalty_rate_per_day=penalty_val, annual_camc_cost=camc_val, value=value_val
             )
             messages.success(request, f"Equipment '{eq.name}' ({centre.code}) created.")
         elif do == "edit":
@@ -1982,6 +1992,7 @@ def masters_action(request, section):
             uptime_val = float(p.get("uptime_guarantee_percent") or 95.0)
             penalty_val = float(p.get("penalty_rate_per_day") or 0.0)
             camc_val = float(p.get("annual_camc_cost") or 0.0)
+            value_val = _money_or_none(p.get("value"))
             active = p.get("active") == "on"
             if not name:
                 messages.error(request, "Equipment name is required.")
@@ -2004,6 +2015,7 @@ def masters_action(request, section):
             eq.uptime_guarantee_percent = uptime_val
             eq.penalty_rate_per_day = penalty_val
             eq.annual_camc_cost = camc_val
+            eq.value = value_val
             eq.active = active
             eq.save()
             messages.success(request, f"Equipment '{eq.name}' updated.")

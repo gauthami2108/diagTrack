@@ -285,6 +285,12 @@ own number), then 30 days, 7 days, the last day and the day after if it was not 
 no longer needed can be marked Closed, which stops reminders. Documents open in the same in-app viewer. The list has filters
 and an Excel export. Only an administrator deletes a licence.
 
+**Uninsured machine check.** Give a machine its **value** (Masters, Equipment; optional). On the **Coverage grid** tab, a
+panel lists every active machine worth at least the amount in Settings (**Flag uninsured machines worth at least**, default
+₹10,00,000; 0 switches the check off) that is not listed on any current policy. Expired or cancelled policies do not count.
+A blanket policy that lists no machines does not count either, so add the machines to the policy to clear the flag. The Home
+card shows the number and the weekly summary lists them. Values show only to people who may see money figures.
+
 **Weekly insurance summary.** Every Monday each administrator and each person with Insurance access gets one email listing
 what needs attention in what they may see: premiums due or overdue, policies expired and not renewed or ending soon, licences
 and certificates expired or ending soon, claims still open, and centres with no current expected cover. People with View own

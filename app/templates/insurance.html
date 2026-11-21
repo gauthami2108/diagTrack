@@ -71,6 +71,12 @@
 {% else %}
 <div class="empty-big">{% icon 'building-2' %}<h2>No centres to show</h2></div>
 {% endif %}
+{% if min_value %}
+<section class="panel" style="margin-top:18px"><header><h2>Valuable machines with no policy{% if uninsured %} <span class="count count-bad">{{ uninsured|length }}</span>{% endif %}</h2></header>
+  <p class="panel-note">Machines worth ₹{{ min_value }} or more that are not listed on any current policy. Add the machine to a policy, or change the limit in Settings.</p>
+  {% if uninsured %}<ul class="plain">{% for e in uninsured %}<li><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a> <small class="muted">{{ e.centre.name }}{% if money %}, ₹{{ e.value|floatformat:0 }}{% endif %}</small></li>{% endfor %}</ul>
+  {% else %}<p class="empty">Every valuable machine is on a current policy.</p>{% endif %}
+</section>{% endif %}
 
 {% elif tab == 'claims' %}
 <p class="sub tab-intro">Claims made on policies, newest incident first. Open a policy to add a claim.</p>
