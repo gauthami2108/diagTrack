@@ -5,6 +5,7 @@
   <div><h1>Insurance</h1><p class="sub">Licences, registrations and certificates that run out and must be renewed, with their documents.{% if not request.user.insurance_sees_all %} You see those of your own centres and those that cover every centre.{% endif %}</p></div>
   <div class="head-actions">
     <a class="btn" href="{% url 'licence_export' %}?{{ request.GET.urlencode }}">{% icon 'download' %}Excel</a>
+    <a class="btn" href="{% url 'insurance_print' %}" target="_blank" rel="noopener">{% icon 'printer' %}Print or PDF</a>
     {% if can_edit %}<a class="btn btn-primary" href="{% url 'licence_new' %}">{% icon 'circle-plus' %}Add licence</a>{% endif %}
   </div>
 </div>

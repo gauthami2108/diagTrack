@@ -3842,3 +3842,56 @@ class InstalmentTests(Base):
         services.insurance_checks()
         self.p.refresh_from_db()
         self.assertEqual(self.p.premium_alert_for, due)
+
+
+class InsurancePrintTests(Base):
+    """Phase 23: the printable register."""
+
+    def setUp(self):
+        _grant_insurance(self)
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
+        self.fire = InsuranceCoverType.objects.get(name="Fire")
+        self.today = timezone.localdate()
+        self.a = self.pol([self.kkp], "KKP-FIRE", 100, sum_insured=5000000, premium=42000)
+        self.b = self.pol([self.sec], "SEC-FIRE", 100, sum_insured=7000000)
+        self.c = self.pol([self.kkp], "OLD-ONE", -10)
+        _L.objects.create(name="Fire NOC", reference_number="NOC-1", issued_on=self.today - timedelta(days=300),
+                          valid_until=self.today + timedelta(days=60)).centres.set([self.sec])
+
+    def pol(self, centres, number, days, **kw):
+        p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="NI", policy_number=number,
+                                           start_date=self.today - timedelta(days=200),
+                                           expiry_date=self.today + timedelta(days=days), **kw)
+        p.centres.set(centres)
+        return p
+
+    def test_admin_register_has_everything_with_money(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("insurance_print"))
+        self.assertEqual(r.status_code, 200)
+        for text in ("Insurance and licence register", "KKP-FIRE", "SEC-FIRE", "OLD-ONE", "Fire NOC", "₹12000000", "Sum insured"):
+            self.assertContains(r, text)
+
+    def test_view_own_sees_only_their_scope_and_no_money(self):
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="own")
+        self.cm.centres.set([self.kkp])
+        self.client.force_login(self.cm)
+        r = self.client.get(reverse("insurance_print"))
+        self.assertContains(r, "KKP-FIRE")
+        self.assertNotContains(r, "SEC-FIRE")
+        self.assertNotContains(r, "Fire NOC")
+        self.assertNotContains(r, "Sum insured")
+        self.assertNotContains(r, "42000")
+
+    def test_filters_carry_over_and_access_is_required(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("insurance_print"), {"status": "expired"})
+        self.assertContains(r, "OLD-ONE")
+        self.assertNotContains(r, "KKP-FIRE")
+        self.client.force_login(self.requester if hasattr(self, "requester") else self.other)
+        self.assertIn(self.client.get(reverse("insurance_print")).status_code, (302, 403, 404))
+
+    def test_buttons_are_on_the_insurance_and_licence_pages(self):
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("insurance_list")), reverse("insurance_print"))
+        self.assertContains(self.client.get(reverse("licence_list")), reverse("insurance_print"))

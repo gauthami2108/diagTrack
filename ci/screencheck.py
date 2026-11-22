@@ -36,7 +36,7 @@ DEMO_PASSWORD = "Demo@12345"
 COMMON = ["/", "/tickets/", "/tickets/{ticket}/", "/alerts/", "/me/", "/password/"]
 RESOLVER = COMMON + ["/tickets/new/", "/tickets/board/", "/equipment/", "/equipment/{equipment}/"]
 OVERSEER = RESOLVER + ["/dashboard/", "/centres/", "/reports/"]
-ADMIN = OVERSEER + ["/insurance/", "/insurance/new/", "/insurance/{policy}/", "/insurance/{policy}/edit/", "/insurance/?tab=claims", "/insurance/{policy}/claims/new/", "/licences/", "/licences/new/", "/licences/{licence}/", "/licences/{licence}/edit/", "/insurance/?tab=gaps", "/insurance/?tab=types", "/reports/print/", "/equipment/labels/", "/settings/", "/settings/templates/", "/settings/backups/", "/settings/import/",
+ADMIN = OVERSEER + ["/insurance/", "/insurance/new/", "/insurance/{policy}/", "/insurance/{policy}/edit/", "/insurance/?tab=claims", "/insurance/{policy}/claims/new/", "/licences/", "/licences/new/", "/licences/{licence}/", "/licences/{licence}/edit/", "/insurance/?tab=gaps", "/insurance/?tab=types", "/reports/print/", "/insurance/print/#noprint", "/equipment/labels/", "/settings/", "/settings/templates/", "/settings/backups/", "/settings/import/",
                     "/admin/", "/admin/tickets/user/", "/admin/tickets/user/add/", "/admin/tickets/equipment/",
                     "/admin/tickets/equipment/add/", "/admin/tickets/centre/", "/admin/tickets/department/",
                     "/admin/tickets/category/", "/admin/tickets/slapolicy/", "/admin/tickets/escalationrule/",
@@ -52,7 +52,7 @@ ROLES = {  # role: (login, password, screens)
 VIEWS = [("desktop", 1280, 800, "light"), ("phone", 390, 844, "light"),
          ("desktop-dark", 1280, 800, "dark"), ("phone-dark", 390, 844, "dark")]
 # Laid out as an A4 page on purpose: on a phone it scrolls sideways.
-ALLOWED = {("/reports/print/", "phone"), ("/reports/print/", "phone-dark")}
+ALLOWED = {("/reports/print/", "phone"), ("/reports/print/", "phone-dark"), ("/insurance/print/#noprint", "phone"), ("/insurance/print/#noprint", "phone-dark")}
 
 PROBE = r"""
 () => {

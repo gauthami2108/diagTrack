@@ -895,6 +895,38 @@ def insurance_types_action(request):
 # Excel
 # --------------------------------------------------------------------------
 @viewer
+def insurance_print(request):
+    """The register laid out for paper or Save as PDF: policies (with the list's filters), licences, open claims and,
+    where the check is on, valuable machines with no cover. Everything is limited to what the person may see."""
+    from . import views_licence as vl
+    user = request.user
+    cfg = SiteSettings.load()
+    today = timezone.localdate()
+    money = _show_money(user, cfg)
+    rows, f = _filtered(request)
+    live = [p for p in rows if p.current]
+    licences = []
+    for x in vl._scoped(user).filter(closed=False, renewed=False).prefetch_related("centres").order_by("valid_until", "name"):
+        x.status = x.status_on(today)
+        x.days_left = (x.valid_until - today).days
+        licences.append(x)
+    claims = (InsuranceClaim.objects.filter(policy__in=_scoped(user), status__in=InsuranceClaim.OPEN)
+              .select_related("policy", "policy__cover_type", "equipment").order_by("incident_date"))
+    centres = Centre.objects.filter(active=True)
+    if not user.insurance_sees_all:
+        centres = centres.filter(pk__in=user.centres.all())
+    return render(request, "insurance_print.html", {
+        "rows": rows, "f": f, "money": money, "licences": licences, "claims": claims, "today": today,
+        "uninsured": uninsured(user, centres, cfg), "min_value": cfg.insurance_min_value,
+        "n_current": len(live), "n_expiring": sum(1 for p in live if p.status == InsurancePolicy.EXPIRING),
+        "n_expired": sum(1 for p in live if p.status == InsurancePolicy.EXPIRED),
+        "total_sum": sum((p.sum_insured or 0) for p in live) if money else None,
+        "total_premium": sum((p.premium or 0) for p in live) if money else None,
+        "status_label": dict(STATUS_FILTERS).get(f["status"], "Current policies"),
+        "scope": "all centres" if user.insurance_sees_all else "your centres and the policies that cover every centre"})
+
+
+@viewer
 def insurance_export(request):
     from openpyxl import Workbook
     from openpyxl.styles import Font

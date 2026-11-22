@@ -4,7 +4,8 @@
 <div class="page-head">
   <div><h1>Insurance</h1><p class="sub">Every policy, by centre and type of cover, with its dates and documents.{% if not request.user.insurance_sees_all %} You see the policies of your own centres and those that cover every centre.{% endif %}</p></div>
   <div class="head-actions">
-    {% if tab == 'policies' %}<a class="btn" href="{% url 'insurance_export' %}?{{ request.GET.urlencode }}">{% icon 'download' %}Excel</a>{% endif %}
+    {% if tab == 'policies' %}<a class="btn" href="{% url 'insurance_export' %}?{{ request.GET.urlencode }}">{% icon 'download' %}Excel</a>
+      <a class="btn" href="{% url 'insurance_print' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener">{% icon 'printer' %}Print or PDF</a>{% endif %}
     {% if tab == 'claims' %}<a class="btn" href="{% url 'claims_export' %}?{{ request.GET.urlencode }}">{% icon 'download' %}Excel</a>{% endif %}
     {% if can_edit %}<a class="btn btn-primary" href="{% url 'insurance_new' %}">{% icon 'circle-plus' %}Add policy</a>{% endif %}
   </div>
