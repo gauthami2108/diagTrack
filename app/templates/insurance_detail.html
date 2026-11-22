@@ -62,6 +62,26 @@
         <small class="muted">PDF, JPG, PNG or WebP, up to {{ max_mb }} MB each.</small>{% endif %}
     </section>
 
+    {% if p.current %}<section class="panel"><header><h2>Renewal quotes</h2></header>
+      {% if quotes %}<ul class="plain log-list">{% for q in quotes %}
+        <li><span>{% if q.chosen %}<span class="claim-chip claim-settled">Chosen</span> {% endif %}<b>{{ q.insurer }}</b>
+            {% if money and q.premium is not None %}premium ₹{{ q.premium|floatformat:0 }}{% endif %}{% if money and q.sum_insured is not None %}, sum insured ₹{{ q.sum_insured|floatformat:0 }}{% endif %}
+            {% if q.valid_until %}<small class="muted">valid until {{ q.valid_until|date:"d M Y" }}</small>{% endif %}
+            {% if q.notes %}<small class="muted">{{ q.notes }}</small>{% endif %}</span>
+          {% if can_edit %}<span class="doc-actions">
+            <form method="post" action="{% url 'quote_choose' q.pk %}">{% csrf_token %}<button class="btn btn-ghost btn-s" type="submit">{% if q.chosen %}Not chosen{% else %}Choose{% endif %}</button></form>
+            <form method="post" action="{% url 'quote_delete' q.pk %}">{% csrf_token %}<button class="btn btn-ghost btn-quiet-bad btn-s" type="submit" data-confirm="Remove the quote from {{ q.insurer }}?">Remove</button></form></span>{% endif %}</li>{% endfor %}</ul>
+        <p class="panel-note">Choosing a quote makes <b>Renew</b> start from its insurer{% if money %} and amounts{% endif %}.</p>
+      {% else %}<p class="empty">No quotes yet.{% if quote_days %} A reminder goes out {{ quote_days }} days before the policy ends if there are none.{% endif %}</p>{% endif %}
+      {% if can_edit %}<form method="post" action="{% url 'quote_add' p.pk %}" class="inline-row" style="margin-top:10px">{% csrf_token %}
+        <label class="field"><span>Insurer</span><input type="text" name="insurer" maxlength="120" required></label>
+        {% if money %}<label class="field"><span>Premium (₹)</span><input type="number" name="premium" min="0" step="1"></label>
+        <label class="field"><span>Sum insured (₹)</span><input type="number" name="sum_insured" min="0" step="1"></label>{% endif %}
+        <label class="field"><span>Valid until</span><input type="date" name="valid_until"></label>
+        <label class="field"><span>Note</span><input type="text" name="notes" maxlength="300"></label>
+        <button class="btn btn-s" type="submit">Add quote</button></form>{% endif %}
+    </section>{% endif %}
+
     <section class="panel"><header><h2>Premium instalments</h2></header>
       {% if instalments %}<ul class="plain log-list">{% for i in instalments %}
         <li><span><span class="claim-chip {% if i.state == 'paid' %}claim-settled{% elif i.state == 'overdue' %}claim-rejected{% else %}claim-filed{% endif %}">{% if i.state == 'paid' %}Paid {{ i.paid_on|date:"d M Y" }}{% elif i.state == 'overdue' %}Overdue{% else %}Due{% endif %}</span>

@@ -33,6 +33,12 @@ def build(user, today=None):
             d = (p.premium_due - today).days
             when = "due today" if d == 0 else f"due in {d} day{'s' if d != 1 else ''}" if d > 0 else f"{-d} day{'s' if d != -1 else ''} overdue"
             prem.append((d, f"{label}: premium {when} ({p.premium_due:%d %b %Y})"))
+    qd = cfg.insurance_quote_days
+    if qd:
+        add("Ending soon with no renewal quote", [
+            f"{p.cover_type.name}, {p.location}, {p.insurer} {p.policy_number}: ends {p.expiry_date:%d %b %Y}"
+            for p in vi._scoped(user).filter(cancelled=False, renewed=False, expiry_date__gte=today,
+                                              expiry_date__lte=today + timedelta(days=qd), quotes__isnull=True).order_by("expiry_date")])
     add("Premiums due or overdue", [t for _, t in sorted(prem)])
     add("Policies expired and not renewed", [t for _, t in sorted(expired, reverse=True)])
     add("Policies ending soon", [t for _, t in sorted(ending)])

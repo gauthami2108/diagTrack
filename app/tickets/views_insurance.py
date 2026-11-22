@@ -21,7 +21,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import (Centre, ClaimDocument, PremiumInstalment, Equipment, InsuranceClaim, InsuranceCoverType, InsuranceDocument, InsurancePolicy, Licence,
+from .models import (Centre, ClaimDocument, PremiumInstalment, RenewalQuote, Equipment, InsuranceClaim, InsuranceCoverType, InsuranceDocument, InsurancePolicy, Licence,
                      SiteSettings, User)
 from . import insurance_log as ilog
 from .services import insurance_stages
@@ -603,6 +603,49 @@ def instalment_delete(request, pk):
     return redirect("insurance_detail", pk=p.pk)
 
 
+@manager
+@require_POST
+def quote_add(request, pk):
+    p = _own_policy(request, pk)
+    insurer = (request.POST.get("insurer") or "").strip()[:120]
+    if not insurer or not p.current:
+        messages.error(request, "Write the insurer that gave the quote." if p.current else "That policy cannot be renewed any more.")
+        return redirect("insurance_detail", pk=p.pk)
+    RenewalQuote.objects.create(policy=p, insurer=insurer, premium=_amount(request, "premium"),
+                                sum_insured=_amount(request, "sum_insured"), valid_until=_parse_date(request.POST.get("valid_until")),
+                                notes=(request.POST.get("notes") or "").strip()[:300], created_by=request.user)
+    ilog.record(p, request.user, f"Renewal quote added from {insurer}")
+    messages.success(request, "Quote added.")
+    return redirect("insurance_detail", pk=p.pk)
+
+
+@manager
+@require_POST
+def quote_choose(request, pk):
+    q = get_object_or_404(RenewalQuote.objects.select_related("policy"), pk=pk)
+    p = _own_policy(request, q.policy_id)
+    if q.chosen:
+        q.chosen = False
+        q.save(update_fields=["chosen"])
+        ilog.record(p, request.user, f"Quote from {q.insurer} is no longer the chosen one")
+    else:
+        p.quotes.filter(chosen=True).update(chosen=False)
+        q.chosen = True
+        q.save(update_fields=["chosen"])
+        ilog.record(p, request.user, f"Quote from {q.insurer} chosen for the renewal")
+    return redirect("insurance_detail", pk=p.pk)
+
+
+@manager
+@require_POST
+def quote_delete(request, pk):
+    q = get_object_or_404(RenewalQuote.objects.select_related("policy"), pk=pk)
+    p = _own_policy(request, q.policy_id)
+    ilog.record(p, request.user, f"Renewal quote from {q.insurer} removed")
+    q.delete()
+    return redirect("insurance_detail", pk=p.pk)
+
+
 @viewer
 def insurance_detail(request, pk):
     p = _get_visible(request.user, pk)
@@ -615,6 +658,7 @@ def insurance_detail(request, pk):
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
         "premium_days": (p.premium_due - today).days if p.premium_due else None,
         "log": p.log.select_related("actor")[:40], "instalments": _instalment_rows(p, today),
+        "quotes": p.quotes.all(), "quote_days": cfg.insurance_quote_days,
         "terms": INSTALMENT_TERMS,
         "claims": p.claims.select_related("equipment").prefetch_related("documents"),
         "stages": insurance_stages(_soon(p, cfg)),
@@ -635,6 +679,7 @@ def insurance_new(request):
                                                          if old.renewed else "cancelled") + ", so it cannot be renewed again.")
             return redirect("insurance_detail", pk=old.pk)
     initial = {}
+    chosen = old.quotes.filter(chosen=True).first() if old else None
     if old:
         start = old.expiry_date + timedelta(days=1)
         initial = {"centres": list(old.centres.all()), "cover_type": old.cover_type, "insurer": old.insurer,
@@ -644,6 +689,12 @@ def insurance_new(request):
                    "equipment": list(old.equipment.all()), "covers_all_machines": old.covers_all_machines,
                    "covers": old.covers,
                    "premium_due": _same_day_next_year(old.premium_due) if old.premium_due and old.premium_due >= old.start_date else None}
+    if chosen:  # the quote picked for the renewal replaces the old insurer and amounts
+        initial["insurer"] = chosen.insurer
+        if money and chosen.premium is not None:
+            initial["premium"] = chosen.premium
+        if money and chosen.sum_insured is not None:
+            initial["sum_insured"] = chosen.sum_insured
     form = PolicyForm(request.POST or None, initial=initial, show_money=money)
     files = request.FILES.getlist("files")
     problems = []
@@ -680,7 +731,7 @@ def insurance_new(request):
             return redirect("insurance_detail", pk=p.pk)
         messages.error(request, "The policy was not saved. Check the marked fields.")
     return render(request, "insurance_form.html", {"form": form, "old": old, "problems": problems, "money": money,
-                                                   "max_mb": MAX_FILE_MB, "new": True})
+                                                   "max_mb": MAX_FILE_MB, "new": True, "chosen": chosen})
 
 
 @manager

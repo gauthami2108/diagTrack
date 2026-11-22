@@ -632,6 +632,7 @@ class InsurancePolicy(models.Model):
     premium_due = models.DateField(
         "next premium due", null=True, blank=True,
         help_text="Optional. For policies paid in instalments. Reminders come 7 days before and on the day. Change it after each payment.")
+    quote_alert_for = models.DateField(null=True, blank=True, editable=False)
     premium_alert_for = models.DateField(null=True, blank=True, editable=False)
     premium_alert_stage = models.PositiveSmallIntegerField(default=0, editable=False)
     remind_days = models.PositiveSmallIntegerField(
@@ -709,6 +710,22 @@ class InsuranceDocument(models.Model):
     @property
     def is_image(self):
         return self.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png", "webp")
+
+
+class RenewalQuote(models.Model):
+    """An insurer's quote for renewing a policy. One may be marked chosen; Renew then starts from it."""
+    policy = models.ForeignKey(InsurancePolicy, on_delete=models.CASCADE, related_name="quotes")
+    insurer = models.CharField(max_length=120)
+    premium = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    sum_insured = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    valid_until = models.DateField("quote valid until", null=True, blank=True)
+    notes = models.CharField(max_length=300, blank=True)
+    chosen = models.BooleanField(default=False)
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-chosen", "premium", "pk"]
 
 
 class PremiumInstalment(models.Model):
@@ -909,6 +926,9 @@ class SiteSettings(models.Model):
     insurance_min_value = models.PositiveBigIntegerField(
         "flag uninsured machines worth at least (₹)", default=1000000,
         help_text="Machines with a value at or above this and no current policy listing them show on the Coverage grid and in the weekly summary. 0 switches the check off.")
+    insurance_quote_days = models.PositiveSmallIntegerField(
+        "ask for renewal quotes this many days before expiry", default=90,
+        help_text="A reminder goes out when a policy is this close to ending and no renewal quote is recorded. 0 switches it off.")
     insurance_show_money = models.BooleanField(
         "show sum insured and premium on the Insurance page", default=True,
         help_text="Shown to administrators, people with Manage access and management with access. Untick to hide the money figures from everyone.")
