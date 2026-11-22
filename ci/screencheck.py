@@ -36,7 +36,7 @@ DEMO_PASSWORD = "Demo@12345"
 COMMON = ["/", "/tickets/", "/tickets/{ticket}/", "/alerts/", "/me/", "/password/"]
 RESOLVER = COMMON + ["/tickets/new/", "/tickets/board/", "/equipment/", "/equipment/{equipment}/"]
 OVERSEER = RESOLVER + ["/dashboard/", "/centres/", "/reports/"]
-ADMIN = OVERSEER + ["/insurance/", "/insurance/new/", "/insurance/{policy}/", "/insurance/{policy}/edit/", "/insurance/?tab=claims", "/insurance/{policy}/claims/new/", "/licences/", "/licences/new/", "/licences/{licence}/", "/licences/{licence}/edit/", "/insurance/?tab=gaps", "/insurance/?tab=types", "/reports/print/", "/insurance/print/#noprint", "/equipment/labels/", "/settings/", "/settings/templates/", "/settings/backups/", "/settings/import/",
+ADMIN = OVERSEER + ["/insurance/", "/insurance/new/", "/insurance/{policy}/", "/insurance/{policy}/edit/", "/insurance/?tab=claims", "/insurance/{policy}/claims/new/", "/licences/", "/licences/new/", "/licences/{licence}/", "/licences/{licence}/edit/", "/insurance/?tab=gaps", "/insurance/?tab=types", "/insurance/access/", "/reports/print/", "/insurance/print/#noprint", "/equipment/labels/", "/settings/", "/settings/templates/", "/settings/backups/", "/settings/import/",
                     "/admin/", "/admin/tickets/user/", "/admin/tickets/user/add/", "/admin/tickets/equipment/",
                     "/admin/tickets/equipment/add/", "/admin/tickets/centre/", "/admin/tickets/department/",
                     "/admin/tickets/category/", "/admin/tickets/slapolicy/", "/admin/tickets/escalationrule/",

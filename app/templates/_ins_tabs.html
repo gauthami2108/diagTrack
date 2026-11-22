@@ -3,4 +3,5 @@
   <a role="tab" href="{% url 'insurance_list' %}?tab=gaps">Coverage grid</a>
   <a role="tab" href="{% url 'insurance_list' %}?tab=claims">Claims</a>
   <a role="tab" href="{% url 'licence_list' %}" {% if licences_tab %}aria-selected="true"{% endif %}>Licences</a>
+  {% if request.user.is_admin %}<a role="tab" href="{% url 'insurance_access' %}" {% if tab == 'access' %}aria-selected="true"{% endif %}>Access</a>{% endif %}
 </div>

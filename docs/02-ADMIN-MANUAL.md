@@ -322,6 +322,12 @@ The history is deleted with the policy.
 when DiagTrack is installed on a phone or desktop. The viewer has **Open in new tab** and **Download**; both are also beside each file.
 Some phones cannot show a PDF inside a page: use Download or Open in new tab there.
 
+**Who can see what.** Administrators have an **Access** tab on the Insurance pages. It lists every person with Insurance
+access: their role, the level (View own, View all or Manage), which centres they see, whether they can add and edit, whether
+they see money (it also follows the Settings switch), whether they will get reminder and summary emails (a person with no email
+address gets none, and is flagged), and how many current policies they are responsible for. Choose **Everyone** to include
+people with no access. Excel downloads the same list for a review or an audit. To change someone's access, use Masters, Users.
+
 **Printing the register.** On the Insurance and Licences pages choose **Print or PDF**. A paper-sized page opens with the
 policies (using the filters currently set on the Policies tab), the licences and certificates, claims still open, and valuable
 machines with no policy, as on today's date. Choose "Save as PDF" in the print window to make a PDF for an auditor or the

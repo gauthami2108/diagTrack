@@ -894,6 +894,74 @@ def insurance_types_action(request):
 # --------------------------------------------------------------------------
 # Excel
 # --------------------------------------------------------------------------
+ACCESS_FILTERS = [("with", "People with access"), ("all", "Everyone")]
+
+
+def _access_rows(request):
+    """Every active person with what they may do in Insurance, for the access audit and its Excel."""
+    from .models import User
+    cfg = SiteSettings.load()
+    want = request.GET.get("show", "with")
+    want = want if want in dict(ACCESS_FILTERS) else "with"
+    resp_count = {}
+    for p in InsurancePolicy.objects.filter(cancelled=False, renewed=False).values_list("responsible", flat=True):
+        if p:
+            resp_count[p] = resp_count.get(p, 0) + 1
+    rows = []
+    for u in User.objects.filter(is_active=True).prefetch_related("centres").order_by("first_name", "username"):
+        level = u.insurance_level
+        if want == "with" and not level:
+            continue
+        sees_all = u.insurance_sees_all
+        rows.append({
+            "u": u, "level": level,
+            "level_label": "Administrator (always full access)" if u.is_admin else dict(User.INSURANCE_ACCESS).get(level, "No access"),
+            "scope": ("All centres" if sees_all else ", ".join(c.name for c in u.centres.all()) or "No centre set, so only policies for every centre")
+                     if level else "",
+            "can_edit": u.can_manage_insurance, "money": bool(level) and _show_money(u, cfg),
+            "emails": bool(level) and bool(u.email),
+            "no_email": bool(level) and not u.email,
+            "responsible_for": resp_count.get(u.pk, 0),
+        })
+    return rows, want, cfg
+
+
+@admin_only
+def insurance_access(request):
+    rows, want, cfg = _access_rows(request)
+    return render(request, "insurance_access.html", {
+        "rows": rows, "show": want, "filters": ACCESS_FILTERS, "money_on": cfg.insurance_show_money,
+        "n_edit": sum(1 for r in rows if r["can_edit"]), "n_no_email": sum(1 for r in rows if r["no_email"]),
+        "n_unscoped": sum(1 for r in rows if r["level"] == "own" and not r["u"].centres.exists()),
+        "tab": "access"})
+
+
+@admin_only
+def insurance_access_export(request):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    rows, _, _ = _access_rows(request)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Insurance access"
+    ws.append(["Name", "User name", "Role", "Insurance access", "Sees", "Can add and edit", "Sees money", "Gets reminders by email",
+               "Responsible for (current policies)"])
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for r in rows:
+        u = r["u"]
+        ws.append([u.display_name, u.username, u.get_role_display(), r["level_label"], r["scope"],
+                   "Yes" if r["can_edit"] else "No", "Yes" if r["money"] else "No",
+                   "Yes" if r["emails"] else ("No email address" if r["no_email"] else ""), r["responsible_for"]])
+    for i, w in enumerate([24, 18, 18, 36, 40, 16, 12, 22, 16], start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = 'attachment; filename="insurance-access.xlsx"'
+    return resp
+
+
 @viewer
 def insurance_print(request):
     """The register laid out for paper or Save as PDF: policies (with the list's filters), licences, open claims and,
