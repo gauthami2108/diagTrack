@@ -1990,6 +1990,38 @@ class InsuranceTests(Base):
         self.assertEqual(self.client.get(reverse("insurance_activity")).status_code, 403)
         self.assertEqual(self.client.get(reverse("insurance_activity_export")).status_code, 403)
 
+    def test_archive_restore_purge_keeps_files_and_claims_until_the_end(self):
+        """The rehearsal: a policy with a document, a claim and a claim document goes through the whole life cycle."""
+        import os
+        from django.core.files.base import ContentFile
+        from .models import ClaimDocument
+        p = self.policy([self.kkp], days=100, number="LIFE1")
+        self.client.force_login(self.admin)
+        self.client.post(reverse("insurance_doc_add", args=[p.pk]), {"files": _pdf("a.pdf")})
+        doc = p.documents.get()
+        c = InsuranceClaim.objects.create(policy=p, incident_date=self.today, description="Water damage")
+        cd = ClaimDocument.objects.create(claim=c, name="photo.pdf", size=5, uploaded_by=self.admin)
+        cd.file.save("photo.pdf", ContentFile(b"%PDF-1.4 x"))
+        paths = [doc.file.path, cd.file.path]
+        self.assertTrue(all(os.path.exists(x) for x in paths))
+        # archive: everything stays, managers still open the documents, the claim leaves the open count
+        self.client.post(reverse("insurance_archive", args=[p.pk]))
+        self.assertTrue(all(os.path.exists(x) for x in paths))
+        self.assertEqual(self.client.get(reverse("insurance_doc", args=[doc.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("claim_doc", args=[cd.pk])).status_code, 200)
+        self.assertEqual(self.client.post(reverse("claim_delete", args=[c.pk])).status_code, 404)
+        # restore, archive again, delete for good
+        self.client.post(reverse("insurance_restore", args=[p.pk]))
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[p.pk])).status_code, 200)
+        self.client.post(reverse("insurance_archive", args=[p.pk]))
+        self.client.post(reverse("insurance_delete", args=[p.pk]), {"confirm": "LIFE1"})
+        self.assertFalse(InsurancePolicy.objects.filter(pk=p.pk).exists())
+        self.assertFalse(InsuranceClaim.objects.filter(pk=c.pk).exists())
+        self.assertFalse(any(os.path.exists(x) for x in paths))
+        texts = list(InsuranceLog.objects.filter(policy__isnull=True, label__contains="LIFE1").values_list("text", flat=True))
+        self.assertTrue(any("Archived" in t for t in texts) and any("Restored" in t for t in texts))
+        self.assertTrue(any("Deleted for good" in t for t in texts))
+
     def test_tabs_explain_themselves(self):
         self.policy([self.kkp], days=100, number="TY1")
         self.client.force_login(self.admin)
