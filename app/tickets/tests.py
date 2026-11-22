@@ -3914,3 +3914,72 @@ class InsurancePrintTests(Base):
         self.client.force_login(self.admin)
         self.assertContains(self.client.get(reverse("insurance_list")), reverse("insurance_print"))
         self.assertContains(self.client.get(reverse("licence_list")), reverse("insurance_print"))
+
+
+class InsuranceAccessAuditTests(Base):
+    """Phase 24: the page that lists who can see and change what."""
+
+    def setUp(self):
+        _grant_insurance(self)
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, first_name="Boss",
+                                              email="boss@example.com")
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="own")
+        self.cm.centres.set([self.kkp])
+        User.objects.filter(pk=self.am.pk).update(insurance_access="manage")
+        User.objects.filter(pk=self.director.pk).update(insurance_access="all", email="")
+        self.fire = InsuranceCoverType.objects.get(name="Fire")
+        self.p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="NI", policy_number="A-1",
+                                                start_date=timezone.localdate() - timedelta(days=10),
+                                                expiry_date=timezone.localdate() + timedelta(days=300))
+        self.p.responsible.set([self.am])
+
+    def rows(self, **q):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("insurance_access"), q)
+        self.assertEqual(r.status_code, 200)
+        return r, {x["u"].username: x for x in r.context["rows"]}
+
+    def test_only_administrators_open_it(self):
+        for u in (self.cm, self.am, self.director, self.req):
+            self.client.force_login(u)
+            self.assertEqual(self.client.get(reverse("insurance_access")).status_code, 403)
+            self.assertEqual(self.client.get(reverse("insurance_access_export")).status_code, 403)
+
+    def test_lists_levels_scope_money_edit_and_email(self):
+        r, rows = self.rows()
+        self.assertIn("boss", rows)
+        self.assertNotIn("meena", rows, "someone without access is not listed by default")
+        cm, am, dr = rows["imran"], rows["kavitha"], rows["director"]
+        self.assertEqual((cm["level"], cm["scope"], cm["can_edit"], cm["money"]), ("own", "Kukatpally", False, False))
+        self.assertEqual((am["level"], am["scope"], am["can_edit"], am["money"]), ("manage", "All centres", True, True))
+        self.assertEqual(am["responsible_for"], 1)
+        self.assertTrue(dr["money"], "management with access sees money")
+        self.assertTrue(dr["no_email"])
+        self.assertContains(r, "No email address")
+        self.assertEqual(r.context["n_no_email"], sum(1 for x in rows.values() if x["no_email"]))
+        self.assertNotIn("boss", [k for k, x in rows.items() if x["no_email"]])
+
+    def test_everyone_filter_and_money_switch(self):
+        _, rows = self.rows(show="all")
+        self.assertIn("meena", rows)
+        self.assertEqual(rows["meena"]["level"], "")
+        s = SiteSettings.load(); s.insurance_show_money = False; s.save()
+        _, rows = self.rows()
+        self.assertFalse(rows["kavitha"]["money"])
+
+    def test_view_own_with_no_centre_is_flagged(self):
+        self.cm.centres.set([])
+        r, rows = self.rows()
+        self.assertEqual(r.context["n_unscoped"], 1)
+        self.assertIn("only policies for every centre", rows["imran"]["scope"])
+
+    def test_excel_export_and_tab_links(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("insurance_access_export"))
+        self.assertEqual(r.status_code, 200)
+        from openpyxl import load_workbook
+        ws = load_workbook(_io.BytesIO(r.content)).active
+        self.assertEqual(ws["A1"].value, "Name")
+        names = [row[1].value for row in ws.iter_rows(min_row=2)]
+        self.assertIn("imran", names)
+        self.assertContains(self.client.get(reverse("insurance_list")), reverse("insurance_access"))
