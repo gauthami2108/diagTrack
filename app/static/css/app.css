@@ -1230,3 +1230,8 @@ details.fold > summary:focus-visible { outline: 2px solid var(--accent); outline
 tr.day-row th { text-align: left; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); background: var(--surface-2); padding: 6px 14px; }
 details.fold.legend-box { margin: 0 0 14px; }
 details.fold.legend-box > summary h2 { font-size: 14px; font-weight: 600; }
+
+/* Message templates: the four channel tabs wrap instead of pushing the page sideways on a phone */
+.tpl-head .seg { flex-wrap: wrap; max-width: 100%; }
+.tpl-head > div { min-width: 0; }
+.doc-viewer .doc-phone { margin: auto; padding: 24px; max-width: 34ch; text-align: center; color: var(--ink-2); font-size: 15px; line-height: 1.5; }

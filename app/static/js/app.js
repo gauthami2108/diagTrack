@@ -241,6 +241,16 @@
       $("[data-doc-open]", dv).href = a.href;
       $("[data-doc-download]", dv).href = a.href + (a.href.includes("?") ? "&" : "?") + "download=1";
       body.innerHTML = "";
+      if (a.dataset.kind !== "image" && window.matchMedia("(pointer: coarse)").matches) {
+        // Phone and tablet browsers mostly cannot show a PDF inside a page (blank, or the first page only):
+        // say so plainly and leave Open in new tab and Download as the way in.
+        const m = document.createElement("p");
+        m.className = "doc-phone";
+        m.textContent = "This document opens in your phone's own viewer. Tap Open in new tab to read it, or Download to keep a copy.";
+        body.appendChild(m);
+        dv.showModal();
+        return;
+      }
       const el = document.createElement(a.dataset.kind === "image" ? "img" : "iframe");
       if (a.dataset.kind === "image") el.alt = a.dataset.name; else el.title = a.dataset.name;
       el.src = a.href; body.appendChild(el);

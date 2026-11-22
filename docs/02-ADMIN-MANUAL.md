@@ -318,6 +318,9 @@ or machines changed, documents added or removed, renewed, cancelled, and changes
 and notes are recorded as "changed" only, never with their values, so everyone who can open the policy may read the history.
 The history is kept for good, also if the policy is later deleted (the lines keep the policy's name).
 
+**Documents on phones.** Phone and tablet browsers mostly cannot show a PDF inside a page, so on a touch screen the viewer says so
+and leaves **Open in new tab** and **Download**. Photos still show in the viewer. On a computer nothing changes.
+
 **Easier reading on the other tabs.** The Coverage grid has a colour legend and its red number says what it counts. Cover
 types shows how many policies use each type. Access has a short "What the levels mean" box. History folds each cover to one
 line (terms, gaps, latest status) and opens by itself when there is a gap or overlap. Activity groups entries by day.
