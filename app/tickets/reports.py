@@ -136,7 +136,7 @@ def _hours(seconds):
 
 def centre_matrix(qs, centres, days=30, now=None):
     """One row per centre: load, SLA performance, speed and equipment health."""
-    from .models import Centre, Department, Equipment  # local to keep imports light
+    from .models import Department, Equipment  # local to keep imports light
     now = now or timezone.now()
     since = now - timedelta(days=days)
     rows = []

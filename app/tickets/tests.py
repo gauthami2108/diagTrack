@@ -1321,6 +1321,16 @@ class Phase3Tests(Base):
         self.assertIn("event: alert", content)
         self.assertIn("Test Alert", content)
 
+    def test_live_stream_keeps_polling_between_events(self):
+        # Without ?test the stream loops and sleeps; this once crashed because `time` was never imported.
+        self.client.force_login(self.req)
+        with mock.patch("tickets.views.time.sleep") as sleep:
+            resp = self.client.get(reverse("api_live_stream"))
+            content = b"".join(resp.streaming_content).decode()
+        self.assertIn(": connected", content)
+        self.assertEqual(content.count(": keep-alive"), 25)
+        self.assertEqual(sleep.call_count, 25)
+
     def test_prometheus_metrics_endpoint(self):
         resp = self.client.get(reverse("metrics"))
         self.assertEqual(resp.status_code, 200)
@@ -2217,7 +2227,6 @@ class InsuranceTests(Base):
         self.assertEqual(tab.context["open_claims"], 1)
 
     def test_claim_documents_can_be_added_viewed_and_removed(self):
-        from .models import ClaimDocument
         p = self.policy([self.kkp])
         self.client.force_login(self.admin)
         r = self.client.post(reverse("claim_new", args=[p.pk]), {**self.claim_data(), "files": [_pdf("form.pdf"), _pdf("photo.pdf")]})
@@ -3983,3 +3992,14 @@ class InsuranceAccessAuditTests(Base):
         names = [row[1].value for row in ws.iter_rows(min_row=2)]
         self.assertIn("imran", names)
         self.assertContains(self.client.get(reverse("insurance_list")), reverse("insurance_access"))
+
+
+class CodeHygieneTests(TestCase):
+    def test_models_and_migrations_agree(self):
+        """A model change without its migration fails here, before it reaches a server."""
+        from io import StringIO
+        out = StringIO()
+        try:
+            call_command("makemigrations", "--check", "--dry-run", stdout=out, stderr=out)
+        except SystemExit:
+            self.fail("Models changed without a migration:\n" + out.getvalue())

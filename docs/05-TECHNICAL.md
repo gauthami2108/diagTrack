@@ -258,7 +258,11 @@ the role needs CREATEDB). `python -m unittest discover -s installer/tests` for t
 and dark mode, on a throwaway SQLite database with the demo data, and fails on sideways scrolling, columns hidden
 behind a sideways scroll on a desktop, text squeezed into a narrow column, JavaScript errors and failed requests
 (it needs `pip install playwright` and `python -m playwright install chromium`).
-`.github/workflows/ci.yml` runs all three, plus a Docker setup with verify and test restore, a native install, update and
+Before pushing, run `ruff check --select E9,F63,F7,F82,F401,F811 app --exclude app/tickets/migrations` (`pip install ruff`): it
+finds syntax errors, undefined names and unused imports, and once caught a missing `import time` that would have broken the live
+alert stream. `CodeHygieneTests` fails the suite when a model is changed without its migration, so no hand-stripping of stray
+migration operations is needed any more.
+`.github/workflows/ci.yml` runs all three and the code check, cancels the older run when a newer push arrives, plus a Docker setup with verify and test restore, a native install, update and
 removal on Windows Server 2022, and a move from Docker to native Windows. Unattended runs use `--answers file.json`
 with secrets in `DT_<KEY>` variables (see `ci/`). GitHub's job logs may be unreachable from some networks, so each
 job also reports its failures as annotations on the run. Windows Server 2016 and Windows 11 are not offered by GitHub and are
