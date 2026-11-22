@@ -1928,21 +1928,21 @@ class InsuranceTests(Base):
         page = self.client.get(reverse("insurance_list"))
         numbers = {p.policy_number for p in page.context["rows"]}
         self.assertEqual(numbers, {"MINE", "BOTH", "ALL"})  # ALL covers every centre, so it is shown too
-        self.assertNotContains(page, "5000000")
+        self.assertNotContains(page, "50,00,000")
         self.assertNotContains(page, "Sum insured")
         self.assertEqual(self.client.get(reverse("insurance_detail", args=[other.pk])).status_code, 404)
         self.assertEqual(self.client.get(reverse("insurance_detail", args=[head_office.pk])).status_code, 200)
-        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[mine.pk])), "42000")
+        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[mine.pk])), "42,000")
         self.assertEqual(self.client.get(reverse("insurance_detail", args=[both.pk])).status_code, 200)
 
     def test_management_sees_money_until_it_is_switched_off(self):
         p = self.policy([self.kkp])
         self.client.force_login(self.director)
-        self.assertContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "₹42000")
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "₹42,000")
         s = SiteSettings.load()
         s.insurance_show_money = False
         s.save()
-        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "₹42000")
+        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "₹42,000")
         self.assertNotContains(self.client.get(reverse("insurance_list")), "Sum insured")
 
     def test_only_administrators_can_change_things(self):
@@ -1989,6 +1989,23 @@ class InsuranceTests(Base):
         self.client.force_login(self.director)
         self.assertEqual(self.client.get(reverse("insurance_activity")).status_code, 403)
         self.assertEqual(self.client.get(reverse("insurance_activity_export")).status_code, 403)
+
+    def test_amounts_use_indian_grouping(self):
+        from .templatetags.dt import inr
+        self.assertEqual(inr(5000000), "₹50,00,000")
+        self.assertEqual(inr(999), "₹999")
+        self.assertEqual(inr(123456), "₹1,23,456")
+        self.assertEqual(inr(None), "")
+
+    def test_policy_page_shows_the_at_a_glance_strip(self):
+        p = self.policy([self.kkp], days=5, number="GL1")
+        InsuranceClaim.objects.create(policy=p, incident_date=self.today, description="Fire")
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("insurance_detail", args=[p.pk]))
+        texts = [t for t, _ in r.context["summary"]]
+        self.assertIn("Expires in 5 days", texts)
+        self.assertIn("1 open claim", texts)
+        self.assertContains(r, "todo-strip")
 
     def test_a_policy_can_have_several_responsible_people(self):
         a = User.objects.create_user("anil", password="Demo@12345", role=User.AGENT)
@@ -2221,7 +2238,7 @@ class InsuranceTests(Base):
         self.assertIn("overdue by 2 days", page)
         self.assertIn("Expired 5 days ago", page)
         self.assertIn("Ends in 12 days", page)
-        self.assertNotIn("5000000", page)
+        self.assertNotIn("50,00,000", page)
 
     def test_home_card_is_absent_without_access_and_calm_when_all_is_well(self):
         self.client.force_login(self.ravi)  # an agent with no access
@@ -2257,7 +2274,7 @@ class InsuranceTests(Base):
         self.assertEqual((c.status, c.claim_number, c.equipment, c.created_by), ("filed", "CL-77", self.mri, self.admin))
         detail = self.client.get(reverse("insurance_detail", args=[p.pk]))
         self.assertContains(detail, "Compressor failure in the MRI")
-        self.assertContains(detail, "claimed ₹250000")
+        self.assertContains(detail, "claimed ₹2,50,000")
         self.assertTrue(any("Claim added: Compressor failure" in t for t in [e.text for e in p.log.all()]))
         tab = self.client.get(reverse("insurance_list"), {"tab": "claims"})
         self.assertContains(tab, "Compressor failure in the MRI")
@@ -2348,12 +2365,12 @@ class InsuranceTests(Base):
         tab = self.client.get(reverse("insurance_list"), {"tab": "claims"})
         self.assertContains(tab, "Compressor failure")
         self.assertNotContains(tab, "Secunderabad flood")
-        self.assertNotContains(tab, "250000")
+        self.assertNotContains(tab, "2,50,000")
         self.assertEqual(self.client.get(reverse("claim_new", args=[p.pk])).status_code, 403)
         self.assertEqual(self.client.get(reverse("claim_edit", args=[c.pk])).status_code, 403)
         self.assertEqual(self.client.post(reverse("claim_delete", args=[c.pk])).status_code, 403)
         self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "Add a claim")
-        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "250000")
+        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "2,50,000")
         # manage: may add and edit anywhere but not remove
         User.objects.filter(pk=self.cm.pk).update(insurance_access="manage")
         self.assertEqual(self.client.get(reverse("claim_edit", args=[c.pk])).status_code, 200)
@@ -2427,7 +2444,7 @@ class InsuranceTests(Base):
             User.objects.filter(pk=who.pk).update(insurance_access=level)
             self.client.force_login(who)
             page = self.client.get(reverse("insurance_detail", args=[p.pk]))
-            self.assertEqual("₹42000" in page.content.decode(), shown, (level, who.username))
+            self.assertEqual("₹42,000" in page.content.decode(), shown, (level, who.username))
 
     def test_administrators_set_access_in_masters(self):
         self.client.force_login(self.admin)
@@ -2544,7 +2561,7 @@ class InsuranceTests(Base):
         self.assertEqual(ini["covers"], "MRI room")
         self.assertEqual(ini["premium_due"].year, old.premium_due.year + 1)
         self.assertContains(page, "The policy being renewed")
-        self.assertContains(page, "premium ₹42000")
+        self.assertContains(page, "premium ₹42,000")
         r = self.client.post(reverse("insurance_new"), {
             "renew": old.pk, "cover_type": self.fire.pk, "centres": [self.kkp.pk], "insurer": "New India",
             "policy_number": old.policy_number, "start_date": str(old.expiry_date + timedelta(days=1)),
@@ -3983,7 +4000,7 @@ class InstalmentTests(Base):
     def test_money_is_hidden_from_people_who_may_not_see_it_and_scope_applies(self):
         self.client.post(reverse("instalment_add", args=[self.p.pk]), {"due_date": str(self.today), "amount": "7777"})
         self.assertEqual(self.p.instalments.get().amount, 7777)
-        self.assertContains(self.client.get(reverse("insurance_detail", args=[self.p.pk])), "7777")
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[self.p.pk])), "7,777")
         User.objects.filter(pk=self.cm.pk).update(insurance_access="own")
         self.cm.centres.set([self.sec])
         self.client.force_login(self.cm)
@@ -4026,7 +4043,7 @@ class InsurancePrintTests(Base):
         self.client.force_login(self.admin)
         r = self.client.get(reverse("insurance_print"))
         self.assertEqual(r.status_code, 200)
-        for text in ("Insurance and licence register", "KKP-FIRE", "SEC-FIRE", "OLD-ONE", "Fire NOC", "₹12000000", "Sum insured"):
+        for text in ("Insurance and licence register", "KKP-FIRE", "SEC-FIRE", "OLD-ONE", "Fire NOC", "₹1,20,00,000", "Sum insured"):
             self.assertContains(r, text)
 
     def test_view_own_sees_only_their_scope_and_no_money(self):
@@ -4038,7 +4055,7 @@ class InsurancePrintTests(Base):
         self.assertNotContains(r, "SEC-FIRE")
         self.assertNotContains(r, "Fire NOC")
         self.assertNotContains(r, "Sum insured")
-        self.assertNotContains(r, "42000")
+        self.assertNotContains(r, "42,000")
 
     def test_filters_carry_over_and_access_is_required(self):
         self.client.force_login(self.admin)
@@ -4169,7 +4186,7 @@ class RenewalQuoteTests(Base):
         texts = " | ".join(e.text for e in self.p.log.all())
         for t in ("Renewal quote added from Oriental", "chosen for the renewal", "no longer the chosen", "quote from Oriental removed"):
             self.assertIn(t.lower(), texts.lower())
-        self.assertNotIn("36000", texts)
+        self.assertNotIn("36,000", texts)
 
     def test_the_chosen_quote_starts_the_renewal(self):
         self.add("Oriental", premium="36000", sum_insured="5500000")
@@ -4182,12 +4199,12 @@ class RenewalQuoteTests(Base):
 
     def test_money_is_for_people_who_see_money_only(self):
         self.add("Oriental", premium="36000")
-        self.assertContains(self.client.get(reverse("insurance_detail", args=[self.p.pk])), "36000")
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[self.p.pk])), "36,000")
         User.objects.filter(pk=self.cm.pk).update(insurance_access="all")
         self.client.force_login(self.cm)
         page = self.client.get(reverse("insurance_detail", args=[self.p.pk]))
         self.assertContains(page, "Oriental")
-        self.assertNotContains(page, "36000")
+        self.assertNotContains(page, "36,000")
         self.assertNotContains(page, "Add quote")
         self.assertEqual(self.client.post(reverse("quote_add", args=[self.p.pk]), {"insurer": "X"}).status_code, 403)
 

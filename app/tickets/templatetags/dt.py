@@ -31,6 +31,28 @@ def abs_val(value):
         return value
 
 
+@register.filter
+def inr(value):
+    """50,00,000 style grouping with the rupee sign; empty for None."""
+    if value in (None, ""):
+        return ""
+    try:
+        n = int(round(float(value)))
+    except (ValueError, TypeError):
+        return value
+    sign, s = ("-" if n < 0 else ""), str(abs(n))
+    if len(s) > 3:
+        head, tail = s[:-3], s[-3:]
+        parts = []
+        while len(head) > 2:
+            parts.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            parts.insert(0, head)
+        s = ",".join(parts + [tail])
+    return f"{sign}₹{s}"
+
+
 @register.simple_tag
 def icon(name, cls=""):
     return format_html('<svg class="i {}" aria-hidden="true"><use href="{}#{}"/></svg>', cls, static("icons.svg"), name)

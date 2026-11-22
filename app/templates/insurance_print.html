@@ -13,14 +13,14 @@
 <section class="print-band" style="grid-template-columns: repeat({% if money %}5{% else %}3{% endif %}, 1fr)">
   <div><b>{{ n_current }}</b><span>Current policies</span></div><div><b>{{ n_expiring }}</b><span>Expiring soon</span></div>
   <div><b>{{ n_expired }}</b><span>Expired, not renewed</span></div>
-  {% if money %}<div><b>₹{{ total_sum|floatformat:0 }}</b><span>Sum insured, as listed</span></div><div><b>₹{{ total_premium|floatformat:0 }}</b><span>Premium, as listed</span></div>{% endif %}
+  {% if money %}<div><b>{{ total_sum|inr }}</b><span>Sum insured, as listed</span></div><div><b>{{ total_premium|inr }}</b><span>Premium, as listed</span></div>{% endif %}
 </section>
 
 <h2 class="print-h2">Policies ({{ rows|length }})</h2>
 {% if rows %}<table class="matrix"><thead><tr><th>Cover</th><th>Where</th><th>Insurer</th><th>Policy number</th><th>Started</th><th>Expires</th><th>Status</th><th>Next premium due</th>{% if money %}<th class="n">Sum insured</th><th class="n">Premium</th>{% endif %}</tr></thead>
 <tbody>{% for p in rows %}<tr><td>{{ p.cover_type.name }}{% if p.covers %}<br><small class="muted">{{ p.covers }}</small>{% endif %}</td><td class="wrap">{{ p.location }}</td><td>{{ p.insurer }}</td><td>{{ p.policy_number }}</td>
   <td>{{ p.start_date|date:"d M Y" }}</td><td>{{ p.expiry_date|date:"d M Y" }}</td><td>{% include "_ins_status.html" %}</td><td>{% if p.premium_due %}{{ p.premium_due|date:"d M Y" }}{% endif %}</td>
-  {% if money %}<td class="n">{% if p.sum_insured is not None %}₹{{ p.sum_insured|floatformat:0 }}{% endif %}</td><td class="n">{% if p.premium is not None %}₹{{ p.premium|floatformat:0 }}{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>
+  {% if money %}<td class="n">{% if p.sum_insured is not None %}{{ p.sum_insured|inr }}{% endif %}</td><td class="n">{% if p.premium is not None %}{{ p.premium|inr }}{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>
 {% else %}<p class="muted">No policies match.</p>{% endif %}
 
 <h2 class="print-h2">Licences and certificates ({{ licences|length }})</h2>
@@ -30,11 +30,11 @@
 
 {% if claims %}<h2 class="print-h2">Claims still open ({{ claims|length }})</h2>
 <table class="matrix"><thead><tr><th>Incident</th><th>What happened</th><th>Policy</th><th>Machine</th><th>Status</th>{% if money %}<th class="n">Claimed</th>{% endif %}</tr></thead>
-<tbody>{% for c in claims %}<tr><td>{{ c.incident_date|date:"d M Y" }}</td><td class="wrap">{{ c.description }}{% if c.claim_number %} <small class="muted">({{ c.claim_number }})</small>{% endif %}</td><td>{{ c.policy.cover_type.name }}, {{ c.policy.insurer }} {{ c.policy.policy_number }}</td><td>{% if c.equipment %}{{ c.equipment.name }}{% endif %}</td><td>{{ c.get_status_display }}</td>{% if money %}<td class="n">{% if c.amount_claimed is not None %}₹{{ c.amount_claimed|floatformat:0 }}{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>{% endif %}
+<tbody>{% for c in claims %}<tr><td>{{ c.incident_date|date:"d M Y" }}</td><td class="wrap">{{ c.description }}{% if c.claim_number %} <small class="muted">({{ c.claim_number }})</small>{% endif %}</td><td>{{ c.policy.cover_type.name }}, {{ c.policy.insurer }} {{ c.policy.policy_number }}</td><td>{% if c.equipment %}{{ c.equipment.name }}{% endif %}</td><td>{{ c.get_status_display }}</td>{% if money %}<td class="n">{% if c.amount_claimed is not None %}{{ c.amount_claimed|inr }}{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>{% endif %}
 
 {% if min_value and uninsured %}<h2 class="print-h2">Valuable machines with no policy ({{ uninsured|length }})</h2>
 <table class="matrix"><thead><tr><th>Machine</th><th>Centre</th>{% if money %}<th class="n">Value</th>{% endif %}</tr></thead>
-<tbody>{% for e in uninsured %}<tr><td>{{ e.name }}</td><td>{{ e.centre.name }}</td>{% if money %}<td class="n">₹{{ e.value|floatformat:0 }}</td>{% endif %}</tr>{% endfor %}</tbody></table>{% endif %}
+<tbody>{% for e in uninsured %}<tr><td>{{ e.name }}</td><td>{{ e.centre.name }}</td>{% if money %}<td class="n">{{ e.value|inr }}</td>{% endif %}</tr>{% endfor %}</tbody></table>{% endif %}
 <footer class="print-foot">DiagTrack, {{ cfg.org_name }}. Dates and amounts are as recorded in DiagTrack; check the policy documents for the terms.</footer>
 <script>if (location.hash !== "#noprint") setTimeout(() => window.print(), 600);</script>
 </body></html>

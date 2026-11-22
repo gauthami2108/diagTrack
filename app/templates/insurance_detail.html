@@ -15,9 +15,12 @@
 {% if p.archived_at %}<div class="callout">Archived{% if p.archived_by %} by {{ p.archived_by.display_name }}{% endif %} on {{ p.archived_at|date:"d M Y" }}. It is kept for the record and is not in the lists, reminders or cover checks.
   {% if can_admin %}<form method="post" action="{% url 'insurance_delete' p.pk %}" class="inline-form" style="margin-top:8px">{% csrf_token %}<label>To delete it for good, type the policy number <b>{{ p.policy_number }}</b>: <input name="confirm" autocomplete="off" required></label> <button class="btn btn-ghost btn-quiet-bad" type="submit">Delete permanently</button></form>{% endif %}</div>{% endif %}
 
+{% if summary %}<ul class="todo-strip" aria-label="At a glance">{% for text, tone in summary %}<li class="todo-{{ tone }}">{{ text }}</li>{% endfor %}</ul>{% endif %}
+
 <div class="grid-2">
   <div class="stack">
     <section class="panel"><header><h2>Policy</h2></header>
+      <h3 class="kv-h">Cover</h3>
       <dl class="kv">
         <div><dt>Type of cover</dt><dd>{{ p.cover_type.name }}</dd></div>
         {% if p.covers %}<div><dt>Covers</dt><dd>{{ p.covers }}</dd></div>{% endif %}
@@ -25,11 +28,17 @@
         <div><dt>Insurer</dt><dd>{{ p.insurer }}</dd></div>
         <div><dt>Policy number</dt><dd>{{ p.policy_number }}</dd></div>
         {% if p.contact %}<div><dt>Broker or agent</dt><dd>{{ p.contact }}</dd></div>{% endif %}
+      </dl>
+      <h3 class="kv-h">Dates</h3>
+      <dl class="kv">
         <div><dt>Started</dt><dd>{{ p.start_date|date:"d M Y" }}</dd></div>
         <div><dt>Expires</dt><dd>{{ p.expiry_date|date:"d M Y" }} {% include "_ins_when.html" %}</dd></div>
+      </dl>
+      <h3 class="kv-h">Money and people</h3>
+      <dl class="kv">
         {% if money %}
-          {% if p.sum_insured is not None %}<div><dt>Sum insured</dt><dd>₹{{ p.sum_insured|floatformat:0 }}</dd></div>{% endif %}
-          {% if p.premium is not None %}<div><dt>Premium</dt><dd>₹{{ p.premium|floatformat:0 }}</dd></div>{% endif %}
+          {% if p.sum_insured is not None %}<div><dt>Sum insured</dt><dd>{{ p.sum_insured|inr }}</dd></div>{% endif %}
+          {% if p.premium is not None %}<div><dt>Premium</dt><dd>{{ p.premium|inr }}</dd></div>{% endif %}
         {% endif %}
         {% if p.premium_due %}<div><dt>Next premium due</dt><dd>{{ p.premium_due|date:"d M Y" }}{% if premium_days is not None %} <small class="muted">({% if premium_days > 0 %}in {{ premium_days }} day{{ premium_days|pluralize }}{% elif premium_days == 0 %}today{% else %}{{ premium_days|abs }} day{{ premium_days|abs|pluralize }} ago{% endif %})</small>{% endif %}</dd></div>{% endif %}
         <div><dt>Responsible</dt><dd>{% if p.responsible.all %}{% for u in p.responsible.all %}{{ u.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}<span class="muted">Not set</span>{% endif %}</dd></div>
@@ -38,10 +47,13 @@
       {% if p.notes %}<p class="panel-note">{{ p.notes|linebreaksbr }}</p>{% endif %}
     </section>
 
-    <section class="panel"><header><h2>Change history</h2></header>
-      {% if log %}<ul class="plain log-list">{% for e in log %}
-        <li>{{ e.text }}<small class="muted"> {{ e.actor.display_name|default:"System" }}, {{ e.at|date:"d M Y, H:i" }}</small></li>{% endfor %}</ul>
-      {% else %}<p class="empty">No changes recorded yet.</p>{% endif %}
+    <section class="panel"><header><h2>Claims</h2>{% if can_edit %}<a href="{% url 'claim_new' p.pk %}">Add a claim</a>{% endif %}</header>
+      {% if claims %}<ul class="plain log-list">{% for c in claims %}
+        <li><span><span class="claim-chip claim-{{ c.status }}">{{ c.get_status_display }}</span> {{ c.description }}</span>
+          <small class="muted">Incident {{ c.incident_date|date:"d M Y" }}{% if c.equipment %}, {{ c.equipment.name }}{% endif %}{% if c.claim_number %}, ref {{ c.claim_number }}{% endif %}{% if money and c.amount_claimed is not None %}, claimed {{ c.amount_claimed|inr }}{% endif %}{% if money and c.amount_settled is not None %}, settled {{ c.amount_settled|inr }}{% endif %}</small>
+          {% for d in c.documents.all %}<small><a href="{% url 'claim_doc' d.pk %}" data-doc-view data-name="{{ d.name }}" data-kind="{% if d.is_image %}image{% else %}pdf{% endif %}">{% icon 'paperclip' %}{{ d.name }}</a></small> {% endfor %}
+          {% if can_edit %}<span class="doc-actions"><a class="btn btn-ghost btn-s" href="{% url 'claim_edit' c.pk %}">Edit</a>{% if can_admin %}<form method="post" action="{% url 'claim_delete' c.pk %}" onsubmit="return confirm('Remove this claim?')">{% csrf_token %}<button class="btn btn-ghost btn-s" type="submit">Remove</button></form>{% endif %}</span>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="empty">No claims on this policy.</p>{% endif %}
     </section>
 
     {% if past_terms %}<section class="panel"><header><h2>All terms of this cover</h2><a class="btn btn-ghost btn-s" href="{% url 'insurance_history' %}?q={{ p.policy_number|urlencode }}">History</a></header>
@@ -55,6 +67,13 @@
         {% for r in renewals %}<li>Renewed by <a href="{% url 'insurance_detail' r.pk %}">{{ r.policy_number }}</a> ({{ r.start_date|date:"d M Y" }} to {{ r.expiry_date|date:"d M Y" }})</li>{% endfor %}
       </ul>
     </section>{% endif %}
+
+    <details class="panel fold"{% if log|length and log|length < 4 %} open{% endif %}><summary><h2>Change history</h2><small class="muted">{% if log %}{{ log|length }} entr{{ log|length|pluralize:"y,ies" }}{% else %}none yet{% endif %}</small></summary>
+      {% if log %}<ul class="plain log-list">{% for e in log %}
+        <li>{{ e.text }}<small class="muted"> {{ e.actor.display_name|default:"System" }}, {{ e.at|date:"d M Y, H:i" }}</small></li>{% endfor %}</ul>
+      {% else %}<p class="empty">No changes recorded yet.</p>{% endif %}
+    </details>
+
   </div>
 
   <div class="stack">
@@ -70,10 +89,10 @@
         <small class="muted">PDF, JPG, PNG or WebP, up to {{ max_mb }} MB each.</small>{% endif %}
     </section>
 
-    {% if p.current %}<section class="panel"><header><h2>Renewal quotes</h2></header>
+    {% if p.current %}<details class="panel fold"{% if quotes %} open{% endif %}><summary><h2>Renewal quotes</h2><small class="muted">{% if quotes %}{{ quotes|length }}{% else %}none yet{% endif %}{% if can_edit and not quotes %}, add one{% endif %}</small></summary>
       {% if quotes %}<ul class="plain log-list">{% for q in quotes %}
         <li><span>{% if q.chosen %}<span class="claim-chip claim-settled">Chosen</span> {% endif %}<b>{{ q.insurer }}</b>
-            {% if money and q.premium is not None %}premium ₹{{ q.premium|floatformat:0 }}{% endif %}{% if money and q.sum_insured is not None %}, sum insured ₹{{ q.sum_insured|floatformat:0 }}{% endif %}
+            {% if money and q.premium is not None %}premium {{ q.premium|inr }}{% endif %}{% if money and q.sum_insured is not None %}, sum insured {{ q.sum_insured|inr }}{% endif %}
             {% if q.valid_until %}<small class="muted">valid until {{ q.valid_until|date:"d M Y" }}</small>{% endif %}
             {% if q.notes %}<small class="muted">{{ q.notes }}</small>{% endif %}</span>
           {% if can_edit %}<span class="doc-actions">
@@ -88,12 +107,12 @@
         <label class="field"><span>Valid until</span><input type="date" name="valid_until"></label>
         <label class="field"><span>Note</span><input type="text" name="notes" maxlength="300"></label>
         <button class="btn btn-s" type="submit">Add quote</button></form>{% endif %}
-    </section>{% endif %}
+    </details>{% endif %}
 
-    <section class="panel"><header><h2>Premium instalments</h2></header>
+    <details class="panel fold"{% if instalments %} open{% endif %}><summary><h2>Premium instalments</h2><small class="muted">{% if instalments %}{{ instalments|length }}{% else %}no schedule{% endif %}{% if can_edit and not instalments %}, add one{% endif %}</small></summary>
       {% if instalments %}<ul class="plain log-list">{% for i in instalments %}
         <li><span><span class="claim-chip {% if i.state == 'paid' %}claim-settled{% elif i.state == 'overdue' %}claim-rejected{% else %}claim-filed{% endif %}">{% if i.state == 'paid' %}Paid {{ i.paid_on|date:"d M Y" }}{% elif i.state == 'overdue' %}Overdue{% else %}Due{% endif %}</span>
-            {{ i.due_date|date:"d M Y" }}{% if money and i.amount is not None %}, ₹{{ i.amount|floatformat:0 }}{% endif %}
+            {{ i.due_date|date:"d M Y" }}{% if money and i.amount is not None %}, {{ i.amount|inr }}{% endif %}
             {% if i.state == 'due' and i.days <= 14 %}<small class="warn-text">in {{ i.days }} day{{ i.days|pluralize }}</small>{% elif i.state == 'overdue' %}<small class="bad-text">{{ i.days|abs }} day{{ i.days|abs|pluralize }} ago</small>{% endif %}</span>
           {% if can_edit %}<span class="doc-actions">
             <form method="post" action="{% url 'instalment_paid' i.pk %}">{% csrf_token %}<button class="btn btn-ghost btn-s" type="submit">{% if i.paid_on %}Not paid{% else %}Mark paid{% endif %}</button></form>
@@ -111,16 +130,7 @@
         <label class="field"><span>Add one: due on</span><input type="date" name="due_date" required></label>
         {% if money %}<label class="field"><span>Amount (₹)</span><input type="number" name="amount" min="0" step="1"></label>{% endif %}
         <button class="btn btn-s" type="submit">Add</button></form>{% endif %}
-    </section>
-
-    <section class="panel"><header><h2>Claims</h2>{% if can_edit %}<a href="{% url 'claim_new' p.pk %}">Add a claim</a>{% endif %}</header>
-      {% if claims %}<ul class="plain log-list">{% for c in claims %}
-        <li><span><span class="claim-chip claim-{{ c.status }}">{{ c.get_status_display }}</span> {{ c.description }}</span>
-          <small class="muted">Incident {{ c.incident_date|date:"d M Y" }}{% if c.equipment %}, {{ c.equipment.name }}{% endif %}{% if c.claim_number %}, ref {{ c.claim_number }}{% endif %}{% if money and c.amount_claimed is not None %}, claimed ₹{{ c.amount_claimed|floatformat:0 }}{% endif %}{% if money and c.amount_settled is not None %}, settled ₹{{ c.amount_settled|floatformat:0 }}{% endif %}</small>
-          {% for d in c.documents.all %}<small><a href="{% url 'claim_doc' d.pk %}" data-doc-view data-name="{{ d.name }}" data-kind="{% if d.is_image %}image{% else %}pdf{% endif %}">{% icon 'paperclip' %}{{ d.name }}</a></small> {% endfor %}
-          {% if can_edit %}<span class="doc-actions"><a class="btn btn-ghost btn-s" href="{% url 'claim_edit' c.pk %}">Edit</a>{% if can_admin %}<form method="post" action="{% url 'claim_delete' c.pk %}" onsubmit="return confirm('Remove this claim?')">{% csrf_token %}<button class="btn btn-ghost btn-s" type="submit">Remove</button></form>{% endif %}</span>{% endif %}</li>{% endfor %}</ul>
-      {% else %}<p class="empty">No claims on this policy.</p>{% endif %}
-    </section>
+    </details>
 
     {% if machines or p.covers_all_machines %}<section class="panel"><header><h2>Machines covered</h2></header>
       {% if p.covers_all_machines %}<p class="panel-note">Every machine at {% if p.centres.all %}{{ p.location }}{% else %}every centre{% endif %}, without listing them.</p>{% endif %}

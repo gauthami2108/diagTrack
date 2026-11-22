@@ -1208,3 +1208,19 @@ textarea.mono, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Conso
 .claim-approved { background: var(--accent-soft); color: var(--accent-text); }
 .claim-settled { background: var(--good-soft); color: var(--good); }
 .claim-rejected { background: var(--bad-soft, var(--surface-2)); color: var(--bad); }
+
+/* Insurance policy page: at-a-glance strip, grouped details, folded panels */
+.todo-strip { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding: 0; }
+.todo-strip li { padding: 5px 12px; border-radius: 999px; font-size: 13.5px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+.todo-strip .todo-ok { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.todo-strip .todo-warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.todo-strip .todo-bad { background: var(--bad-soft, var(--surface-2)); color: var(--bad); border-color: transparent; }
+.kv-h { font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin: 16px 0 8px; }
+.kv-h:first-of-type { margin-top: 0; }
+details.fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; min-height: 28px; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary h2 { margin: 0; }
+details.fold > summary::after { content: "Show"; font-size: 13px; color: var(--accent-text); font-weight: 500; }
+details.fold[open] > summary::after { content: "Hide"; }
+details.fold[open] > summary { margin-bottom: 12px; }
+details.fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
