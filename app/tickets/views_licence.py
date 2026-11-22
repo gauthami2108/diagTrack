@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from . import history
 from . import insurance_log as ilog
 from .models import Centre, Equipment, Licence, LicenceDocument, User
 from .views import admin_only
@@ -63,6 +64,14 @@ class LicenceForm(forms.ModelForm):
                                             "centre or the head office.")
         if not self.instance.pk:
             del self.fields["closed"]
+        else:
+            others = Licence.objects.filter(archived_at__isnull=True)\
+                .exclude(pk__in=history.descendants(self.instance) | {self.instance.pk}).order_by("name", "-issued_on")
+            self.fields["earlier"] = forms.ModelChoiceField(
+                others, required=False, initial=self.instance.renewed_from_id, label="Earlier licence this one continues",
+                help_text="Only for one that was not renewed through DiagTrack: pick the licence it replaced so the History "
+                          "tab shows them together. The earlier one is then marked Renewed.")
+            self.fields["earlier"].label_from_instance = lambda o: f"{o.name} {o.reference_number}, {o.issued_on:%d %b %Y} to {o.valid_until:%d %b %Y}, {o.location}"
 
     centres_items = property(lambda self: self.checklist("centres"))
     responsible_items = property(lambda self: self.checklist("responsible"))
@@ -166,8 +175,13 @@ def licence_detail(request, pk):
     today = timezone.localdate()
     x.days_left = (x.valid_until - today).days
     x.status = x.status_on(today)
+    arch = None if request.user.can_manage_insurance else False
+    terms = history.series_for(x, _scoped(request.user, archived=arch).prefetch_related("centres"), history.licence_series,
+                               {"name__iexact": x.name})
+    for t in terms:
+        t.status = t.status_on(today)
     return render(request, "licence_detail.html", {
-        "x": x, "docs": x.documents.all(), "log": x.log.select_related("actor")[:50], "can_edit": request.user.can_manage_insurance and not x.archived_at, "can_admin": request.user.is_admin,
+        "past_terms": [t for t in terms if t.pk != x.pk], "x": x, "docs": x.documents.all(), "log": x.log.select_related("actor")[:50], "can_edit": request.user.can_manage_insurance and not x.archived_at, "can_admin": request.user.is_admin,
         "can_restore": request.user.can_manage_insurance and bool(x.archived_at),
         "renewed_from": x.renewed_from, "renewals": x.renewals.filter(archived_at__isnull=True), "max_mb": MAX_FILE_MB,
         "reminders": sorted({d for d in (x.first_reminder, 30, 7, 0) if d <= x.first_reminder}, reverse=True)})
@@ -228,6 +242,7 @@ def licence_edit(request, pk):
         if form.is_valid() and not problems:
             form.save()
             ilog.licence_record_changes(x, request.user, before)
+            history.relink(x, form.cleaned_data.get("earlier"), request.user, Licence, ilog.licence_record)
             if files:
                 ilog.licence_record(x, request.user, f"Added {len(files)} document{'s' if len(files) != 1 else ''}")
             save_files(x, files, request.user)

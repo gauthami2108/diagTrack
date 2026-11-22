@@ -318,6 +318,15 @@ or machines changed, documents added or removed, renewed, cancelled, and changes
 and notes are recorded as "changed" only, never with their values, so everyone who can open the policy may read the history.
 The history is kept for good, also if the policy is later deleted (the lines keep the policy's name).
 
+**History tab.** Insurance > History shows every term of each cover (or each licence, with the Licences switch) in date order:
+dates, insurer or issuer, number and status, with the money columns only for people who may see money. Terms belong together when
+one renewed the other, or when they have the same cover type and the same centres (licences: the same name). Renewed and
+archived terms stay in it (archived ones only for people with Manage access). A term that starts more than a day after the one
+before ends is flagged as a gap, and one that starts before the earlier one ends as an overlap. Each policy and licence page
+has an "All terms" panel. Excel on the History tab downloads the whole history, archived terms included. For a policy or
+licence that was not renewed through DiagTrack, edit the later one and pick the earlier one in "Earlier policy this one
+continues": the two are then shown together and the earlier one is marked Renewed. Clearing the choice undoes it.
+
 **Archive, not delete.** Anyone with Manage access chooses **Archive** on a policy or licence. It leaves the lists, the reminders,
 the weekly summary and the cover checks, but it is kept with its documents, claims and history. Choose **Status: Archived** in the
 list to find it, and **Restore** to bring it back. Archiving a renewal makes the policy it replaced current again; restoring it

@@ -23,6 +23,7 @@ from django.views.decorators.http import require_POST
 
 from .models import (Centre, ClaimDocument, PremiumInstalment, RenewalQuote, Equipment, InsuranceClaim, InsuranceCoverType, InsuranceDocument, InsurancePolicy, Licence,
                      SiteSettings, User)
+from . import history
 from . import insurance_log as ilog
 from .services import insurance_stages
 from .views import _safe, admin_only, role_required
@@ -167,6 +168,15 @@ class PolicyForm(forms.ModelForm):
             self.fields["premium_due"].help_text = "Set from the instalment schedule on the policy page: the earliest instalment not yet paid."
         if not show_money:
             del self.fields["sum_insured"], self.fields["premium"]
+        if self.instance.pk:
+            from . import history
+            others = InsurancePolicy.objects.filter(cover_type_id=self.instance.cover_type_id, archived_at__isnull=True)\
+                .exclude(pk__in=history.descendants(self.instance) | {self.instance.pk}).order_by("-start_date")
+            self.fields["earlier"] = forms.ModelChoiceField(
+                others, required=False, initial=self.instance.renewed_from_id, label="Earlier policy this one continues",
+                help_text="Only for a policy that was not renewed through DiagTrack: pick the policy it replaced so the "
+                          "History tab shows them together. The earlier one is then marked Renewed.")
+            self.fields["earlier"].label_from_instance = lambda o: f"{o.insurer} {o.policy_number}, {o.start_date:%d %b %Y} to {o.expiry_date:%d %b %Y}, {o.location}"
 
     def checklist(self, name):
         """The choices of a tick-list field as plain dicts, so the page can draw them as tick boxes."""
@@ -682,8 +692,13 @@ def insurance_detail(request, pk):
     today = timezone.localdate()
     p.status = p.status_on(today, _soon(p, cfg))
     p.days_left = (p.expiry_date - today).days
+    arch = None if request.user.can_manage_insurance else False
+    terms = history.series_for(p, _scoped(request.user, archived=arch).prefetch_related("centres"), history.policy_series,
+                               {"cover_type_id": p.cover_type_id})
+    for t in terms:
+        t.status = t.status_on(today, _soon(t, cfg))
     return render(request, "insurance_detail.html", {
-        "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.can_manage_insurance and not p.archived_at,
+        "past_terms": [t for t in terms if t.pk != p.pk], "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.can_manage_insurance and not p.archived_at,
         "can_restore": request.user.can_manage_insurance and bool(p.archived_at), "can_admin": request.user.is_admin,
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
         "premium_days": (p.premium_due - today).days if p.premium_due else None,
@@ -777,6 +792,7 @@ def insurance_edit(request, pk):
             form.save()
             p = InsurancePolicy.objects.get(pk=p.pk)
             ilog.record_changes(p, request.user, before)
+            history.relink(p, form.cleaned_data.get("earlier"), request.user, InsurancePolicy, ilog.record)
             if files:
                 ilog.record(p, request.user, f"Added {len(files)} document{'s' if len(files) != 1 else ''}")
             save_files(p, files, request.user)
@@ -1076,6 +1092,102 @@ def insurance_access_export(request):
     wb.save(buf)
     resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     resp["Content-Disposition"] = 'attachment; filename="insurance-access.xlsx"'
+    return resp
+
+
+def _history_data(request):
+    """(kind, series list, money) for the History tab, limited to what the person may see. Archived records are
+    included for people who may restore them."""
+    from . import views_licence as vl
+    user, cfg = request.user, SiteSettings.load()
+    today = timezone.localdate()
+    kind = "licences" if request.GET.get("kind") == "licences" else "insurance"
+    q = request.GET.get("q", "").strip()
+    centre = request.GET.get("centre", "")
+    arch = None if user.can_manage_insurance else False
+    out = []
+    if kind == "insurance":
+        qs = _scoped(user, archived=arch).select_related("cover_type", "renewed_from").prefetch_related("centres")
+        for terms in history.policy_series(qs):
+            for p in terms:
+                p.status = p.status_on(today, _soon(p, cfg))
+            out.append({"title": terms[0].cover_type.name, "where": terms[0].location, "terms": terms,
+                        "centre_ids": {c.pk for t in terms for c in t.centres.all()}})
+    else:
+        qs = vl._scoped(user, archived=arch).select_related("renewed_from").prefetch_related("centres")
+        for terms in history.licence_series(qs):
+            for x in terms:
+                x.status = x.status_on(today)
+            out.append({"title": terms[-1].name, "where": terms[-1].location, "terms": terms,
+                        "centre_ids": {c.pk for t in terms for c in t.centres.all()}})
+    if q:
+        ql = q.lower()
+        out = [s for s in out if ql in s["title"].lower() or any(
+            ql in (getattr(t, "insurer", "") or getattr(t, "issuer", "") or "").lower()
+            or ql in (getattr(t, "policy_number", "") or getattr(t, "reference_number", "") or "").lower() for t in s["terms"])]
+    if centre == "0":
+        out = [s for s in out if not s["centre_ids"]]
+    elif centre.isdigit():
+        out = [s for s in out if int(centre) in s["centre_ids"] or not s["centre_ids"]]
+    for s in out:
+        s["count"] = len(s["terms"])
+        s["warnings"] = sum(1 for t in s["terms"] if t.gap)
+        s["first"], s["last"] = s["terms"][0], s["terms"][-1]
+    out.sort(key=lambda s: (s["title"].lower(), s["where"]))
+    return kind, out, _show_money(user, cfg), {"q": q, "centre": centre}
+
+
+@viewer
+def insurance_history(request):
+    kind, series, money, f = _history_data(request)
+    centres = Centre.objects.filter(active=True)
+    if not request.user.insurance_sees_all:
+        centres = centres.filter(pk__in=request.user.centres.all())
+    return render(request, "insurance_history.html", {
+        "kind": kind, "series": series, "money": money, "f": f, "centres": centres, "tab": "history",
+        "terms_total": sum(s["count"] for s in series), "warn_total": sum(s["warnings"] for s in series)})
+
+
+@viewer
+def insurance_history_export(request):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    kind, series, money, _ = _history_data(request)
+    ins = kind == "insurance"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Insurance history" if ins else "Licence history"
+    head = ["Cover type" if ins else "Licence", "Centres", "Term", "Start date" if ins else "Issued", "End date" if ins else "Valid until",
+            "Insurer" if ins else "Issuer", "Policy number" if ins else "Reference number", "Status", "Archived",
+            "Renews number", "Note"]
+    if ins and money:
+        head += ["Sum insured", "Premium"]
+    ws.append(head)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    labels = dict(InsurancePolicy.STATUS_LABELS if ins else Licence.STATUS_LABELS)
+    for s in series:
+        for i, t in enumerate(s["terms"], start=1):
+            start, end = (t.start_date, t.expiry_date) if ins else (t.issued_on, t.valid_until)
+            num = t.policy_number if ins else t.reference_number
+            prev = t.renewed_from
+            line = [s["title"], s["where"], i, start, end, t.insurer if ins else t.issuer, num,
+                    labels.get(t.status, t.status),
+                    t.archived_at.strftime("%d %b %Y") if t.archived_at else "",
+                    (prev.policy_number if ins else prev.reference_number) if prev else "", t.gap]
+            if ins and money:
+                line += [float(t.sum_insured) if t.sum_insured is not None else None,
+                         float(t.premium) if t.premium is not None else None]
+            ws.append(line)
+    for col in ("D", "E"):
+        for cell in ws[col][1:]:
+            cell.number_format = "dd mmm yyyy"
+    for i, w in enumerate([26, 26, 7, 14, 14, 24, 20, 14, 14, 18, 44, 14, 14][:len(head)], start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = f'attachment; filename="{"insurance" if ins else "licence"}-history.xlsx"'
     return resp
 
 

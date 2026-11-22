@@ -25,6 +25,7 @@
   <label class="check"><input type="checkbox" name="covers_all_machines" {% if form.covers_all_machines.value %}checked{% endif %}><span><b>{{ form.covers_all_machines.label|capfirst }}</b><small>{{ form.covers_all_machines.help_text }}</small></span></label>
   {% include "_checklist.html" with title="Machines covered (optional)" name="equipment" uid="ins-machines" items=form.equipment_items errors=form.equipment.errors hint="Tick the machines this policy covers. When centres are ticked above, only their machines are listed." %}
   {% include "_field.html" with f=form.notes %}
+  {% if form.earlier %}{% include "_field.html" with f=form.earlier %}{% endif %}
   {% if not new %}<label class="check"><input type="checkbox" name="cancelled" {% if form.cancelled.value %}checked{% endif %}><span><b>{{ form.cancelled.label|capfirst }}</b><small>{{ form.cancelled.help_text }}</small></span></label>{% endif %}
 
   <div class="field"><span>Policy documents{% if new %} (required){% endif %}</span>
