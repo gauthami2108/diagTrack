@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Activity{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Activity</h1><p class="sub">Every change made to policies, licences, claims, instalments and renewal quotes: which record, who, when and what. It is kept for good.</p></div>
+  <div class="head-actions"><a class="btn" href="{% url 'insurance_activity_export' %}?{{ query }}">{% icon 'download' %}Excel</a></div>
+</div>
+{% include "_ins_tabs.html" with tab="activity" %}
+<form class="filters" method="get" data-autosubmit>
+  <label class="muted">From <input type="date" name="start" value="{{ f.start }}"></label>
+  <label class="muted">To <input type="date" name="end" value="{{ f.end }}"></label>
+  <select name="who" aria-label="Person"><option value="">Everyone</option><option value="0" {% if f.who == '0' %}selected{% endif %}>System</option>
+    {% for u in people %}<option value="{{ u.pk }}" {% if f.who == u.pk|stringformat:"s" %}selected{% endif %}>{{ u.display_name }}</option>{% endfor %}</select>
+  <select name="kind" aria-label="Kind of record">{% for v, l in kinds %}<option value="{{ v }}" {% if f.kind == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select name="centre" aria-label="Centre"><option value="">All centres</option><option value="0" {% if f.centre == '0' %}selected{% endif %}>For all centres</option>
+    {% for c in centres %}<option value="{{ c.pk }}" {% if f.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <input type="search" name="q" value="{{ f.q }}" placeholder="Search the text or record" aria-label="Search">
+</form>
+<p class="muted">{{ total }} entr{{ total|pluralize:"y,ies" }}.</p>
+{% if page.object_list %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>When</th><th>Who</th><th>Kind</th><th>Record</th><th>What happened</th></tr></thead>
+  <tbody>{% for r in page.object_list %}<tr>
+    <td data-l="When">{{ r.at|date:"d M Y, H:i" }}</td>
+    <td data-l="Who">{{ r.who }}</td>
+    <td data-l="Kind">{{ r.kind|capfirst }}</td>
+    <td data-l="Record" class="cell-title">{% if r.obj and r.kind == 'licence' %}<a href="{% url 'licence_detail' r.obj.pk %}">{{ r.label }}</a>{% elif r.obj %}<a href="{% url 'insurance_detail' r.obj.pk %}">{{ r.label }}</a>{% else %}{{ r.label|default:"A record" }}{% if r.gone %} <small class="muted">deleted for good</small>{% endif %}{% endif %}</td>
+    <td data-l="What happened">{{ r.text }}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% if page.has_other_pages %}<div class="pager">
+  {% if page.has_previous %}<a class="btn btn-s" href="?{{ query }}&page={{ page.previous_page_number }}">Newer</a>{% endif %}
+  <span class="muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a class="btn btn-s" href="?{{ query }}&page={{ page.next_page_number }}">Older</a>{% endif %}</div>{% endif %}
+{% else %}<p class="empty">Nothing matches.</p>{% endif %}
+{% endblock %}

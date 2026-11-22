@@ -318,6 +318,11 @@ or machines changed, documents added or removed, renewed, cancelled, and changes
 and notes are recorded as "changed" only, never with their values, so everyone who can open the policy may read the history.
 The history is kept for good, also if the policy is later deleted (the lines keep the policy's name).
 
+**Activity tab.** For administrators and people with Manage access. It lists every change to policies, licences, claims, premium
+instalments and renewal quotes: the record, who, when and what. Filter by date range, person, centre and kind of record, or
+search the text, and download the result as Excel. People with Manage access see only the records they may open; entries about
+a record deleted for good are shown to administrators. Nothing is ever purged from it.
+
 **History tab.** Insurance > History shows every term of each cover (or each licence, with the Licences switch) in date order:
 dates, insurer or issuer, number and status, with the money columns only for people who may see money. Terms belong together when
 one renewed the other, or when they have the same cover type and the same centres (licences: the same name). Renewed and

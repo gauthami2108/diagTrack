@@ -1966,6 +1966,30 @@ class InsuranceTests(Base):
         self.assertEqual(self.client.get(reverse("insurance_history_export")).status_code, 200)
         self.assertTrue(other.pk)
 
+    def test_activity_page_scope_filters_and_export(self):
+        import io
+        from openpyxl import load_workbook
+        p = self.policy([self.kkp], days=100, number="ACT1")
+        InsuranceLog.objects.create(policy=p, label="x", actor=self.admin, text="Claim added: fire")
+        InsuranceLog.objects.create(policy=p, label="x", actor=self.admin, text="Instalment due 01 Jan 2027 added")
+        InsuranceLog.objects.create(policy=None, label="Gone cover, KKP", actor=self.admin, text="Deleted for good by admin")
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("insurance_activity"))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "Gone cover, KKP")
+        r = self.client.get(reverse("insurance_activity"), {"kind": "claim"})
+        self.assertEqual([x["text"] for x in r.context["page"].object_list], ["Claim added: fire"])
+        r = self.client.get(reverse("insurance_activity"), {"kind": "instalment", "who": self.admin.pk})
+        self.assertEqual(r.context["total"], 1)
+        r = self.client.get(reverse("insurance_activity"), {"start": "2999-01-01"})
+        self.assertEqual(r.context["total"], 0)
+        ws = load_workbook(io.BytesIO(self.client.get(reverse("insurance_activity_export")).content)).active
+        self.assertGreaterEqual(ws.max_row, 4)
+        # people without Manage access cannot open it
+        self.client.force_login(self.director)
+        self.assertEqual(self.client.get(reverse("insurance_activity")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("insurance_activity_export")).status_code, 403)
+
     def test_a_policy_can_have_several_responsible_people(self):
         a = User.objects.create_user("anil", password="Demo@12345", role=User.AGENT)
         b = User.objects.create_user("bina", password="Demo@12345", role=User.AGENT)
