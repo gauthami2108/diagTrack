@@ -4288,3 +4288,64 @@ class RenewalQuoteTests(Base):
         self.assertIn("Ending soon with no renewal quote", titles)
         self.add("Oriental")
         self.assertNotIn("Ending soon with no renewal quote", [t for t, _ in (build(self.admin) or [])])
+
+
+class ClaimChaseTests(Base):
+    """Phase 33: claim progress, the open-claims figures and the reminder for a claim that is stuck."""
+
+    def setUp(self):
+        _grant_insurance(self)
+        self.admin = User.objects.create_user("boss2", password="Demo@12345", role=User.ADMIN, first_name="Boss",
+                                              email="boss2@example.com")
+        self.today = timezone.localdate()
+        self.p = InsurancePolicy.objects.create(cover_type=InsuranceCoverType.objects.get(name="Fire"), insurer="New India",
+                                                policy_number="C-1", start_date=self.today - timedelta(days=100),
+                                                expiry_date=self.today + timedelta(days=265), premium=40000, sum_insured=5000000)
+        self.p.centres.set([self.kkp])
+        SiteSettings.objects.update(insurance_quote_days=0)
+        self.c = InsuranceClaim.objects.create(policy=self.p, incident_date=self.today - timedelta(days=30),
+                                               description="Water damage", amount_claimed=250000)
+        self.client.force_login(self.admin)
+
+    def chase(self, days_ahead):
+        services.insurance_checks(today=self.today + timedelta(days=days_ahead))
+        return Notification.objects.filter(user=self.admin, title__startswith="Claim still")
+
+    def test_progress_steps_and_waiting(self):
+        self.assertEqual([s for _, s in self.c.progress], ["current", "todo", "todo", "todo"])
+        self.c.status = InsuranceClaim.APPROVED
+        self.assertEqual([s for _, s in self.c.progress], ["done", "done", "current", "todo"])
+        self.c.status = InsuranceClaim.REJECTED
+        self.assertEqual(self.c.progress, [])
+
+    def test_a_stuck_claim_is_chased_then_again_each_period_and_resets_on_a_status_change(self):
+        self.assertEqual(self.chase(13).count(), 0)
+        self.assertEqual(self.chase(14).count(), 1)
+        self.assertNotIn("250000", Notification.objects.filter(title__startswith="Claim still").first().body)
+        self.assertEqual(self.chase(20).count(), 1)  # not again within 14 days
+        self.assertEqual(self.chase(28).count(), 2)  # and again after another 14
+        # moving on starts the waiting again
+        d = {"incident_date": str(self.c.incident_date), "description": "Water damage", "status": "review"}
+        self.client.post(reverse("claim_edit", args=[self.c.pk]), d)
+        self.c.refresh_from_db()
+        self.assertEqual(self.c.status_changed_on, self.today)
+        self.assertIsNone(self.c.claim_alerted_on)
+        Notification.objects.all().delete()
+        self.assertEqual(self.chase(10).count(), 0)
+
+    def test_no_chase_when_settled_archived_or_switched_off(self):
+        SiteSettings.objects.update(insurance_claim_days=0)
+        self.assertEqual(self.chase(60).count(), 0)
+        SiteSettings.objects.update(insurance_claim_days=14)
+        InsuranceClaim.objects.filter(pk=self.c.pk).update(status=InsuranceClaim.SETTLED)
+        self.assertEqual(self.chase(60).count(), 0)
+        InsuranceClaim.objects.filter(pk=self.c.pk).update(status=InsuranceClaim.FILED)
+        InsurancePolicy.objects.filter(pk=self.p.pk).update(archived_at=timezone.now())
+        self.assertEqual(self.chase(60).count(), 0)
+
+    def test_claims_tab_shows_the_figures(self):
+        r = self.client.get(reverse("insurance_list"), {"tab": "claims"})
+        self.assertEqual(r.context["claim_stats"]["open"], 1)
+        self.assertContains(r, "Open claims")
+        self.assertContains(r, "₹2,50,000")
+        self.assertContains(r, "claim-steps")

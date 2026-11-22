@@ -765,9 +765,31 @@ class InsuranceClaim(models.Model):
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(default=timezone.now)
+    status_changed_on = models.DateField(default=timezone.localdate, editable=False)
+    claim_alerted_on = models.DateField(null=True, blank=True, editable=False)
 
     class Meta:
         ordering = ["-incident_date", "-pk"]
+
+    STEPS = (FILED, REVIEW, APPROVED, SETTLED)
+
+    @property
+    def step(self):
+        """Position on the way to settlement, 0 to 3; None for a claim that ended another way."""
+        return self.STEPS.index(self.status) if self.status in self.STEPS else None
+
+    @property
+    def progress(self):
+        """The four steps with where this claim is: [(label, done|current|todo)], empty when it ended another way."""
+        cur = self.step
+        if cur is None:
+            return []
+        return [(l, "done" if i < cur else "current" if i == cur else "todo")
+                for i, l in enumerate(["Filed", "Review", "Approved", "Settled"])]
+
+    @property
+    def waiting_days(self):
+        return (timezone.localdate() - self.status_changed_on).days if self.is_open else None
 
     @property
     def is_open(self):
@@ -936,6 +958,10 @@ class SiteSettings(models.Model):
     insurance_quote_days = models.PositiveSmallIntegerField(
         "ask for renewal quotes this many days before expiry", default=90,
         help_text="A reminder goes out when a policy is this close to ending and no renewal quote is recorded. 0 switches it off.")
+    insurance_claim_days = models.PositiveSmallIntegerField(
+        "chase an open claim after this many days in one status", default=14,
+        help_text="A reminder goes out when a claim has stayed Filed, Under review or Approved this long, then again each time "
+                  "the same number of days passes. 0 switches it off.")
     insurance_show_money = models.BooleanField(
         "show sum insured and premium on the Insurance page", default=True,
         help_text="Shown to administrators, people with Manage access and management with access. Untick to hide the money figures from everyone.")

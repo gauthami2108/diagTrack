@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 from django import forms
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -295,7 +295,13 @@ def insurance_list(request):
         ctx.update(uninsured=uninsured(user, centres, cfg), min_value=cfg.insurance_min_value)
     elif tab == "claims":
         claims, cf = _claims(request)
-        ctx.update(claims=claims, cf=cf, claim_statuses=InsuranceClaim.STATUSES)
+        allc = InsuranceClaim.objects.filter(policy__in=_scoped(user))
+        opened = list(allc.filter(status__in=InsuranceClaim.OPEN))
+        stats = {"open": len(opened), "oldest": max([c.waiting_days for c in opened], default=0),
+                 "claimed": sum((c.amount_claimed or 0) for c in opened),
+                 "settled": allc.filter(status=InsuranceClaim.SETTLED).aggregate(t=Sum("amount_settled"))["t"] or 0}
+        ctx.update(claims=claims, cf=cf, claim_statuses=InsuranceClaim.STATUSES, claim_stats=stats,
+                   claim_days=cfg.insurance_claim_days)
     else:
         ctx["all_types"] = InsuranceCoverType.objects.annotate(n_policies=Count("policies", filter=Q(policies__archived_at__isnull=True)))
     ctx.setdefault("gap_total", _gap_count(user, centres, cfg))
@@ -395,6 +401,8 @@ def _claim_form(request, p, claim):
         c.policy = p
         if not claim:
             c.created_by = request.user
+        elif before[0] != c.status:
+            c.status_changed_on, c.claim_alerted_on = timezone.localdate(), None  # the waiting starts again
         c.save()
         for f in files:
             ClaimDocument.objects.create(claim=c, file=f, name=f.name[:200], size=f.size, uploaded_by=request.user)
