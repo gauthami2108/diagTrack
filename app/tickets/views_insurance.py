@@ -686,6 +686,36 @@ def quote_delete(request, pk):
     return redirect("insurance_detail", pk=p.pk)
 
 
+def _summary(p, today, cfg, instalments, claims, quotes):
+    """The few things to know before reading the page: (text, tone) with tone bad, warn or ok."""
+    if p.archived_at:
+        return []
+    out = []
+    left = (p.expiry_date - today).days
+    if p.renewed:
+        out.append(("Renewed", "ok"))
+    elif p.cancelled:
+        out.append(("Cancelled", "bad"))
+    elif left < 0:
+        out.append((f"Expired {-left} day{'s' if left != -1 else ''} ago, not renewed", "bad"))
+    elif left <= _soon(p, cfg):
+        out.append((f"Expires in {left} day{'s' if left != 1 else ''}", "warn"))
+    else:
+        out.append((f"Expires {p.expiry_date:%d %b %Y} ({left} days)", "ok"))
+    overdue = [i for i in instalments if i.state == "overdue"]
+    if overdue:
+        out.append((f"{len(overdue)} instalment{'s' if len(overdue) != 1 else ''} overdue", "bad"))
+    elif p.premium_due and 0 <= (p.premium_due - today).days <= 30:
+        d = (p.premium_due - today).days
+        out.append((f"Premium due in {d} day{'s' if d != 1 else ''}" if d else "Premium due today", "warn"))
+    open_claims = [c for c in claims if c.status in ("filed", "review", "approved")]
+    if open_claims:
+        out.append((f"{len(open_claims)} open claim{'s' if len(open_claims) != 1 else ''}", "warn"))
+    if p.current and not quotes and cfg.insurance_quote_days and left <= cfg.insurance_quote_days:
+        out.append(("No renewal quote yet", "warn"))
+    return out
+
+
 @viewer
 def insurance_detail(request, pk):
     p = _get_visible(request.user, pk)
@@ -698,15 +728,19 @@ def insurance_detail(request, pk):
                                {"cover_type_id": p.cover_type_id})
     for t in terms:
         t.status = t.status_on(today, _soon(t, cfg))
+    instalments = _instalment_rows(p, today)
+    claims = list(p.claims.select_related("equipment").prefetch_related("documents"))
+    quotes = list(p.quotes.all())
+    summary = _summary(p, today, cfg, instalments, claims, quotes)
     return render(request, "insurance_detail.html", {
-        "past_terms": [t for t in terms if t.pk != p.pk], "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.can_manage_insurance and not p.archived_at,
+        "summary": summary, "past_terms": [t for t in terms if t.pk != p.pk], "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.can_manage_insurance and not p.archived_at,
         "can_restore": request.user.can_manage_insurance and bool(p.archived_at), "can_admin": request.user.is_admin,
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
         "premium_days": (p.premium_due - today).days if p.premium_due else None,
-        "log": p.log.select_related("actor")[:40], "instalments": _instalment_rows(p, today),
-        "quotes": p.quotes.all(), "quote_days": cfg.insurance_quote_days,
+        "log": list(p.log.select_related("actor")[:40]), "instalments": instalments,
+        "quotes": quotes, "quote_days": cfg.insurance_quote_days,
         "terms": INSTALMENT_TERMS,
-        "claims": p.claims.select_related("equipment").prefetch_related("documents"),
+        "claims": claims,
         "stages": insurance_stages(_soon(p, cfg)),
         "renewed_from": p.renewed_from, "renewals": p.renewals.filter(archived_at__isnull=True), "max_mb": MAX_FILE_MB})
 

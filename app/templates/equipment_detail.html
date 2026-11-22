@@ -9,7 +9,7 @@
   <div class="band-cell {% if stats.uptime_pct < 95 %}is-warn{% endif %}"><span class="band-n">{{ stats.uptime_pct }}%</span><span class="band-l">Uptime, 30 days</span></div>
   <div class="band-cell"><span class="band-n">{{ stats.down_seconds|span }}</span><span class="band-l">Downtime, 30 days</span></div>
   <div class="band-cell"><span class="band-n">{{ stats90.uptime_pct }}%</span><span class="band-l">Uptime, 90 days</span></div>
-  <div class="band-cell {% if penalty_stats.excess_down_hours %}is-warn{% endif %}"><span class="band-n">{% if penalty_stats.penalty_amount %}₹{{ penalty_stats.penalty_amount|floatformat:0 }}{% else %}₹0{% endif %}</span><span class="band-l">Penalty deduction (90d)</span></div>
+  <div class="band-cell {% if penalty_stats.excess_down_hours %}is-warn{% endif %}"><span class="band-n">{% if penalty_stats.penalty_amount %}{{ penalty_stats.penalty_amount|inr }}{% else %}₹0{% endif %}</span><span class="band-l">Penalty deduction (90d)</span></div>
 </section>
 <div class="grid-2">
   <div class="stack">
@@ -137,8 +137,8 @@
         {% if e.contract_start %}<div><dt>Contract start</dt><dd>{{ e.contract_start|date:"d M Y" }}</dd></div>{% endif %}
         {% if e.amc_expiry %}<div><dt>AMC until</dt><dd>{{ e.amc_expiry|date:"d M Y" }}{% if amc_left is not None and amc_left < 0 %} <span class="bad-text">Ended</span>{% elif amc_left is not None and amc_left <= 60 %} <span class="warn-text">{{ amc_left }} days left</span>{% endif %}</dd></div>{% endif %}
         <div><dt>Uptime guarantee</dt><dd><b>{{ e.uptime_guarantee_percent }}%</b></dd></div>
-        {% if e.penalty_rate_per_day %}<div><dt>Penalty per day</dt><dd>₹{{ e.penalty_rate_per_day|floatformat:0 }} / day of excess downtime</dd></div>{% endif %}
-        {% if e.annual_camc_cost %}<div><dt>Annual CAMC cost</dt><dd>₹{{ e.annual_camc_cost|floatformat:0 }}</dd></div>{% endif %}
+        {% if e.penalty_rate_per_day %}<div><dt>Penalty per day</dt><dd>{{ e.penalty_rate_per_day|inr }} / day of excess downtime</dd></div>{% endif %}
+        {% if e.annual_camc_cost %}<div><dt>Annual CAMC cost</dt><dd>{{ e.annual_camc_cost|inr }}</dd></div>{% endif %}
       </dl>
       {% if penalty_stats %}
       <div style="margin-top:0.75rem; padding:0.5rem 0.75rem; border-top:1px solid var(--border, #eee); font-size:0.85rem;">

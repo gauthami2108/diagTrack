@@ -563,7 +563,7 @@
       {% else %}<span class="muted">-</span>{% endif %}
     </td>
     <td data-l="Uptime SLA" class="num-col"><b>{{ e.uptime_guarantee_percent }}%</b></td>
-    <td data-l="Penalty" class="num-col">{% if e.penalty_rate_per_day %}₹{{ e.penalty_rate_per_day|floatformat:0 }}/d{% else %}<span class="muted">-</span>{% endif %}</td>
+    <td data-l="Penalty" class="num-col">{% if e.penalty_rate_per_day %}{{ e.penalty_rate_per_day|inr }}/d{% else %}<span class="muted">-</span>{% endif %}</td>
     <td data-l="Status">{% if e.active %}<span class="status status-up">Active</span>{% else %}<span class="bad-text">Retired</span>{% endif %}</td>
     <td style="text-align:right; white-space:nowrap;">
       <button type="button" class="btn btn-s btn-soft" data-open="dlg-edit-equipment"

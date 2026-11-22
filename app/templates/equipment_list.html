@@ -96,7 +96,7 @@
   <div class="band-cell"><span class="band-n">{{ penalties.summary.avg_uptime }}%</span><span class="band-l">Average fleet uptime ({{ penalty_days }}d)</span></div>
   <div class="band-cell"><span class="band-n">{{ penalties.summary.compliant }} / {{ penalties.summary.total_machines }}</span><span class="band-l">Compliant machines</span></div>
   <div class="band-cell {% if penalties.summary.penalized %}is-warn{% endif %}"><span class="band-n">{{ penalties.summary.penalized }}</span><span class="band-l">Machines breaching SLA</span></div>
-  <div class="band-cell {% if penalties.summary.total_penalty %}is-warn{% endif %}"><span class="band-n">₹{{ penalties.summary.total_penalty|floatformat:0 }}</span><span class="band-l">Total calculated penalty</span></div>
+  <div class="band-cell {% if penalties.summary.total_penalty %}is-warn{% endif %}"><span class="band-n">{{ penalties.summary.total_penalty|inr }}</span><span class="band-l">Total calculated penalty</span></div>
 </section>
 
 {% if penalties.rows %}

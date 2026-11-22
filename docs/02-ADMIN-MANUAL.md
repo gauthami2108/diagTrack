@@ -318,6 +318,11 @@ or machines changed, documents added or removed, renewed, cancelled, and changes
 and notes are recorded as "changed" only, never with their values, so everyone who can open the policy may read the history.
 The history is kept for good, also if the policy is later deleted (the lines keep the policy's name).
 
+**The policy page.** A strip of chips under the title gives what needs attention (expiry, overdue or coming premium, open
+claims, no renewal quote yet). The details are grouped as Cover, Dates and Money and people. Claims sit straight under them.
+Renewal quotes, Premium instalments and Change history are folded away when empty (Show opens them) and open by themselves once
+they hold something. Amounts are written the Indian way, for example ₹50,00,000.
+
 **Activity tab.** For administrators and people with Manage access. It lists every change to policies, licences, claims, premium
 instalments and renewal quotes: the record, who, when and what. Filter by date range, person, centre and kind of record, or
 search the text, and download the result as Excel. People with Manage access see only the records they may open; entries about

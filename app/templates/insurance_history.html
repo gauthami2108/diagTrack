@@ -28,7 +28,7 @@
         <td data-l="{% if kind == 'licences' %}Issuer{% else %}Insurer{% endif %}">{% if kind == 'licences' %}{{ t.issuer }}{% else %}{{ t.insurer }}{% endif %}</td>
         <td data-l="Number">{% if kind == 'licences' %}{{ t.reference_number }}{% else %}{{ t.policy_number }}{% endif %}</td>
         <td data-l="Status">{% if kind == 'licences' %}{% include "_lic_status.html" with x=t %}{% else %}{% include "_ins_status.html" with p=t %}{% endif %}</td>
-        {% if money and kind == 'insurance' %}<td data-l="Sum insured">{% if t.sum_insured is not None %}₹{{ t.sum_insured|floatformat:0 }}{% endif %}</td><td data-l="Premium">{% if t.premium is not None %}₹{{ t.premium|floatformat:0 }}{% endif %}</td>{% endif %}
+        {% if money and kind == 'insurance' %}<td data-l="Sum insured">{% if t.sum_insured is not None %}{{ t.sum_insured|inr }}{% endif %}</td><td data-l="Premium">{% if t.premium is not None %}{{ t.premium|inr }}{% endif %}</td>{% endif %}
       </tr>{% endfor %}</tbody>
   </table></div>
 </section>

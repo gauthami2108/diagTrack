@@ -15,7 +15,7 @@
   <div class="band-cell"><span class="band-n">{{ current_count }}</span><span class="band-l">Current policies</span></div>
   <div class="band-cell {% if expiring_count %}is-warn{% endif %}"><span class="band-n">{{ expiring_count }}</span><span class="band-l">Expiring soon</span></div>
   <div class="band-cell {% if expired_count %}is-bad{% endif %}"><span class="band-n">{{ expired_count }}</span><span class="band-l">Expired, not renewed</span></div>
-  {% if money and tab == 'policies' %}<div class="band-cell"><span class="band-n">₹{{ total_sum|floatformat:0 }}</span><span class="band-l">Sum insured, as listed</span></div>{% endif %}
+  {% if money and tab == 'policies' %}<div class="band-cell"><span class="band-n">{{ total_sum|inr }}</span><span class="band-l">Sum insured, as listed</span></div>{% endif %}
 </section>
 
 <div class="tabs" role="tablist">
@@ -49,7 +49,7 @@
     <td data-l="Started">{{ p.start_date|date:"d M Y" }}</td>
     <td data-l="Expires">{{ p.expiry_date|date:"d M Y" }}<br>{% include "_ins_when.html" %}</td>
     <td data-l="Status">{% include "_ins_status.html" %}</td>
-    {% if money %}<td data-l="Sum insured" class="num-col">{% if p.sum_insured is not None %}₹{{ p.sum_insured|floatformat:0 }}{% else %}<span class="muted">-</span>{% endif %}</td>{% endif %}
+    {% if money %}<td data-l="Sum insured" class="num-col">{% if p.sum_insured is not None %}{{ p.sum_insured|inr }}{% else %}<span class="muted">-</span>{% endif %}</td>{% endif %}
   </tr>{% endfor %}</tbody>
 </table></div>
 {% else %}
@@ -78,7 +78,7 @@
 {% if min_value %}
 <section class="panel" style="margin-top:18px"><header><h2>Valuable machines with no policy{% if uninsured %} <span class="count count-bad">{{ uninsured|length }}</span>{% endif %}</h2></header>
   <p class="panel-note">Machines worth ₹{{ min_value }} or more that no current policy covers. Add the machine to a policy, tick <b>covers every machine</b> on a blanket policy, or change the limit in Settings.</p>
-  {% if uninsured %}<ul class="plain">{% for e in uninsured %}<li><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a> <small class="muted">{{ e.centre.name }}{% if money %}, ₹{{ e.value|floatformat:0 }}{% endif %}</small></li>{% endfor %}</ul>
+  {% if uninsured %}<ul class="plain">{% for e in uninsured %}<li><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a> <small class="muted">{{ e.centre.name }}{% if money %}, {{ e.value|inr }}{% endif %}</small></li>{% endfor %}</ul>
   {% else %}<p class="empty">Every valuable machine is on a current policy.</p>{% endif %}
 </section>{% endif %}
 
@@ -100,7 +100,7 @@
     <td>{{ c.policy.cover_type.name }}, {{ c.policy.location }}<br><small class="muted">{{ c.policy.insurer }} {{ c.policy.policy_number }}</small></td>
     <td>{% if c.equipment %}{{ c.equipment.name }}{% else %}<span class="muted">none</span>{% endif %}</td>
     <td><span class="claim-chip claim-{{ c.status }}">{{ c.get_status_display }}</span></td>
-    {% if money %}<td class="num-col">{% if c.amount_claimed is not None %}₹{{ c.amount_claimed|floatformat:0 }}{% endif %}</td><td class="num-col">{% if c.amount_settled is not None %}₹{{ c.amount_settled|floatformat:0 }}{% endif %}</td>{% endif %}
+    {% if money %}<td class="num-col">{% if c.amount_claimed is not None %}{{ c.amount_claimed|inr }}{% endif %}</td><td class="num-col">{% if c.amount_settled is not None %}{{ c.amount_settled|inr }}{% endif %}</td>{% endif %}
   </tr>{% endfor %}</tbody>
 </table></div>
 {% else %}<div class="empty-state">{% icon 'shield-check' %}<p>{% if cf.cstatus == 'open' and not cf.q %}No open claims.{% else %}No claims match.{% endif %}</p></div>{% endif %}
