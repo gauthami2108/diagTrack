@@ -297,7 +297,7 @@ def insurance_list(request):
         claims, cf = _claims(request)
         ctx.update(claims=claims, cf=cf, claim_statuses=InsuranceClaim.STATUSES)
     else:
-        ctx["all_types"] = InsuranceCoverType.objects.all()
+        ctx["all_types"] = InsuranceCoverType.objects.annotate(n_policies=Count("policies", filter=Q(policies__archived_at__isnull=True)))
     ctx.setdefault("gap_total", _gap_count(user, centres, cfg))
     ctx["open_claims"] = InsuranceClaim.objects.filter(policy__in=_scoped(user), status__in=InsuranceClaim.OPEN).count()
     return render(request, "insurance.html", ctx)

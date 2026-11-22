@@ -18,7 +18,9 @@
     {% for c in centres %}<option value="{{ c.pk }}" {% if f.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
 </form>
 {% for s in series %}
-<section class="panel"><header><h2>{{ s.title }} <small class="muted">{{ s.where }}</small></h2>{% if s.warnings %}<span class="ins-chip ins-expiring">{{ s.warnings }} gap{{ s.warnings|pluralize }} or overlap{{ s.warnings|pluralize }}</span>{% endif %}</header>
+<details class="panel fold"{% if s.warnings or series|length == 1 %} open{% endif %}><summary><h2>{{ s.title }} <small class="muted">{{ s.where }}</small></h2>
+  <span class="sum-meta">{{ s.count }} term{{ s.count|pluralize }}{% if s.warnings %} <span class="ins-chip ins-expiring">{{ s.warnings }} gap{{ s.warnings|pluralize }} or overlap{{ s.warnings|pluralize }}</span>{% endif %}
+  {% if kind == 'licences' %}{% include "_lic_status.html" with x=s.last %}{% else %}{% include "_ins_status.html" with p=s.last %}{% endif %}</span></summary>
   <div class="table-wrap"><table class="table">
     <thead><tr><th>Term</th><th>{% if kind == 'licences' %}Issuer{% else %}Insurer{% endif %}</th><th>Number</th><th>Status</th>{% if money and kind == 'insurance' %}<th>Sum insured</th><th>Premium</th>{% endif %}</tr></thead>
     <tbody>{% for t in s.terms %}
@@ -31,6 +33,6 @@
         {% if money and kind == 'insurance' %}<td data-l="Sum insured">{% if t.sum_insured is not None %}{{ t.sum_insured|inr }}{% endif %}</td><td data-l="Premium">{% if t.premium is not None %}{{ t.premium|inr }}{% endif %}</td>{% endif %}
       </tr>{% endfor %}</tbody>
   </table></div>
-</section>
+</details>
 {% empty %}<p class="empty">Nothing on record yet.</p>{% endfor %}
 {% endblock %}

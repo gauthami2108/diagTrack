@@ -14,15 +14,15 @@
   <select name="kind" aria-label="Kind of record">{% for v, l in kinds %}<option value="{{ v }}" {% if f.kind == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
   <select name="centre" aria-label="Centre"><option value="">All centres</option><option value="0" {% if f.centre == '0' %}selected{% endif %}>For all centres</option>
     {% for c in centres %}<option value="{{ c.pk }}" {% if f.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
-  <input type="search" name="q" value="{{ f.q }}" placeholder="Search the text or record" aria-label="Search">
+  <input type="search" name="q" value="{{ f.q }}" placeholder="Search" aria-label="Search">
 </form>
 <p class="muted">{{ total }} entr{{ total|pluralize:"y,ies" }}.</p>
 {% if page.object_list %}
 <div class="table-wrap"><table class="table">
   <thead><tr><th>When</th><th>Who</th><th>Kind</th><th>Record</th><th>What happened</th></tr></thead>
-  <tbody>{% for r in page.object_list %}<tr>
-    <td data-l="When">{{ r.at|date:"d M Y, H:i" }}</td>
-    <td data-l="Who">{{ r.who }}</td>
+  <tbody>{% for r in page.object_list %}{% ifchanged r.at|date:"Y-m-d" %}<tr class="day-row"><th colspan="5" scope="colgroup">{{ r.at|date:"l, d M Y" }}</th></tr>{% endifchanged %}<tr>
+    <td data-l="When">{{ r.at|date:"H:i" }}</td>
+    <td data-l="Who"><b>{{ r.who }}</b></td>
     <td data-l="Kind">{{ r.kind|capfirst }}</td>
     <td data-l="Record" class="cell-title">{% if r.obj and r.kind == 'licence' %}<a href="{% url 'licence_detail' r.obj.pk %}">{{ r.label }}</a>{% elif r.obj %}<a href="{% url 'insurance_detail' r.obj.pk %}">{{ r.label }}</a>{% else %}{{ r.label|default:"A record" }}{% if r.gone %} <small class="muted">deleted for good</small>{% endif %}{% endif %}</td>
     <td data-l="What happened">{{ r.text }}</td>

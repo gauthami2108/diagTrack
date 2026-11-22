@@ -318,6 +318,10 @@ or machines changed, documents added or removed, renewed, cancelled, and changes
 and notes are recorded as "changed" only, never with their values, so everyone who can open the policy may read the history.
 The history is kept for good, also if the policy is later deleted (the lines keep the policy's name).
 
+**Easier reading on the other tabs.** The Coverage grid has a colour legend and its red number says what it counts. Cover
+types shows how many policies use each type. Access has a short "What the levels mean" box. History folds each cover to one
+line (terms, gaps, latest status) and opens by itself when there is a gap or overlap. Activity groups entries by day.
+
 **The policy page.** A strip of chips under the title gives what needs attention (expiry, overdue or coming premium, open
 claims, no renewal quote yet). The details are grouped as Cover, Dates and Money and people. Claims sit straight under them.
 Renewal quotes, Premium instalments and Change history are folded away when empty (Show opens them) and open by themselves once

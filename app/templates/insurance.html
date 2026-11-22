@@ -20,7 +20,7 @@
 
 <div class="tabs" role="tablist">
   <a role="tab" href="?tab=policies" {% if tab == 'policies' %}aria-selected="true"{% endif %}>Policies</a>
-  <a role="tab" href="?tab=gaps" {% if tab == 'gaps' %}aria-selected="true"{% endif %}>Coverage grid{% if gap_total %} <span class="count count-bad">{{ gap_total }}</span>{% endif %}</a>
+  <a role="tab" href="?tab=gaps" {% if tab == 'gaps' %}aria-selected="true"{% endif %}>Coverage grid{% if gap_total %} <span class="count count-bad" title="{{ gap_total }} gap{{ gap_total|pluralize }}: cover missing or expired at a centre, or machines not on any policy">{{ gap_total }}</span>{% endif %}</a>
   <a role="tab" href="?tab=claims" {% if tab == 'claims' %}aria-selected="true"{% endif %}>Claims{% if open_claims %} <span class="count">{{ open_claims }}</span>{% endif %}</a>
   <a role="tab" href="{% url 'licence_list' %}">Licences</a>
   <a role="tab" href="{% url 'insurance_history' %}">History</a>
@@ -31,7 +31,7 @@
 
 {% if tab == 'policies' %}
 <form class="filters" method="get" data-autosubmit>
-  <input type="search" name="q" value="{{ f.q }}" placeholder="Insurer or policy number" aria-label="Search policies">
+  <input type="search" name="q" value="{{ f.q }}" placeholder="Insurer or number" aria-label="Search policies">
   <select name="centre" aria-label="Centre"><option value="">All centres</option>
     <option value="0" {% if f.centre == '0' %}selected{% endif %}>Policies for all centres</option>
     {% for c in centres %}<option value="{{ c.pk }}" {% if f.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
@@ -57,7 +57,7 @@
 {% endif %}
 
 {% elif tab == 'gaps' %}
-<p class="sub tab-intro">Which centres have which cover. The columns are the types marked <b>expected at every centre</b>{% if can_admin %} on the Cover types tab{% endif %}. A policy for all centres counts for every centre. Missing or expired cover shows in red. A machine counts as linked when it is listed on a current policy, or when a current policy is ticked <b>covers every machine</b> for its centre.</p>
+<p class="sub tab-intro">Which centres have which cover. The columns are the types marked <b>expected at every centre</b>{% if can_admin %} on the Cover types tab{% endif %}. A policy for all centres counts for every centre. <span class="legend"><span class="ins-chip ins-active">Until date</span> current cover, <span class="ins-chip ins-expiring">Soon</span> expiring, <span class="ins-chip ins-expired">Missing</span> none or expired.</span> A machine counts as linked when it is listed on a current policy, or when a current policy is ticked <b>covers every machine</b> for its centre.</p>
 {% if gap_rows and gap_types %}
 <div class="table-wrap"><table class="table grid-table">
   <thead><tr><th>Centre</th>{% for t in gap_types %}<th>{{ t.name }}</th>{% endfor %}<th>Machines not linked</th></tr></thead>
@@ -77,7 +77,7 @@
 {% endif %}
 {% if min_value %}
 <section class="panel" style="margin-top:18px"><header><h2>Valuable machines with no policy{% if uninsured %} <span class="count count-bad">{{ uninsured|length }}</span>{% endif %}</h2></header>
-  <p class="panel-note">Machines worth ₹{{ min_value }} or more that no current policy covers. Add the machine to a policy, tick <b>covers every machine</b> on a blanket policy, or change the limit in Settings.</p>
+  <p class="panel-note">Machines worth {{ min_value|inr }} or more that no current policy covers. Add the machine to a policy, tick <b>covers every machine</b> on a blanket policy, or change the limit in Settings.</p>
   {% if uninsured %}<ul class="plain">{% for e in uninsured %}<li><a href="{% url 'equipment_detail' e.pk %}">{{ e.name }}</a> <small class="muted">{{ e.centre.name }}{% if money %}, {{ e.value|inr }}{% endif %}</small></li>{% endfor %}</ul>
   {% else %}<p class="empty">Every valuable machine is on a current policy.</p>{% endif %}
 </section>{% endif %}
@@ -115,6 +115,7 @@
     <input type="text" name="name" value="{{ t.name }}" maxlength="80" aria-label="Name" required>
     <label class="chip-check"><input type="checkbox" name="core" {% if t.core %}checked{% endif %}><span>Expected at every centre</span></label>
     <label class="chip-check"><input type="checkbox" name="active" {% if t.active %}checked{% endif %}><span>Active</span></label>
+    <small class="muted type-count">{{ t.n_policies }} polic{{ t.n_policies|pluralize:"y,ies" }}</small>
     <button class="btn btn-s" type="submit">Save</button>
   </form></td></tr>{% endfor %}</tbody>
 </table></div>

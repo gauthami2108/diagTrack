@@ -1990,6 +1990,15 @@ class InsuranceTests(Base):
         self.assertEqual(self.client.get(reverse("insurance_activity")).status_code, 403)
         self.assertEqual(self.client.get(reverse("insurance_activity_export")).status_code, 403)
 
+    def test_tabs_explain_themselves(self):
+        self.policy([self.kkp], days=100, number="TY1")
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("insurance_list"), {"tab": "types"})
+        self.assertContains(r, "1 policy")
+        self.assertContains(self.client.get(reverse("insurance_access")), "What the levels mean")
+        self.assertContains(self.client.get(reverse("insurance_list"), {"tab": "gaps"}), "current cover")
+        self.assertContains(self.client.get(reverse("insurance_history")), "term")
+
     def test_amounts_use_indian_grouping(self):
         from .templatetags.dt import inr
         self.assertEqual(inr(5000000), "₹50,00,000")
