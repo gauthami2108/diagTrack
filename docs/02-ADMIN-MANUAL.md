@@ -318,6 +318,13 @@ or machines changed, documents added or removed, renewed, cancelled, and changes
 and notes are recorded as "changed" only, never with their values, so everyone who can open the policy may read the history.
 The history is kept for good, also if the policy is later deleted (the lines keep the policy's name).
 
+**Claims: progress and chasing.** Each open claim shows Filed, Review, Approved, Settled with the current step marked, and how many
+days it has been in that status. The top of the Claims tab counts open claims and the longest wait (and, for people who see
+money, the amount claimed and settled so far). When a claim stays in one status for the number of days set in Settings
+("chase an open claim after this many days", 14 by default, 0 = off), the administrators, people with Insurance access
+and the people responsible get an alert, and again each time the same number of days passes. Changing the status
+starts the count again. Claims that already existed start counting from the day this was installed, so there is no burst of alerts.
+
 **Documents on phones.** Phone and tablet browsers mostly cannot show a PDF inside a page, so on a touch screen the viewer says so
 and leaves **Open in new tab** and **Download**. Photos still show in the viewer. On a computer nothing changes.
 

@@ -1235,3 +1235,10 @@ details.fold.legend-box > summary h2 { font-size: 14px; font-weight: 600; }
 .tpl-head .seg { flex-wrap: wrap; max-width: 100%; }
 .tpl-head > div { min-width: 0; }
 .doc-viewer .doc-phone { margin: auto; padding: 24px; max-width: 34ch; text-align: center; color: var(--ink-2); font-size: 15px; line-height: 1.5; }
+
+/* Claim progress: Filed, Review, Approved, Settled */
+.claim-steps { list-style: none; display: flex; gap: 4px; margin: 6px 0 2px; padding: 0; }
+.claim-steps li { flex: 0 0 auto; font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); color: var(--ink-3); border: 1px solid var(--line); }
+.claim-steps li.cs-done { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.claim-steps li.cs-current { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
+td .claim-steps { margin-top: 8px; }

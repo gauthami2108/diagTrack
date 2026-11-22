@@ -50,6 +50,7 @@
     <section class="panel"><header><h2>Claims</h2>{% if can_edit %}<a href="{% url 'claim_new' p.pk %}">Add a claim</a>{% endif %}</header>
       {% if claims %}<ul class="plain log-list">{% for c in claims %}
         <li><span><span class="claim-chip claim-{{ c.status }}">{{ c.get_status_display }}</span> {{ c.description }}</span>
+          {% include "_claim_steps.html" %}
           <small class="muted">Incident {{ c.incident_date|date:"d M Y" }}{% if c.equipment %}, {{ c.equipment.name }}{% endif %}{% if c.claim_number %}, ref {{ c.claim_number }}{% endif %}{% if money and c.amount_claimed is not None %}, claimed {{ c.amount_claimed|inr }}{% endif %}{% if money and c.amount_settled is not None %}, settled {{ c.amount_settled|inr }}{% endif %}</small>
           {% for d in c.documents.all %}<small><a href="{% url 'claim_doc' d.pk %}" data-doc-view data-name="{{ d.name }}" data-kind="{% if d.is_image %}image{% else %}pdf{% endif %}">{% icon 'paperclip' %}{{ d.name }}</a></small> {% endfor %}
           {% if can_edit %}<span class="doc-actions"><a class="btn btn-ghost btn-s" href="{% url 'claim_edit' c.pk %}">Edit</a>{% if can_admin %}<form method="post" action="{% url 'claim_delete' c.pk %}" onsubmit="return confirm('Remove this claim?')">{% csrf_token %}<button class="btn btn-ghost btn-s" type="submit">Remove</button></form>{% endif %}</span>{% endif %}</li>{% endfor %}</ul>

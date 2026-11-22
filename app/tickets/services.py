@@ -14,7 +14,7 @@ from django.utils import timezone
 from . import notify as nt
 from .models import (
     OPEN_STATUSES, RUNNING_STATUSES, Category, Centre, Department, DowntimeLog, Equipment, EscalationLog, VendorCall, PreventiveMaintenance,
-    EscalationRule, Heartbeat, InsurancePolicy, Priority, SiteSettings, SlaPolicy, Status, Ticket,
+    EscalationRule, Heartbeat, InsuranceClaim, InsurancePolicy, Priority, SiteSettings, SlaPolicy, Status, Ticket,
     TicketAttachment, TicketComment, TicketHistory, User,
 )
 
@@ -770,6 +770,26 @@ def insurance_checks(today=None):
             p.quote_alert_for = p.expiry_date
             sent += 1
         p.save(update_fields=["alert_for", "alert_stage", "premium_alert_for", "premium_alert_stage", "quote_alert_for"])
+
+    # A claim that has sat in one status too long: chase the insurer. Repeats every claim_days until it moves on.
+    claim_days = site.insurance_claim_days
+    if claim_days:
+        stuck = InsuranceClaim.objects.filter(status__in=InsuranceClaim.OPEN, policy__archived_at__isnull=True).select_related(
+            "policy", "policy__cover_type").prefetch_related("policy__centres", "policy__responsible")
+        for c in stuck:
+            waited = (today - c.status_changed_on).days
+            if waited < claim_days or (c.claim_alerted_on and (today - c.claim_alerted_on).days < claim_days):
+                continue
+            p = c.policy
+            nt.notify(_insurance_people(p, admins, holders), None,
+                      f"Claim still {c.get_status_display().lower()} after {waited} days: {p.cover_type.name} insurance, {p.location}",
+                      f"{c.description} (incident {c.incident_date:%d %b %Y}"
+                      + (f", insurer's claim number {c.claim_number}" if c.claim_number else "")
+                      + f"). Policy {p.policy_number} with {p.insurer}. Ask the insurer where it stands and update the status on the claim.",
+                      urgent=False, kind="insurance", link=f"/insurance/{p.pk}/")
+            c.claim_alerted_on = today
+            c.save(update_fields=["claim_alerted_on"])
+            sent += 1
     return sent
 
 
