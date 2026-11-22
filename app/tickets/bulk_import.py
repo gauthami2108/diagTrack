@@ -792,6 +792,7 @@ def apply(plan):
             p = r.obj
             before = ilog.snapshot(p)
             _update(p, f)
+            p.sync_premium_due()  # with an instalment schedule the next due date comes from it
         if "_centres" in r.values:
             p.centres.set([centres[c] for c in r.values["_centres"]])
         if r.values.get("_responsible"):

@@ -661,6 +661,17 @@ class InsurancePolicy(models.Model):
     def __str__(self):
         return f"{self.cover_type} {self.policy_number}"
 
+    def sync_premium_due(self):
+        """With an instalment schedule, 'next premium due' is the earliest instalment not yet paid (empty when all are
+        paid). Reminders and the Home card keep reading that one date. Without a schedule nothing changes."""
+        if not self.instalments.exists():
+            return
+        nxt = self.instalments.filter(paid_on__isnull=True).order_by("due_date").first()
+        due = nxt.due_date if nxt else None
+        if due != self.premium_due:
+            self.premium_due = due
+            self.save(update_fields=["premium_due"])
+
     @property
     def location(self):
         """Names of the centres covered, or 'All centres'."""
@@ -698,6 +709,17 @@ class InsuranceDocument(models.Model):
     @property
     def is_image(self):
         return self.name.lower().rsplit(".", 1)[-1] in ("jpg", "jpeg", "png", "webp")
+
+
+class PremiumInstalment(models.Model):
+    """One payment of a premium paid in instalments."""
+    policy = models.ForeignKey(InsurancePolicy, on_delete=models.CASCADE, related_name="instalments")
+    due_date = models.DateField("due on")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    paid_on = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["due_date", "pk"]
 
 
 def claim_path(instance, filename):

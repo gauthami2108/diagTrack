@@ -62,6 +62,29 @@
         <small class="muted">PDF, JPG, PNG or WebP, up to {{ max_mb }} MB each.</small>{% endif %}
     </section>
 
+    <section class="panel"><header><h2>Premium instalments</h2></header>
+      {% if instalments %}<ul class="plain log-list">{% for i in instalments %}
+        <li><span><span class="claim-chip {% if i.state == 'paid' %}claim-settled{% elif i.state == 'overdue' %}claim-rejected{% else %}claim-filed{% endif %}">{% if i.state == 'paid' %}Paid {{ i.paid_on|date:"d M Y" }}{% elif i.state == 'overdue' %}Overdue{% else %}Due{% endif %}</span>
+            {{ i.due_date|date:"d M Y" }}{% if money and i.amount is not None %}, ₹{{ i.amount|floatformat:0 }}{% endif %}
+            {% if i.state == 'due' and i.days <= 14 %}<small class="warn-text">in {{ i.days }} day{{ i.days|pluralize }}</small>{% elif i.state == 'overdue' %}<small class="bad-text">{{ i.days|abs }} day{{ i.days|abs|pluralize }} ago</small>{% endif %}</span>
+          {% if can_edit %}<span class="doc-actions">
+            <form method="post" action="{% url 'instalment_paid' i.pk %}">{% csrf_token %}<button class="btn btn-ghost btn-s" type="submit">{% if i.paid_on %}Not paid{% else %}Mark paid{% endif %}</button></form>
+            <form method="post" action="{% url 'instalment_delete' i.pk %}">{% csrf_token %}<button class="btn btn-ghost btn-quiet-bad btn-s" type="submit" data-confirm="Remove the instalment due {{ i.due_date|date:'d M Y' }}?">Remove</button></form></span>{% endif %}</li>{% endfor %}</ul>
+        <p class="panel-note">The next premium due date above follows the first instalment not yet paid.</p>
+      {% else %}<p class="empty">No schedule. The single "next premium due" date above is used.{% if can_edit %} Add the instalments below to track each payment.{% endif %}</p>{% endif %}
+      {% if can_edit %}
+      {% if not instalments %}<form method="post" action="{% url 'instalment_generate' p.pk %}" class="inline-row" style="margin-top:10px">{% csrf_token %}
+        <label class="field"><span>First due</span><input type="date" name="first_due" required></label>
+        <label class="field"><span>How often</span><select name="step">{% for v, l in terms %}<option value="{{ v }}" {% if v == 3 %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+        <label class="field"><span>Instalments</span><input type="number" name="count" min="2" max="24" value="4" required></label>
+        {% if money %}<label class="field"><span>Each (₹)</span><input type="number" name="amount" min="0" step="1"></label>{% endif %}
+        <button class="btn btn-s" type="submit">Create schedule</button></form>{% endif %}
+      <form method="post" action="{% url 'instalment_add' p.pk %}" class="inline-row" style="margin-top:10px">{% csrf_token %}
+        <label class="field"><span>Add one: due on</span><input type="date" name="due_date" required></label>
+        {% if money %}<label class="field"><span>Amount (₹)</span><input type="number" name="amount" min="0" step="1"></label>{% endif %}
+        <button class="btn btn-s" type="submit">Add</button></form>{% endif %}
+    </section>
+
     <section class="panel"><header><h2>Claims</h2>{% if can_edit %}<a href="{% url 'claim_new' p.pk %}">Add a claim</a>{% endif %}</header>
       {% if claims %}<ul class="plain log-list">{% for c in claims %}
         <li><span><span class="claim-chip claim-{{ c.status }}">{{ c.get_status_display }}</span> {{ c.description }}</span>

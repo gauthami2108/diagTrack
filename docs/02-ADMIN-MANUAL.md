@@ -322,6 +322,13 @@ The history is deleted with the policy.
 when DiagTrack is installed on a phone or desktop. The viewer has **Open in new tab** and **Download**; both are also beside each file.
 Some phones cannot show a PDF inside a page: use Download or Open in new tab there.
 
+**Premium instalments.** For a premium paid in parts, open the policy and use **Premium instalments**: **Create schedule**
+(first due date, how often, how many, and the amount each if you see money) or add instalments one by one. Choose **Mark paid**
+when a payment is made (**Not paid** undoes it). The policy's **Next premium due** then always follows the first instalment not
+yet paid, so the reminders, the Home card and the weekly summary keep working without any other change, and the field on the
+edit form is locked while a schedule exists. Remove all instalments to go back to a single date. Changes appear in the
+change history.
+
 **Renewing.** Open the policy and choose **Renew**. The new policy starts the day after the old one ends and runs a year;
 change whatever differs and add the new document. The old policy is kept and marked Renewed, so the history stays.
 The form shows the policy being renewed and carries over everything else: insurer, number, broker, what is covered, centres,
