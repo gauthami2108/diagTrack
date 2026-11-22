@@ -7,10 +7,13 @@
     {% if can_edit %}
       {% if p.current %}<a class="btn" href="{% url 'insurance_new' %}?renew={{ p.pk }}">{% icon 'rotate-ccw' %}Renew</a>{% endif %}
       <a class="btn" href="{% url 'insurance_edit' p.pk %}">Edit</a>
-      {% if can_admin %}<form method="post" action="{% url 'insurance_delete' p.pk %}">{% csrf_token %}<button class="btn btn-ghost btn-quiet-bad" type="submit" data-confirm="Delete this policy and its documents? This cannot be undone. To keep the history, use Renew or mark it cancelled instead.">Delete</button></form>{% endif %}
+      <form method="post" action="{% url 'insurance_archive' p.pk %}">{% csrf_token %}<button class="btn btn-ghost" type="submit" data-confirm="Archive this policy? It leaves the lists and reminders but is kept with its documents and history. You can restore it.">Archive</button></form>
     {% endif %}
+    {% if can_restore %}<form method="post" action="{% url 'insurance_restore' p.pk %}">{% csrf_token %}<button class="btn btn-primary" type="submit">Restore</button></form>{% endif %}
   </div>
 </div>
+{% if p.archived_at %}<div class="callout">Archived{% if p.archived_by %} by {{ p.archived_by.display_name }}{% endif %} on {{ p.archived_at|date:"d M Y" }}. It is kept for the record and is not in the lists, reminders or cover checks.
+  {% if can_admin %}<form method="post" action="{% url 'insurance_delete' p.pk %}" class="inline-form" style="margin-top:8px">{% csrf_token %}<label>To delete it for good, type the policy number <b>{{ p.policy_number }}</b>: <input name="confirm" autocomplete="off" required></label> <button class="btn btn-ghost btn-quiet-bad" type="submit">Delete permanently</button></form>{% endif %}</div>{% endif %}
 
 <div class="grid-2">
   <div class="stack">

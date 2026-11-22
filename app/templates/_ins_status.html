@@ -1,1 +1,1 @@
-<span class="ins-chip ins-{{ p.status }}">{% if p.status == 'active' %}Active{% elif p.status == 'expiring' %}Expiring soon{% elif p.status == 'expired' %}Expired{% elif p.status == 'renewed' %}Renewed{% else %}Cancelled{% endif %}</span>
+{% if p.archived_at %}<span class="ins-chip ins-renewed">Archived</span> {% endif %}<span class="ins-chip ins-{{ p.status }}">{% if p.status == 'active' %}Active{% elif p.status == 'expiring' %}Expiring soon{% elif p.status == 'expired' %}Expired{% elif p.status == 'renewed' %}Renewed{% else %}Cancelled{% endif %}</span>

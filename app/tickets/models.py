@@ -633,6 +633,9 @@ class InsurancePolicy(models.Model):
         "next premium due", null=True, blank=True,
         help_text="Optional. For policies paid in instalments. Reminders come 7 days before and on the day. Change it after each payment.")
     quote_alert_for = models.DateField(null=True, blank=True, editable=False)
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False,
+                                       help_text="Set when the policy is archived: kept with its history, out of the working lists and reminders.")
+    archived_by = models.ForeignKey("User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+", editable=False)
     premium_alert_for = models.DateField(null=True, blank=True, editable=False)
     premium_alert_stage = models.PositiveSmallIntegerField(default=0, editable=False)
     remind_days = models.PositiveSmallIntegerField(
@@ -681,8 +684,8 @@ class InsurancePolicy(models.Model):
 
     @property
     def current(self):
-        """In force or lapsed without a replacement: not cancelled and not renewed."""
-        return not (self.cancelled or self.renewed)
+        """In force or lapsed without a replacement: not cancelled, not renewed and not archived."""
+        return not (self.cancelled or self.renewed or self.archived_at)
 
     def status_on(self, today, soon_days):
         if self.cancelled:
@@ -803,6 +806,8 @@ class Licence(models.Model):
     renewed_from = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="renewals")
     alert_for = models.DateField(null=True, blank=True, editable=False)
     alert_stage = models.PositiveSmallIntegerField(default=0, editable=False)
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
+    archived_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+", editable=False)
     created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(default=timezone.now)
 
@@ -819,7 +824,7 @@ class Licence(models.Model):
 
     @property
     def current(self):
-        return not (self.closed or self.renewed)
+        return not (self.closed or self.renewed or self.archived_at)
 
     @property
     def first_reminder(self):
@@ -855,7 +860,8 @@ class LicenceDocument(models.Model):
 
 class InsuranceLog(models.Model):
     """Who changed what on a policy. Shown on the policy page to everyone who may open it."""
-    policy = models.ForeignKey(InsurancePolicy, on_delete=models.CASCADE, related_name="log")
+    policy = models.ForeignKey(InsurancePolicy, null=True, blank=True, on_delete=models.SET_NULL, related_name="log")
+    label = models.CharField(max_length=250, blank=True, help_text="What the policy was called, kept if it is deleted for good.")
     actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     at = models.DateTimeField(default=timezone.now)
     text = models.CharField(max_length=500)
@@ -883,7 +889,8 @@ class ClaimDocument(models.Model):
 
 class LicenceLog(models.Model):
     """Who changed what on a licence or certificate. Shown on its page to everyone who may open it."""
-    licence = models.ForeignKey(Licence, on_delete=models.CASCADE, related_name="log")
+    licence = models.ForeignKey(Licence, null=True, blank=True, on_delete=models.SET_NULL, related_name="log")
+    label = models.CharField(max_length=250, blank=True, help_text="What the licence was called, kept if it is deleted for good.")
     actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     at = models.DateTimeField(default=timezone.now)
     text = models.CharField(max_length=500)

@@ -284,7 +284,7 @@ marks the old one Renewed. Reminders go to the same people as insurance: the fir
 own number), then 30 days, 7 days, the last day and the day after if it was not renewed, each once. A licence that is
 no longer needed can be marked Closed, which stops reminders. The Home page's Insurance card also counts licences and certificates that are expired or ending soon and lists the most urgent, limited to what the person may see. Documents open in the same in-app viewer. The list has filters
 and an Excel export. Each licence page has a **Change history** (who changed which date, number, centre or document, and
-renewals), as policies do; money is not involved. Only an administrator deletes a licence.
+renewals), as policies do; money is not involved. Licences are archived and restored the same way as policies; only an administrator deletes one for good.
 
 **Uninsured machine check.** Give a machine its **value** (Masters, Equipment; optional). On the **Coverage grid** tab, a
 panel lists every active machine worth at least the amount in Settings (**Flag uninsured machines worth at least**, default
@@ -316,7 +316,13 @@ those ending soonest). It shows only the policies that person may open, and neve
 **Change history.** The policy page lists what changed, who did it and when: policy added, dates, insurer, centres, people
 or machines changed, documents added or removed, renewed, cancelled, and changes made by the Excel import. Sum insured, premium
 and notes are recorded as "changed" only, never with their values, so everyone who can open the policy may read the history.
-The history is deleted with the policy.
+The history is kept for good, also if the policy is later deleted (the lines keep the policy's name).
+
+**Archive, not delete.** Anyone with Manage access chooses **Archive** on a policy or licence. It leaves the lists, the reminders,
+the weekly summary and the cover checks, but it is kept with its documents, claims and history. Choose **Status: Archived** in the
+list to find it, and **Restore** to bring it back. Archiving a renewal makes the policy it replaced current again; restoring it
+renews that one again. Only an administrator can delete for good, only an archived record, and only by typing the policy number
+(for a licence, its name). Archiving, restoring and deleting for good are all written to the history.
 
 **Opening a document.** On the policy page, choosing a file name shows it in a viewer inside DiagTrack, so it also stays in the app
 when DiagTrack is installed on a phone or desktop. The viewer has **Open in new tab** and **Download**; both are also beside each file.
@@ -367,7 +373,7 @@ after insurance. The levels are:
   managers lose Insurance when this release is installed until you grant it.
 - **View: policies of own centres**: sees policies that include one of their centres, and also the policies that cover every centre or the head office, because those cover their centre too.
 - **View: all centres**: sees every policy, read only.
-- **Manage**: sees every policy and may add, edit, renew, cancel and add or remove documents. Deleting a policy, the Cover
+- **Manage**: sees every policy and may add, edit, renew, cancel and add or remove documents. Archiving and restoring are included; deleting for good, the Cover
   types tab and the Settings switch stay with administrators.
 
 Sum insured and premium follow the same rule as above, and the Settings switch can hide them for everyone.
