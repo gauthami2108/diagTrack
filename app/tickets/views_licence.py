@@ -22,8 +22,15 @@ STATUS_FILTERS = [("", "Current (not renewed or closed)"), ("active", "Valid"), 
                   ("expired", "Expired"), ("renewed", "Renewed"), ("closed", "Closed"), ("all", "Everything")]
 
 
-def _scoped(user):
+def status_filters_for(user):
+    return STATUS_FILTERS + ([("archived", "Archived")] if user.can_manage_insurance else [])
+
+
+def _scoped(user, archived=False):
+    """archived False: working records; True: archived only; None: both."""
     qs = Licence.objects.all()
+    if archived is not None:
+        qs = qs.filter(archived_at__isnull=not archived)
     if user.insurance_sees_all:
         return qs
     return qs.filter(Q(centres__in=user.centres.all()) | Q(centres__isnull=True)).distinct()
@@ -83,8 +90,8 @@ def _filtered(request):
     user, today = request.user, timezone.localdate()
     g = request.GET
     f = {"q": g.get("q", "").strip(), "centre": g.get("centre", ""),
-         "status": g.get("status", "") if g.get("status", "") in dict(STATUS_FILTERS) else ""}
-    qs = _scoped(user).annotate(doc_count=Count("documents", distinct=True)).prefetch_related("centres", "responsible")\
+         "status": g.get("status", "") if g.get("status", "") in dict(status_filters_for(user)) else ""}
+    qs = _scoped(user, archived=True if f["status"] == "archived" else False).annotate(doc_count=Count("documents", distinct=True)).prefetch_related("centres", "responsible")\
         .select_related("equipment").order_by("valid_until", "name", "pk")
     if f["q"]:
         qs = qs.filter(Q(name__icontains=f["q"]) | Q(issuer__icontains=f["q"]) | Q(reference_number__icontains=f["q"]))
@@ -98,7 +105,7 @@ def _filtered(request):
         x.status = x.status_on(today)
         if f["status"] == "" and not x.current:
             continue
-        if f["status"] not in ("", "all") and x.status != f["status"]:
+        if f["status"] not in ("", "all", "archived") and x.status != f["status"]:
             continue
         rows.append(x)
     return rows, f
@@ -115,7 +122,7 @@ def licence_list(request):
     if not user.insurance_sees_all:
         centres = centres.filter(pk__in=user.centres.all())
     return render(request, "licences.html", {
-        "rows": rows, "f": f, "centres": centres, "status_filters": STATUS_FILTERS, "can_edit": user.can_manage_insurance,
+        "rows": rows, "f": f, "centres": centres, "status_filters": status_filters_for(user), "can_edit": user.can_manage_insurance,
         "current_count": len(live), "expiring_count": st.count(Licence.EXPIRING), "expired_count": st.count(Licence.EXPIRED)})
 
 
@@ -153,13 +160,16 @@ def licence_export(request):
 # --------------------------------------------------------------------------
 @viewer
 def licence_detail(request, pk):
-    x = get_object_or_404(_scoped(request.user), pk=pk)
+    x = get_object_or_404(_scoped(request.user, archived=None), pk=pk)
+    if x.archived_at and not request.user.can_manage_insurance:
+        raise Http404
     today = timezone.localdate()
     x.days_left = (x.valid_until - today).days
     x.status = x.status_on(today)
     return render(request, "licence_detail.html", {
-        "x": x, "docs": x.documents.all(), "log": x.log.select_related("actor")[:50], "can_edit": request.user.can_manage_insurance, "can_admin": request.user.is_admin,
-        "renewed_from": x.renewed_from, "renewals": x.renewals.all(), "max_mb": MAX_FILE_MB,
+        "x": x, "docs": x.documents.all(), "log": x.log.select_related("actor")[:50], "can_edit": request.user.can_manage_insurance and not x.archived_at, "can_admin": request.user.is_admin,
+        "can_restore": request.user.can_manage_insurance and bool(x.archived_at),
+        "renewed_from": x.renewed_from, "renewals": x.renewals.filter(archived_at__isnull=True), "max_mb": MAX_FILE_MB,
         "reminders": sorted({d for d in (x.first_reminder, 30, 7, 0) if d <= x.first_reminder}, reverse=True)})
 
 
@@ -168,7 +178,7 @@ def licence_new(request):
     old = None
     renew = request.GET.get("renew") or request.POST.get("renew")
     if renew and renew.isdigit():
-        old = get_object_or_404(Licence, pk=int(renew))
+        old = get_object_or_404(Licence, pk=int(renew), archived_at__isnull=True)
     initial = {}
     if old:
         start = old.valid_until + timedelta(days=1)
@@ -228,14 +238,50 @@ def licence_edit(request, pk):
                                                  "suggestions": Licence.SUGGESTIONS})
 
 
+@manager
+@require_POST
+def licence_archive(request, pk):
+    """Keeps the licence, its documents and history, but takes it out of the lists and reminders."""
+    x = get_object_or_404(_scoped(request.user), pk=pk)
+    x.archived_at, x.archived_by = timezone.now(), request.user
+    x.save(update_fields=["archived_at", "archived_by"])
+    ilog.licence_record(x, request.user, "Archived")
+    old = x.renewed_from
+    if old and old.renewed and not old.renewals.filter(archived_at__isnull=True).exists():
+        Licence.objects.filter(pk=old.pk).update(renewed=False)
+        ilog.licence_record(old, request.user, f"Current again: its renewal {x.reference_number or x.name} was archived")
+    messages.success(request, "Archived. Find it again under Status: Archived.")
+    return redirect("licence_list")
+
+
+@manager
+@require_POST
+def licence_restore(request, pk):
+    x = get_object_or_404(_scoped(request.user, archived=True), pk=pk)
+    x.archived_at = x.archived_by = None
+    x.save(update_fields=["archived_at", "archived_by"])
+    ilog.licence_record(x, request.user, "Restored from the archive")
+    old = x.renewed_from
+    if old and not old.archived_at and not old.renewed:
+        Licence.objects.filter(pk=old.pk).update(renewed=True)
+        ilog.licence_record(old, request.user, f"Renewed again: its renewal {x.reference_number or x.name} was restored")
+    messages.success(request, "Restored.")
+    return redirect("licence_detail", pk=x.pk)
+
+
 @admin_only
 @require_POST
-def licence_delete(request, pk):
-    x = get_object_or_404(Licence, pk=pk)
+def licence_purge(request, pk):
+    """Deleting for good: an administrator, an archived licence, and its name typed to confirm. The history stays."""
+    x = get_object_or_404(_scoped(request.user, archived=True), pk=pk)
+    if (request.POST.get("confirm") or "").strip().lower() != x.name.strip().lower():
+        messages.error(request, "Type the licence name exactly to delete it for good. Nothing was deleted.")
+        return redirect("licence_detail", pk=x.pk)
+    ilog.licence_record(x, request.user, f"Deleted for good by {request.user.display_name}")
     for d in x.documents.all():
         d.file.delete(save=False)
     x.delete()
-    messages.success(request, "Deleted.")
+    messages.success(request, "Deleted for good. A line in the history still records it.")
     return redirect("licence_list")
 
 
@@ -259,7 +305,7 @@ def licence_doc_add(request, pk):
 @manager
 @require_POST
 def licence_doc_delete(request, pk):
-    d = get_object_or_404(LicenceDocument, pk=pk)
+    d = get_object_or_404(LicenceDocument, pk=pk, licence__archived_at__isnull=True)
     x = d.licence
     if x.documents.count() <= 1:
         messages.error(request, "It must keep at least one document. Add the new one first, then remove this one.")
@@ -275,6 +321,8 @@ def licence_doc_delete(request, pk):
 @viewer
 def licence_doc(request, pk):
     d = get_object_or_404(LicenceDocument.objects.select_related("licence"), pk=pk)
-    if not _scoped(request.user).filter(pk=d.licence_id).exists():
+    if not _scoped(request.user, archived=None).filter(pk=d.licence_id).exists():
+        raise Http404
+    if d.licence.archived_at and not request.user.can_manage_insurance:
         raise Http404
     return serve_document(request, d)

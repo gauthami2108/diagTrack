@@ -49,8 +49,16 @@ def changes(before, after):
     return out
 
 
+def policy_label(p):
+    return f"{p.cover_type.name}, {p.location}, {p.insurer} {p.policy_number}"[:250]
+
+
+def licence_label(x):
+    return f"{x.name}, {x.location}{', ' + x.reference_number if x.reference_number else ''}"[:250]
+
+
 def record(policy, actor, text):
-    return InsuranceLog.objects.create(policy=policy, actor=actor, text=text[:500])
+    return InsuranceLog.objects.create(policy=policy, label=policy_label(policy), actor=actor, text=text[:500])
 
 
 def record_changes(policy, actor, before, prefix=""):
@@ -78,7 +86,7 @@ def licence_snapshot(x):
 
 
 def licence_record(x, actor, text):
-    return LicenceLog.objects.create(licence=x, actor=actor, text=text[:500])
+    return LicenceLog.objects.create(licence=x, label=licence_label(x), actor=actor, text=text[:500])
 
 
 def licence_record_changes(x, actor, before, prefix=""):

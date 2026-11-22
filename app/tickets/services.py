@@ -683,7 +683,7 @@ def licence_checks(today=None):
     admins = list(User.objects.filter(is_active=True).filter(Q(role=User.ADMIN) | Q(is_superuser=True)))
     holders = list(User.objects.filter(is_active=True, insurance_access__in=["own", "all", "manage"]).prefetch_related("centres"))
     sent = 0
-    for x in Licence.objects.filter(closed=False, renewed=False).prefetch_related("centres", "responsible"):
+    for x in Licence.objects.filter(closed=False, renewed=False, archived_at__isnull=True).prefetch_related("centres", "responsible"):
         if x.alert_for != x.valid_until:
             x.alert_for, x.alert_stage = x.valid_until, 0
         left = (x.valid_until - today).days
@@ -718,7 +718,7 @@ def insurance_checks(today=None):
     admins = list(User.objects.filter(is_active=True).filter(Q(role=User.ADMIN) | Q(is_superuser=True)))
     holders = list(User.objects.filter(is_active=True, insurance_access__in=["own", "all", "manage"]).prefetch_related("centres"))
     sent = 0
-    live = InsurancePolicy.objects.filter(cancelled=False, renewed=False).select_related(
+    live = InsurancePolicy.objects.filter(cancelled=False, renewed=False, archived_at__isnull=True).select_related(
         "cover_type").prefetch_related("centres", "responsible", "quotes")
     for p in live:
         if p.alert_for != p.expiry_date:  # new policy, or the expiry date was changed: start again

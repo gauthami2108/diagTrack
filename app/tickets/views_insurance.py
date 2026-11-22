@@ -31,7 +31,13 @@ MAX_FILE_MB = 20
 # Allowed uploads: extension -> what the first bytes of a real file of that kind look like.
 SIGNATURES = {"pdf": b"%PDF", "jpg": b"\xff\xd8\xff", "jpeg": b"\xff\xd8\xff", "png": b"\x89PNG", "webp": b"RIFF"}
 STATUS_FILTERS = [("", "Current (not renewed or cancelled)"), ("active", "Active"), ("expiring", "Expiring soon"),
-                  ("expired", "Expired"), ("renewed", "Renewed"), ("cancelled", "Cancelled"), ("all", "Everything")]
+                  ("expired", "Expired"), ("renewed", "Renewed"), ("cancelled", "Cancelled"), ("all", "Everything"),
+                  ("archived", "Archived")]
+
+
+def status_filters_for(user):
+    """Archived records are listed only for people who can restore them."""
+    return [(v, l) for v, l in STATUS_FILTERS if v != "archived" or user.can_manage_insurance]
 
 viewer = role_required(lambda u: u.can_view_insurance)
 manager = role_required(lambda u: u.can_manage_insurance)
@@ -42,8 +48,12 @@ def _show_money(user, cfg=None):
     return bool(user.insurance_money and cfg.insurance_show_money)
 
 
-def _scoped(user):
+def _scoped(user, archived=False):
+    """Policies this person may see. Archived ones are kept out unless asked for: archived=True gives only those,
+    archived=None gives both (used for opening an archived policy's documents)."""
     qs = InsurancePolicy.objects.select_related("cover_type").prefetch_related("centres", "responsible")
+    if archived is not None:
+        qs = qs.filter(archived_at__isnull=not archived)
     if user.insurance_sees_all:
         return qs
     # Own centres, plus policies that cover every centre or the head office (they have no centres listed)
@@ -56,7 +66,23 @@ def _soon(policy, cfg):
 
 
 def _get_visible(user, pk):
-    return get_object_or_404(_scoped(user), pk=pk)
+    """A policy this person may open. An archived one opens only for people who may restore it."""
+    qs = _scoped(user, archived=None)
+    p = get_object_or_404(qs, pk=pk)
+    if p.archived_at and not user.can_manage_insurance:
+        raise Http404
+    return p
+
+
+def _can_open(user, policy_id):
+    return _get_visible_or_none(user, policy_id) is not None
+
+
+def _get_visible_or_none(user, pk):
+    try:
+        return _get_visible(user, pk)
+    except Http404:
+        return None
 
 
 def _same_day_next_year(d):
@@ -205,7 +231,10 @@ def _filtered(request):
     g = request.GET
     f = {"q": g.get("q", "").strip(), "centre": g.get("centre", ""), "cover": g.get("cover", ""),
          "status": g.get("status", "") if g.get("status", "") in dict(STATUS_FILTERS) else ""}
-    qs = _scoped(request.user).annotate(doc_count=Count("documents", distinct=True)).order_by("expiry_date", "insurer", "pk")  # a grouped query ignores the model's own ordering
+    if f["status"] == "archived" and not request.user.can_manage_insurance:
+        f["status"] = ""
+    qs = _scoped(request.user, archived=f["status"] == "archived").annotate(
+        doc_count=Count("documents", distinct=True)).order_by("expiry_date", "insurer", "pk")  # a grouped query ignores the model's own ordering
     if f["q"]:
         qs = qs.filter(Q(insurer__icontains=f["q"]) | Q(policy_number__icontains=f["q"]) |
                        Q(contact__icontains=f["q"]) | Q(notes__icontains=f["q"]) | Q(covers__icontains=f["q"]))
@@ -221,7 +250,7 @@ def _filtered(request):
         p.days_left = (p.expiry_date - today).days
         if f["status"] == "" and not p.current:
             continue
-        if f["status"] not in ("", "all") and p.status != f["status"]:
+        if f["status"] not in ("", "all", "archived") and p.status != f["status"]:
             continue
         rows.append(p)
     return rows, f
@@ -241,7 +270,7 @@ def insurance_list(request):
     today = timezone.localdate()
     live = [p for p in _scoped(user) if p.current]
     status = [p.status_on(today, _soon(p, cfg)) for p in live]
-    ctx = {"tab": tab, "money": money, "centres": centres, "status_filters": STATUS_FILTERS,
+    ctx = {"tab": tab, "money": money, "centres": centres, "status_filters": status_filters_for(user),
            "cover_types": InsuranceCoverType.objects.all(), "can_edit": user.can_manage_insurance, "can_admin": user.is_admin,
            "expiring_count": status.count(InsurancePolicy.EXPIRING),
            "expired_count": status.count(InsurancePolicy.EXPIRED), "current_count": len(live)}
@@ -390,7 +419,7 @@ def _claim_form(request, p, claim):
 @admin_only
 @require_POST
 def claim_delete(request, pk):
-    c = get_object_or_404(InsuranceClaim.objects.select_related("policy"), pk=pk)
+    c = get_object_or_404(InsuranceClaim.objects.select_related("policy"), pk=pk, policy__archived_at__isnull=True)
     p = c.policy
     ilog.record(p, request.user, f"Claim removed: {_claim_line(c)}")
     for d in c.documents.all():
@@ -439,7 +468,7 @@ def _gaps(user, centres, cfg):
     """Centres as rows, the cover types marked 'expected at every centre' as columns."""
     today = timezone.localdate()
     types = list(InsuranceCoverType.objects.filter(core=True, active=True))
-    live = list(InsurancePolicy.objects.filter(cancelled=False, renewed=False)
+    live = list(InsurancePolicy.objects.filter(cancelled=False, renewed=False, archived_at__isnull=True)
                 .select_related("cover_type").prefetch_related("centres"))
     for p in live:
         p.centre_ids = {c.pk for c in p.centres.all()}
@@ -470,7 +499,7 @@ def _gaps(user, centres, cfg):
 
 def covered_machine_ids(today):
     """Machines on a current policy: listed on it, or at a centre of a policy that covers every machine."""
-    pols = InsurancePolicy.objects.filter(cancelled=False, renewed=False, expiry_date__gte=today)
+    pols = InsurancePolicy.objects.filter(cancelled=False, renewed=False, archived_at__isnull=True, expiry_date__gte=today)
     ids = set(InsurancePolicy.equipment.through.objects.filter(insurancepolicy__in=pols).values_list("equipment_id", flat=True))
     for p in pols.filter(covers_all_machines=True).prefetch_related("centres"):
         qs = Equipment.objects.filter(active=True)
@@ -654,7 +683,8 @@ def insurance_detail(request, pk):
     p.status = p.status_on(today, _soon(p, cfg))
     p.days_left = (p.expiry_date - today).days
     return render(request, "insurance_detail.html", {
-        "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.can_manage_insurance, "can_admin": request.user.is_admin,
+        "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.can_manage_insurance and not p.archived_at,
+        "can_restore": request.user.can_manage_insurance and bool(p.archived_at), "can_admin": request.user.is_admin,
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
         "premium_days": (p.premium_due - today).days if p.premium_due else None,
         "log": p.log.select_related("actor")[:40], "instalments": _instalment_rows(p, today),
@@ -662,7 +692,7 @@ def insurance_detail(request, pk):
         "terms": INSTALMENT_TERMS,
         "claims": p.claims.select_related("equipment").prefetch_related("documents"),
         "stages": insurance_stages(_soon(p, cfg)),
-        "renewed_from": p.renewed_from, "renewals": p.renewals.all(), "max_mb": MAX_FILE_MB})
+        "renewed_from": p.renewed_from, "renewals": p.renewals.filter(archived_at__isnull=True), "max_mb": MAX_FILE_MB})
 
 
 @manager
@@ -672,7 +702,7 @@ def insurance_new(request):
     old = None
     renew = request.GET.get("renew") or request.POST.get("renew")
     if renew and renew.isdigit():
-        old = get_object_or_404(InsurancePolicy, pk=int(renew))
+        old = get_object_or_404(InsurancePolicy, pk=int(renew), archived_at__isnull=True)
         if not old.current:
             later = old.renewals.first()
             messages.error(request, "That policy is " + ("already renewed" + (f" by policy {later.policy_number}" if later else "")
@@ -736,7 +766,7 @@ def insurance_new(request):
 
 @manager
 def insurance_edit(request, pk):
-    p = get_object_or_404(InsurancePolicy, pk=pk)
+    p = get_object_or_404(InsurancePolicy, pk=pk, archived_at__isnull=True)
     money = _show_money(request.user)
     before = ilog.snapshot(p)  # taken first: validating the form changes the object in memory
     form = PolicyForm(request.POST or None, instance=p, show_money=money)
@@ -759,18 +789,54 @@ def insurance_edit(request, pk):
                                                    "max_mb": MAX_FILE_MB, "new": False})
 
 
+@manager
+@require_POST
+def insurance_archive(request, pk):
+    """Keeps the policy, its documents, claims and history, but takes it out of the lists, reminders and checks."""
+    p = get_object_or_404(_scoped(request.user), pk=pk)
+    p.archived_at, p.archived_by = timezone.now(), request.user
+    p.save(update_fields=["archived_at", "archived_by"])
+    ilog.record(p, request.user, "Archived")
+    old = p.renewed_from
+    if old and old.renewed and not old.renewals.filter(archived_at__isnull=True).exists():
+        # this was the renewal: the policy it replaced is the current one again
+        InsurancePolicy.objects.filter(pk=old.pk).update(renewed=False)
+        ilog.record(old, request.user, f"Current again: its renewal {p.policy_number} was archived")
+    messages.success(request, "Policy archived. Find it again under Status: Archived.")
+    return redirect("insurance_list")
+
+
+@manager
+@require_POST
+def insurance_restore(request, pk):
+    p = get_object_or_404(_scoped(request.user, archived=True), pk=pk)
+    p.archived_at = p.archived_by = None
+    p.save(update_fields=["archived_at", "archived_by"])
+    ilog.record(p, request.user, "Restored from the archive")
+    old = p.renewed_from
+    if old and not old.archived_at and not old.renewed:
+        InsurancePolicy.objects.filter(pk=old.pk).update(renewed=True)
+        ilog.record(old, request.user, f"Renewed again: its renewal {p.policy_number} was restored")
+    messages.success(request, "Policy restored.")
+    return redirect("insurance_detail", pk=p.pk)
+
+
 @admin_only
 @require_POST
-def insurance_delete(request, pk):
-    p = get_object_or_404(InsurancePolicy, pk=pk)
+def insurance_purge(request, pk):
+    """Deleting for good: only an administrator, only an archived policy, and only after typing its number.
+    The history lines stay (with the policy's name) so there is still a record that it existed."""
+    p = get_object_or_404(_scoped(request.user, archived=True), pk=pk)
+    if (request.POST.get("confirm") or "").strip().lower() != p.policy_number.strip().lower():
+        messages.error(request, "Type the policy number exactly to delete it for good. Nothing was deleted.")
+        return redirect("insurance_detail", pk=p.pk)
+    ilog.record(p, request.user, f"Deleted for good by {request.user.display_name}")
     for d in p.documents.all():
         d.file.delete(save=False)
     for d in ClaimDocument.objects.filter(claim__policy=p):
         d.file.delete(save=False)
-    if p.renewed_from_id and not p.renewals.exists():  # deleting a renewal: the earlier policy is current again
-        InsurancePolicy.objects.filter(pk=p.renewed_from_id).update(renewed=False)
     p.delete()
-    messages.success(request, "Policy deleted.")
+    messages.success(request, "Policy deleted for good. A line in the history still records it.")
     return redirect("insurance_list")
 
 
@@ -780,7 +846,7 @@ def insurance_delete(request, pk):
 @manager
 @require_POST
 def insurance_doc_add(request, pk):
-    p = get_object_or_404(InsurancePolicy, pk=pk)
+    p = get_object_or_404(InsurancePolicy, pk=pk, archived_at__isnull=True)
     files = request.FILES.getlist("files")
     problems = check_files(files) if files else ["Choose a file first."]
     if problems:
@@ -797,7 +863,7 @@ def insurance_doc_add(request, pk):
 @manager
 @require_POST
 def insurance_doc_delete(request, pk):
-    d = get_object_or_404(InsuranceDocument, pk=pk)
+    d = get_object_or_404(InsuranceDocument, pk=pk, policy__archived_at__isnull=True)
     p = d.policy
     if p.documents.count() <= 1:
         messages.error(request, "A policy must keep at least one document. Add the new one first, then remove this one.")
@@ -831,7 +897,7 @@ def serve_document(request, d):
 @viewer
 def insurance_doc(request, pk):
     d = get_object_or_404(InsuranceDocument.objects.select_related("policy"), pk=pk)
-    if not _scoped(request.user).filter(pk=d.policy_id).exists():
+    if not _can_open(request.user, d.policy_id):
         raise Http404
     return serve_document(request, d)
 
@@ -839,7 +905,7 @@ def insurance_doc(request, pk):
 @viewer
 def claim_doc(request, pk):
     d = get_object_or_404(ClaimDocument.objects.select_related("claim"), pk=pk)
-    if not _scoped(request.user).filter(pk=d.claim.policy_id).exists():
+    if not _can_open(request.user, d.claim.policy_id):
         raise Http404
     return serve_document(request, d)
 
@@ -955,7 +1021,7 @@ def _access_rows(request):
     want = request.GET.get("show", "with")
     want = want if want in dict(ACCESS_FILTERS) else "with"
     resp_count = {}
-    for p in InsurancePolicy.objects.filter(cancelled=False, renewed=False).values_list("responsible", flat=True):
+    for p in InsurancePolicy.objects.filter(cancelled=False, renewed=False, archived_at__isnull=True).values_list("responsible", flat=True):
         if p:
             resp_count[p] = resp_count.get(p, 0) + 1
     rows = []

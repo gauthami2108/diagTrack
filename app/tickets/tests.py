@@ -1854,7 +1854,7 @@ from datetime import date as _ins_date
 from django.contrib.messages import get_messages
 from django.core.files.uploadedfile import SimpleUploadedFile as _InsFile
 
-from .models import InsuranceCoverType, InsuranceClaim, InsuranceDocument, InsurancePolicy, Licence, LicenceDocument
+from .models import InsuranceCoverType, InsuranceClaim, InsuranceDocument, InsurancePolicy, Licence, LicenceDocument, InsuranceLog, LicenceLog
 
 
 def _pdf(name="policy.pdf"):
@@ -2616,10 +2616,44 @@ class InsuranceTests(Base):
             "renew": old.pk, "cover_type": self.fire.pk, "insurer": "x", "policy_number": "B",
             "start_date": str(self.today), "expiry_date": str(self.today + timedelta(days=364)), "files": _pdf()})
         new = InsurancePolicy.objects.get(policy_number="B")
-        self.client.post(reverse("insurance_delete", args=[new.pk]))
+        self.client.post(reverse("insurance_archive", args=[new.pk]))
         old.refresh_from_db()
         self.assertFalse(old.renewed)
-        self.assertFalse(InsurancePolicy.objects.filter(policy_number="B").exists())
+        new.refresh_from_db()
+        self.assertIsNotNone(new.archived_at)  # kept, not deleted
+        self.client.post(reverse("insurance_restore", args=[new.pk]))
+        old.refresh_from_db()
+        self.assertTrue(old.renewed)
+
+    def test_archive_hides_restores_and_purge_needs_typed_confirmation(self):
+        p = self.policy([self.kkp], days=100, number="ARC1")
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.post(reverse("insurance_archive", args=[p.pk])).status_code, 302)
+        p.refresh_from_db()
+        self.assertFalse(p.current)
+        self.assertNotContains(self.client.get(reverse("insurance_list")), "ARC1")
+        self.assertContains(self.client.get(reverse("insurance_list") + "?status=archived"), "ARC1")
+        self.assertEqual(self.client.get(reverse("insurance_edit", args=[p.pk])).status_code, 404)
+        # purge: wrong confirmation does nothing, right one deletes and the history survives with a label
+        self.client.post(reverse("insurance_delete", args=[p.pk]), {"confirm": "nope"})
+        self.assertTrue(InsurancePolicy.objects.filter(pk=p.pk).exists())
+        self.client.post(reverse("insurance_delete", args=[p.pk]), {"confirm": "arc1"})
+        self.assertFalse(InsurancePolicy.objects.filter(pk=p.pk).exists())
+        line = InsuranceLog.objects.filter(policy__isnull=True, text__startswith="Deleted for good").get()
+        self.assertIn("ARC1", line.label)
+
+    def test_a_live_policy_cannot_be_deleted_for_good(self):
+        p = self.policy([self.kkp], days=100, number="LIVE1")
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.post(reverse("insurance_delete", args=[p.pk]), {"confirm": "LIVE1"}).status_code, 404)
+        self.assertTrue(InsurancePolicy.objects.filter(pk=p.pk).exists())
+
+    def test_archived_policy_is_out_of_reminders_and_hidden_from_view_only_people(self):
+        p = self.policy([self.kkp], days=5, number="ARC2")
+        self.client.force_login(self.admin)
+        self.client.post(reverse("insurance_archive", args=[p.pk]))
+        self.client.force_login(self.cm)
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[p.pk])).status_code, 404)
 
 
 class InsuranceReminderTests(Base):
@@ -3013,8 +3047,25 @@ class LicenceTests(Base):
     def test_only_an_administrator_deletes_a_licence(self):
         x = self.lic([self.kkp])
         self.client.force_login(self.admin)
-        self.assertEqual(self.client.post(reverse("licence_delete", args=[x.pk])).status_code, 302)
+        self.assertEqual(self.client.post(reverse("licence_delete", args=[x.pk]), {"confirm": x.name}).status_code, 404)  # live: archive first
+        self.client.post(reverse("licence_archive", args=[x.pk]))
+        x.refresh_from_db()
+        self.assertFalse(x.current)
+        self.assertEqual(self.client.get(reverse("licence_list") + "?status=archived").status_code, 200)
+        self.client.post(reverse("licence_delete", args=[x.pk]), {"confirm": "wrong"})
+        self.assertEqual(Licence.objects.count(), 1)
+        self.client.post(reverse("licence_delete", args=[x.pk]), {"confirm": x.name})
         self.assertEqual(Licence.objects.count(), 0)
+        self.assertTrue(LicenceLog.objects.filter(licence__isnull=True, text__startswith="Deleted for good").exists())
+
+    def test_archived_licence_leaves_reminders_and_can_be_restored(self):
+        x = self.lic([self.kkp])
+        self.client.force_login(self.admin)
+        self.client.post(reverse("licence_archive", args=[x.pk]))
+        self.assertNotContains(self.client.get(reverse("licence_list")), x.name)
+        self.client.post(reverse("licence_restore", args=[x.pk]))
+        x.refresh_from_db()
+        self.assertIsNone(x.archived_at)
 
     def test_list_filters_status_and_export(self):
         import io
