@@ -27,7 +27,7 @@ def ticket_url(ticket, settings=None):
 def notify(users, ticket, title, body="", urgent=False, exclude=None, kind="other", link=""):
     """Alert each user once: the bell, then email, SMS and WhatsApp as the Message templates say.
     kind is the event (raised, closed, escalation and so on). It picks the wording and decides how the
-    pop-up looks. By default SMS and WhatsApp go out only for urgent alerts."""
+    pop-up looks. Every active channel sends by default; a template can be set to Only urgent or Never."""
     s = SiteSettings.load()
     seen = set()
     tpl = {}
