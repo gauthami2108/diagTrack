@@ -11,6 +11,7 @@ Who sees what:
 """
 import io
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 
 from django import forms
 from django.contrib import messages
@@ -20,7 +21,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import (Centre, ClaimDocument, Equipment, InsuranceClaim, InsuranceCoverType, InsuranceDocument, InsurancePolicy, Licence,
+from .models import (Centre, ClaimDocument, PremiumInstalment, Equipment, InsuranceClaim, InsuranceCoverType, InsuranceDocument, InsurancePolicy, Licence,
                      SiteSettings, User)
 from . import insurance_log as ilog
 from .services import insurance_stages
@@ -135,6 +136,9 @@ class PolicyForm(forms.ModelForm):
         self.fields["responsible"].help_text = ("Optional. Tick one or more people. They also receive the expiry and "
                                                 "premium reminders if they have Insurance access.")
         self.fields["equipment"].queryset = Equipment.objects.filter(active=True).select_related("centre")
+        if self.instance.pk and self.instance.instalments.exists():
+            self.fields["premium_due"].disabled = True
+            self.fields["premium_due"].help_text = "Set from the instalment schedule on the policy page: the earliest instalment not yet paid."
         if not show_money:
             del self.fields["sum_insured"], self.fields["premium"]
 
@@ -497,6 +501,108 @@ def _gap_count(user, centres, cfg):
 # --------------------------------------------------------------------------
 # One policy
 # --------------------------------------------------------------------------
+INSTALMENT_TERMS = [(1, "Monthly"), (3, "Every 3 months"), (6, "Every 6 months"), (12, "Yearly")]
+
+
+def _add_months(d, n):
+    import calendar
+    m = d.month - 1 + n
+    y, m = d.year + m // 12, m % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def _instalment_rows(p, today):
+    rows = list(p.instalments.all())
+    for i in rows:
+        i.state = "paid" if i.paid_on else "overdue" if i.due_date < today else "due"
+        i.days = (i.due_date - today).days
+    return rows
+
+
+def _own_policy(request, pk):
+    return get_object_or_404(_scoped(request.user), pk=pk)
+
+
+def _parse_date(v):
+    try:
+        return date.fromisoformat((v or "").strip())
+    except ValueError:
+        return None
+
+
+def _amount(request, name):
+    """A rupee amount from the form, only for people who see money; None when empty or not valid."""
+    if not _show_money(request.user):
+        return None
+    try:
+        v = Decimal((request.POST.get(name) or "").replace(",", "").strip())
+        return v if 0 <= v < Decimal(10) ** 10 else None
+    except InvalidOperation:
+        return None
+
+
+@manager
+@require_POST
+def instalment_add(request, pk):
+    p = _own_policy(request, pk)
+    due = _parse_date(request.POST.get("due_date"))
+    if not due:
+        messages.error(request, "Choose the date the instalment is due.")
+    else:
+        PremiumInstalment.objects.create(policy=p, due_date=due, amount=_amount(request, "amount"))
+        p.sync_premium_due()
+        ilog.record(p, request.user, f"Instalment due {due:%d %b %Y} added")
+        messages.success(request, "Instalment added.")
+    return redirect("insurance_detail", pk=p.pk)
+
+
+@manager
+@require_POST
+def instalment_generate(request, pk):
+    p = _own_policy(request, pk)
+    first = _parse_date(request.POST.get("first_due"))
+    try:
+        count, step = int(request.POST.get("count", "")), int(request.POST.get("step", ""))
+    except ValueError:
+        count = step = 0
+    if not first or not (2 <= count <= 24) or step not in dict(INSTALMENT_TERMS):
+        messages.error(request, "Give the first due date, how often, and a number of instalments from 2 to 24.")
+        return redirect("insurance_detail", pk=p.pk)
+    if p.instalments.exists():
+        messages.error(request, "This policy already has a schedule. Remove its instalments first, or add one by one.")
+        return redirect("insurance_detail", pk=p.pk)
+    each = _amount(request, "amount")
+    for n in range(count):
+        PremiumInstalment.objects.create(policy=p, due_date=_add_months(first, n * step), amount=each)
+    p.sync_premium_due()
+    ilog.record(p, request.user, f"Instalment schedule added: {count} from {first:%d %b %Y}")
+    messages.success(request, f"{count} instalments added.")
+    return redirect("insurance_detail", pk=p.pk)
+
+
+@manager
+@require_POST
+def instalment_paid(request, pk):
+    i = get_object_or_404(PremiumInstalment.objects.select_related("policy"), pk=pk)
+    p = _own_policy(request, i.policy_id)
+    i.paid_on = None if i.paid_on else timezone.localdate()
+    i.save(update_fields=["paid_on"])
+    p.sync_premium_due()
+    ilog.record(p, request.user, f"Instalment due {i.due_date:%d %b %Y} " + ("marked paid" if i.paid_on else "marked not paid"))
+    return redirect("insurance_detail", pk=p.pk)
+
+
+@manager
+@require_POST
+def instalment_delete(request, pk):
+    i = get_object_or_404(PremiumInstalment.objects.select_related("policy"), pk=pk)
+    p = _own_policy(request, i.policy_id)
+    ilog.record(p, request.user, f"Instalment due {i.due_date:%d %b %Y} removed")
+    i.delete()
+    p.sync_premium_due()
+    return redirect("insurance_detail", pk=p.pk)
+
+
 @viewer
 def insurance_detail(request, pk):
     p = _get_visible(request.user, pk)
@@ -508,7 +614,8 @@ def insurance_detail(request, pk):
         "p": p, "money": _show_money(request.user, cfg), "can_edit": request.user.can_manage_insurance, "can_admin": request.user.is_admin,
         "docs": p.documents.all(), "machines": p.equipment.select_related("centre"), "soon": _soon(p, cfg),
         "premium_days": (p.premium_due - today).days if p.premium_due else None,
-        "log": p.log.select_related("actor")[:40],
+        "log": p.log.select_related("actor")[:40], "instalments": _instalment_rows(p, today),
+        "terms": INSTALMENT_TERMS,
         "claims": p.claims.select_related("equipment").prefetch_related("documents"),
         "stages": insurance_stages(_soon(p, cfg)),
         "renewed_from": p.renewed_from, "renewals": p.renewals.all(), "max_mb": MAX_FILE_MB})

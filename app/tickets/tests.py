@@ -3746,3 +3746,99 @@ class ImportLicencesClaimsTests(Base):
         bulk_import.apply(plan)
         self.mri.refresh_from_db()
         self.assertEqual(self.mri.value, 30000000)
+
+
+class InstalmentTests(Base):
+    """Phase 22: a premium paid in instalments."""
+
+    def setUp(self):
+        _grant_insurance(self)
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, email="boss@example.com")
+        self.fire = InsuranceCoverType.objects.get(name="Fire")
+        self.today = timezone.localdate()
+        self.p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="NI", policy_number="I-1",
+                                                start_date=self.today - timedelta(days=30),
+                                                expiry_date=self.today + timedelta(days=335))
+        self.p.centres.set([self.kkp])
+        self.client.force_login(self.admin)
+
+    def test_schedule_drives_the_next_premium_due(self):
+        first = self.today + timedelta(days=10)
+        r = self.client.post(reverse("instalment_generate", args=[self.p.pk]),
+                             {"first_due": str(first), "step": "3", "count": "4", "amount": "10000"})
+        self.assertEqual(r.status_code, 302)
+        self.p.refresh_from_db()
+        self.assertEqual(self.p.instalments.count(), 4)
+        self.assertEqual(self.p.premium_due, first)
+        dues = [i.due_date for i in self.p.instalments.all()]
+        self.assertEqual(dues[1].month, (first.month + 2) % 12 + 1)
+        i1 = self.p.instalments.first()
+        self.client.post(reverse("instalment_paid", args=[i1.pk]))
+        self.p.refresh_from_db()
+        self.assertEqual(self.p.premium_due, dues[1])
+        self.assertTrue(any("marked paid" in e.text for e in self.p.log.all()))
+        for i in self.p.instalments.filter(paid_on__isnull=True):
+            self.client.post(reverse("instalment_paid", args=[i.pk]))
+        self.p.refresh_from_db()
+        self.assertIsNone(self.p.premium_due)
+        self.client.post(reverse("instalment_paid", args=[i1.pk]))  # back to not paid
+        self.p.refresh_from_db()
+        self.assertEqual(self.p.premium_due, dues[0])
+
+    def test_month_end_dates_are_clamped(self):
+        from .views_insurance import _add_months
+        self.assertEqual(_add_months(_ins_date(2026, 1, 31), 1), _ins_date(2026, 2, 28))
+        self.assertEqual(_add_months(_ins_date(2026, 11, 30), 3), _ins_date(2027, 2, 28))
+
+    def test_bad_input_and_second_schedule_are_refused(self):
+        r = self.client.post(reverse("instalment_generate", args=[self.p.pk]), {"first_due": "", "step": "3", "count": "4"})
+        self.assertEqual(self.p.instalments.count(), 0)
+        self.client.post(reverse("instalment_generate", args=[self.p.pk]),
+                         {"first_due": str(self.today), "step": "3", "count": "99"})
+        self.assertEqual(self.p.instalments.count(), 0)
+        ok = {"first_due": str(self.today), "step": "6", "count": "2"}
+        self.client.post(reverse("instalment_generate", args=[self.p.pk]), ok)
+        self.client.post(reverse("instalment_generate", args=[self.p.pk]), ok)
+        self.assertEqual(self.p.instalments.count(), 2)
+
+    def test_single_instalment_add_and_remove(self):
+        due = self.today + timedelta(days=5)
+        self.client.post(reverse("instalment_add", args=[self.p.pk]), {"due_date": str(due), "amount": "5,000"})
+        i = self.p.instalments.get()
+        self.assertEqual(i.amount, 5000)
+        self.p.refresh_from_db()
+        self.assertEqual(self.p.premium_due, due)
+        self.client.post(reverse("instalment_delete", args=[i.pk]))
+        self.assertEqual(self.p.instalments.count(), 0)
+
+    def test_the_policy_form_cannot_override_the_schedule_and_page_shows_it(self):
+        due = self.today + timedelta(days=5)
+        self.client.post(reverse("instalment_add", args=[self.p.pk]), {"due_date": str(due)})
+        r = self.client.post(reverse("insurance_edit", args=[self.p.pk]), {
+            "cover_type": self.fire.pk, "centres": [self.kkp.pk], "insurer": "NI", "policy_number": "I-1",
+            "start_date": str(self.p.start_date), "expiry_date": str(self.p.expiry_date),
+            "premium_due": str(due + timedelta(days=90))})
+        self.assertEqual(r.status_code, 302)
+        self.p.refresh_from_db()
+        self.assertEqual(self.p.premium_due, due)
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[self.p.pk])), "Premium instalments")
+
+    def test_money_is_hidden_from_people_who_may_not_see_it_and_scope_applies(self):
+        self.client.post(reverse("instalment_add", args=[self.p.pk]), {"due_date": str(self.today), "amount": "7777"})
+        self.assertEqual(self.p.instalments.get().amount, 7777)
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[self.p.pk])), "7777")
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="own")
+        self.cm.centres.set([self.sec])
+        self.client.force_login(self.cm)
+        self.assertEqual(self.client.get(reverse("insurance_detail", args=[self.p.pk])).status_code, 404)
+        self.assertEqual(self.client.post(reverse("instalment_add", args=[self.p.pk]), {"due_date": str(self.today)}).status_code, 403)
+        i = self.p.instalments.get()
+        self.assertEqual(self.client.post(reverse("instalment_paid", args=[i.pk])).status_code, 403)
+
+    def test_the_reminder_follows_the_schedule(self):
+        due = self.today + timedelta(days=7)
+        self.client.post(reverse("instalment_add", args=[self.p.pk]), {"due_date": str(due)})
+        OutboundMessage.objects.all().delete()
+        services.insurance_checks()
+        self.p.refresh_from_db()
+        self.assertEqual(self.p.premium_alert_for, due)
