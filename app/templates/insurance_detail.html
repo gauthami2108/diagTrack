@@ -44,6 +44,11 @@
       {% else %}<p class="empty">No changes recorded yet.</p>{% endif %}
     </section>
 
+    {% if past_terms %}<section class="panel"><header><h2>All terms of this cover</h2><a class="btn btn-ghost btn-s" href="{% url 'insurance_history' %}?q={{ p.policy_number|urlencode }}">History</a></header>
+      <ul class="plain">{% for t in past_terms %}<li><a href="{% url 'insurance_detail' t.pk %}">{{ t.start_date|date:"d M Y" }} to {{ t.expiry_date|date:"d M Y" }}</a>, {{ t.insurer }} {{ t.policy_number }}
+        {% include "_ins_status.html" with p=t %}{% if t.gap %} <small class="warn-text">{{ t.gap }}</small>{% endif %}</li>{% endfor %}</ul>
+    </section>{% endif %}
+
     {% if renewed_from or renewals %}<section class="panel"><header><h2>Renewals</h2></header>
       <ul class="plain">
         {% if renewed_from %}<li>Renews <a href="{% url 'insurance_detail' renewed_from.pk %}">{{ renewed_from.policy_number }}</a> ({{ renewed_from.start_date|date:"d M Y" }} to {{ renewed_from.expiry_date|date:"d M Y" }})</li>{% endif %}

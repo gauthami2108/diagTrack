@@ -23,6 +23,7 @@
   <a role="tab" href="?tab=gaps" {% if tab == 'gaps' %}aria-selected="true"{% endif %}>Coverage grid{% if gap_total %} <span class="count count-bad">{{ gap_total }}</span>{% endif %}</a>
   <a role="tab" href="?tab=claims" {% if tab == 'claims' %}aria-selected="true"{% endif %}>Claims{% if open_claims %} <span class="count">{{ open_claims }}</span>{% endif %}</a>
   <a role="tab" href="{% url 'licence_list' %}">Licences</a>
+  <a role="tab" href="{% url 'insurance_history' %}">History</a>
   {% if can_admin %}<a role="tab" href="{% url 'insurance_access' %}">Access</a>{% endif %}
   {% if can_admin %}<a role="tab" href="?tab=types" {% if tab == 'types' %}aria-selected="true"{% endif %}>Cover types</a>{% endif %}
 </div>

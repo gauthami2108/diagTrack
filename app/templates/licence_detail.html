@@ -14,6 +14,10 @@
   {% if can_admin %}<form method="post" action="{% url 'licence_delete' x.pk %}" class="inline-form" style="margin-top:8px">{% csrf_token %}<label>To delete it for good, type the name <b>{{ x.name }}</b>: <input name="confirm" autocomplete="off" required></label> <button class="btn btn-ghost btn-quiet-bad" type="submit">Delete permanently</button></form>{% endif %}</div>{% endif %}
 <div class="grid-2">
   <div class="stack">
+    {% if past_terms %}<section class="panel"><header><h2>All terms of this licence</h2></header>
+      <ul class="plain">{% for t in past_terms %}<li><a href="{% url 'licence_detail' t.pk %}">{{ t.issued_on|date:"d M Y" }} to {{ t.valid_until|date:"d M Y" }}</a>{% if t.reference_number %}, no. {{ t.reference_number }}{% endif %}
+        {% include "_lic_status.html" with x=t %}{% if t.gap %} <small class="warn-text">{{ t.gap }}</small>{% endif %}</li>{% endfor %}</ul>
+    </section>{% endif %}
     <section class="panel"><header><h2>Details</h2></header>
       <dl class="kv">
         <div><dt>Licence</dt><dd>{{ x.name }}</dd></div>

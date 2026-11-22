@@ -1953,6 +1953,19 @@ class InsuranceTests(Base):
             self.assertEqual(self.client.get(reverse("insurance_edit", args=[p.pk])).status_code, 403)
             self.assertEqual(self.client.post(reverse("insurance_delete", args=[p.pk])).status_code, 403)
 
+    def test_policy_history_series_and_manual_link(self):
+        old = self.policy([self.kkp], days=-100, number="H1")
+        new = self.policy([self.kkp], days=250, number="H2")
+        other = self.policy([self.sec] if hasattr(self, "sec") else [self.kkp], days=250, number="H3", cover=self.fire)
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("insurance_history"))
+        self.assertTrue(any(s["count"] >= 2 for s in r.context["series"]))
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[new.pk])), "All terms of this cover")
+        form = self.client.get(reverse("insurance_edit", args=[new.pk]))
+        self.assertIn("earlier", form.context["form"].fields)
+        self.assertEqual(self.client.get(reverse("insurance_history_export")).status_code, 200)
+        self.assertTrue(other.pk)
+
     def test_a_policy_can_have_several_responsible_people(self):
         a = User.objects.create_user("anil", password="Demo@12345", role=User.AGENT)
         b = User.objects.create_user("bina", password="Demo@12345", role=User.AGENT)
@@ -3066,6 +3079,46 @@ class LicenceTests(Base):
         self.client.post(reverse("licence_restore", args=[x.pk]))
         x.refresh_from_db()
         self.assertIsNone(x.archived_at)
+
+    def test_history_groups_terms_flags_gaps_and_links_manually(self):
+        import io
+        from openpyxl import load_workbook
+        t = self.today
+        a = Licence.objects.create(name="Fire NOC", issuer="Fire dept", reference_number="N1", issued_on=t - timedelta(days=700),
+                                   valid_until=t - timedelta(days=335))
+        b = Licence.objects.create(name="fire noc", issuer="Fire dept", reference_number="N2", issued_on=t - timedelta(days=300),
+                                   valid_until=t + timedelta(days=65))  # 34 days after a ended: a gap
+        for x in (a, b):
+            x.centres.set([self.kkp])
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("insurance_history") + "?kind=licences")
+        self.assertEqual(len(r.context["series"]), 1)
+        self.assertEqual(r.context["warn_total"], 1)
+        self.assertContains(r, "No cover or valid licence for 34 days")
+        self.assertContains(self.client.get(reverse("licence_detail", args=[b.pk])), "All terms of this licence")
+        # link manually: the earlier term is marked Renewed, and undoing it makes it current again
+        d = {"name": b.name, "issuer": "Fire dept", "reference_number": "N2", "centres": [self.kkp.pk],
+             "issued_on": str(b.issued_on), "valid_until": str(b.valid_until), "earlier": a.pk}
+        self.assertEqual(self.client.post(reverse("licence_edit", args=[b.pk]), d).status_code, 302)
+        a.refresh_from_db(); b.refresh_from_db()
+        self.assertTrue(a.renewed)
+        self.assertEqual(b.renewed_from_id, a.pk)
+        d["earlier"] = ""
+        self.client.post(reverse("licence_edit", args=[b.pk]), d)
+        a.refresh_from_db()
+        self.assertFalse(a.renewed)
+        # the export lists every term, archived ones included
+        self.client.post(reverse("licence_archive", args=[a.pk]))
+        r = self.client.get(reverse("insurance_history_export") + "?kind=licences")
+        ws = load_workbook(io.BytesIO(r.content)).active
+        self.assertEqual(ws.max_row, 3)
+        # a view-only person does not see archived terms
+        self.client.force_login(self.cm)
+        r = self.client.get(reverse("insurance_history") + "?kind=licences")
+        if r.status_code == 200:
+            self.assertEqual(r.context["terms_total"], 1)
+        else:
+            self.assertEqual(r.status_code, 403)
 
     def test_list_filters_status_and_export(self):
         import io

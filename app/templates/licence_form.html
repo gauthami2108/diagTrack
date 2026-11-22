@@ -17,6 +17,7 @@
   {% include "_field.html" with f=form.remind_days %}
   {% include "_checklist.html" with title="Responsible" name="responsible" uid="lic-people" items=form.responsible_items errors=form.responsible.errors hint=form.responsible.help_text %}
   {% include "_field.html" with f=form.notes %}
+  {% if form.earlier %}{% include "_field.html" with f=form.earlier %}{% endif %}
   {% if not new %}<label class="check"><input type="checkbox" name="closed" {% if form.closed.value %}checked{% endif %}><span><b>{{ form.closed.label|capfirst }}</b><small>Tick this if you no longer need it (for example a machine was removed). Reminders stop.</small></span></label>{% endif %}
 
   <div class="field"><span>Documents{% if new %} (required){% endif %}</span>
