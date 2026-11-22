@@ -615,7 +615,16 @@ class TemplateAndActionTests(Base):
         self.assertIn(f"http://diagtrack.local/tickets/{t.number}/", mail.body)
         self.assertNotIn("Machine:", mail.body)  # no machine on this ticket
         self.assertNotIn("{", mail.body)
-        # P3 ticket: SMS and WhatsApp are for urgent alerts only by default
+        # By default every active channel is set to Always (admin manual, section 8), so a P3 ticket reaches SMS and WhatsApp too
+        self.assertTrue(OutboundMessage.objects.filter(channel="sms").exists())
+        self.assertTrue(OutboundMessage.objects.filter(channel="whatsapp").exists())
+        # ... and "Only urgent" on those channels keeps a P3 ticket off them
+        from .models import MessageTemplate
+        for ev in ("raised", "assigned"):
+            for ch in ("sms", "whatsapp"):
+                MessageTemplate.objects.create(event=ev, channel=ch, send="urgent", body="{ticket}")
+        OutboundMessage.objects.filter(channel__in=["sms", "whatsapp"]).delete()
+        self.raise_ticket()
         self.assertFalse(OutboundMessage.objects.filter(channel__in=["sms", "whatsapp"]).exists())
 
     def test_saved_template_changes_wording_and_send_rule(self):
@@ -1293,6 +1302,15 @@ class Phase2EnhancementTests(Base):
 class Phase3Tests(Base):
     """Checks for Phase 3 enhancements: SSE stream and Prometheus metrics."""
 
+    def setUp(self):
+        # These tests were written against users the shared fixture does not create.
+        self.admin = User.objects.create_user("padmin", password="Demo@12345", role=User.ADMIN, first_name="Padmin",
+                                              email="padmin@example.com", mobile="919999999990")
+        self.agent1 = User.objects.create_user("agent1", password="Demo@12345", role=User.AGENT, first_name="Agent1",
+                                               email="agent1@example.com", mobile="919999999991")
+        self.agent1.centres.set([self.kkp])
+        self.agent1.departments.set([self.bio])
+
     def test_sse_live_stream_endpoint(self):
         self.client.force_login(self.req)
         Notification.objects.create(user=self.req, title="Test Alert", body="Alert body", urgent=True)
@@ -1399,6 +1417,7 @@ class Phase3Tests(Base):
             frequency_months=6,
             next_due_date=today,
             advance_notice_days=7,
+            assigned_to=self.agent1,
         )
         services.run_pm_checks(today=today)
         pm.refresh_from_db()
