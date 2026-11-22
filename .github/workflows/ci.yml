@@ -1,5 +1,5 @@
 # Checks every change on real machines:
-#   tests            the test suite on PostgreSQL 17, and the setup program's own tests
+#   tests            a code check, the test suite on PostgreSQL 17 (it also fails if a model changed without a migration), and the setup program's own tests
 #   screens          every screen opened in a browser as each kind of user; layout faults fail the run
 #   docker           setup -> up -> verify -> test restore, and a move file for the next job
 #   windows          native install on Windows Server 2022: install, check, update, test restore, remove
@@ -11,6 +11,14 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+
+# A newer push to the same branch or pull request cancels the run still going for the older one.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   DT_ADMIN_PASSWORD: Ci-Admin-2026x
@@ -39,6 +47,10 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q postgresql-client-17
           echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
       - run: pip install -r app/requirements.txt
+      - name: Code check (syntax errors, undefined names, unused imports)
+        run: |
+          pip install ruff==0.14.5
+          ruff check --select E9,F63,F7,F82,F401,F811 app --exclude app/tickets/migrations
       - name: Test suite
         working-directory: app
         run: |

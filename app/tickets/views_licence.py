@@ -16,7 +16,7 @@ from django.views.decorators.http import require_POST
 from . import insurance_log as ilog
 from .models import Centre, Equipment, Licence, LicenceDocument, User
 from .views import admin_only
-from .views_insurance import MAX_FILE_MB, PolicyForm, check_files, manager, serve_document, viewer, _plus_year
+from .views_insurance import MAX_FILE_MB, PolicyForm, check_files, manager, serve_document, viewer
 
 STATUS_FILTERS = [("", "Current (not renewed or closed)"), ("active", "Valid"), ("expiring", "Expiring soon"),
                   ("expired", "Expired"), ("renewed", "Renewed"), ("closed", "Closed"), ("all", "Everything")]
