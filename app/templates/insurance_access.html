@@ -15,6 +15,11 @@
 <form class="filters" method="get" data-autosubmit>
   <select name="show" aria-label="Who">{% for v, l in filters %}<option value="{{ v }}" {% if show == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
 </form>
+<details class="fold legend-box"><summary><h2>What the levels mean</h2></summary>
+  <ul class="plain"><li><b>None:</b> no Insurance screen.</li><li><b>View, own centres:</b> sees policies for the centres they belong to, and ones covering every centre; cannot change anything.</li>
+  <li><b>View, all centres:</b> sees every policy; cannot change anything.</li><li><b>Manage:</b> sees every policy, adds, edits, renews, archives and restores, and sees Activity.</li>
+  <li><b>Money figures</b> (sum insured, premium) are shown to administrators, Manage, and anyone in the Management role who has any access, unless switched off in Settings.</li>
+  <li><b>Administrator:</b> everything, plus this page, Cover types, and deleting an archived record for good.</li></ul></details>
 {% if not money_on %}<p class="sub tab-intro">Money figures are switched off for everyone in Settings.</p>{% endif %}
 {% if rows %}
 <div class="table-wrap"><table class="table">

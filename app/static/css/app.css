@@ -1224,3 +1224,9 @@ details.fold > summary::after { content: "Show"; font-size: 13px; color: var(--a
 details.fold[open] > summary::after { content: "Hide"; }
 details.fold[open] > summary { margin-bottom: 12px; }
 details.fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.legend { color: var(--ink-3); }
+.type-count { white-space: nowrap; min-width: 70px; }
+.sum-meta { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--ink-3); }
+tr.day-row th { text-align: left; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); background: var(--surface-2); padding: 6px 14px; }
+details.fold.legend-box { margin: 0 0 14px; }
+details.fold.legend-box > summary h2 { font-size: 14px; font-weight: 600; }
