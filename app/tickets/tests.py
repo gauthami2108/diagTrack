@@ -2369,7 +2369,7 @@ class InsuranceTests(Base):
         self.client.force_login(self.director)  # view all
         self.assertEqual(self.client.get(reverse("insurance_detail", args=[p.pk])).status_code, 200)
         self.assertEqual(self.client.get(reverse("insurance_edit", args=[p.pk])).status_code, 403)
-        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "Renew")
+        self.assertNotContains(self.client.get(reverse("insurance_detail", args=[p.pk])), "?renew=")
 
     def test_manage_can_add_edit_renew_and_add_documents_but_not_delete_or_change_types(self):
         User.objects.filter(pk=self.cm.pk).update(insurance_access="manage")
@@ -2633,6 +2633,7 @@ class InsuranceReminderTests(Base):
                                                  email="acc@example.com")
         self.fire = InsuranceCoverType.objects.get(name="Fire")
         self.expiry = _ins_date(2027, 3, 31)
+        SiteSettings.objects.update(insurance_quote_days=0)  # the quote reminder has its own tests (RenewalQuoteTests)
 
     def policy(self, centres=(), **kw):
         who = kw.pop("responsible", None)
@@ -4003,3 +4004,101 @@ class CodeHygieneTests(TestCase):
             call_command("makemigrations", "--check", "--dry-run", stdout=out, stderr=out)
         except SystemExit:
             self.fail("Models changed without a migration:\n" + out.getvalue())
+
+
+class RenewalQuoteTests(Base):
+    """Phase 26: renewal quotes and the reminder to ask for them."""
+
+    def setUp(self):
+        _grant_insurance(self)
+        self.admin = User.objects.create_user("boss", password="Demo@12345", role=User.ADMIN, first_name="Boss",
+                                              email="boss@example.com")
+        self.fire = InsuranceCoverType.objects.get(name="Fire")
+        self.today = timezone.localdate()
+        self.p = InsurancePolicy.objects.create(cover_type=self.fire, insurer="New India", policy_number="Q-1",
+                                                start_date=self.today - timedelta(days=275),
+                                                expiry_date=self.today + timedelta(days=60), premium=40000, sum_insured=5000000)
+        self.p.centres.set([self.kkp])
+        self.client.force_login(self.admin)
+
+    def add(self, insurer="Oriental", **kw):
+        return self.client.post(reverse("quote_add", args=[self.p.pk]), {"insurer": insurer, **kw})
+
+    def test_add_choose_unchoose_and_remove_with_history(self):
+        self.add("Oriental", premium="36,000", sum_insured="5000000", notes="Includes terrorism")
+        self.add("Bajaj", premium="39000")
+        a, b = self.p.quotes.order_by("pk")
+        self.assertEqual(a.premium, 36000)
+        self.client.post(reverse("quote_choose", args=[a.pk]))
+        self.client.post(reverse("quote_choose", args=[b.pk]))  # only one at a time
+        a.refresh_from_db(); b.refresh_from_db()
+        self.assertEqual((a.chosen, b.chosen), (False, True))
+        self.client.post(reverse("quote_choose", args=[b.pk]))
+        b.refresh_from_db()
+        self.assertFalse(b.chosen)
+        self.client.post(reverse("quote_delete", args=[a.pk]))
+        self.assertEqual(self.p.quotes.count(), 1)
+        texts = " | ".join(e.text for e in self.p.log.all())
+        for t in ("Renewal quote added from Oriental", "chosen for the renewal", "no longer the chosen", "quote from Oriental removed"):
+            self.assertIn(t.lower(), texts.lower())
+        self.assertNotIn("36000", texts)
+
+    def test_the_chosen_quote_starts_the_renewal(self):
+        self.add("Oriental", premium="36000", sum_insured="5500000")
+        q = self.p.quotes.get()
+        self.client.post(reverse("quote_choose", args=[q.pk]))
+        page = self.client.get(reverse("insurance_new"), {"renew": self.p.pk})
+        ini = page.context["form"].initial
+        self.assertEqual((ini["insurer"], ini["premium"]), ("Oriental", q.premium))
+        self.assertContains(page, "Started from the chosen quote")
+
+    def test_money_is_for_people_who_see_money_only(self):
+        self.add("Oriental", premium="36000")
+        self.assertContains(self.client.get(reverse("insurance_detail", args=[self.p.pk])), "36000")
+        User.objects.filter(pk=self.cm.pk).update(insurance_access="all")
+        self.client.force_login(self.cm)
+        page = self.client.get(reverse("insurance_detail", args=[self.p.pk]))
+        self.assertContains(page, "Oriental")
+        self.assertNotContains(page, "36000")
+        self.assertNotContains(page, "Add quote")
+        self.assertEqual(self.client.post(reverse("quote_add", args=[self.p.pk]), {"insurer": "X"}).status_code, 403)
+
+    def test_a_renewed_policy_takes_no_more_quotes_and_blank_insurer_is_refused(self):
+        self.add("")
+        self.assertEqual(self.p.quotes.count(), 0)
+        InsurancePolicy.objects.filter(pk=self.p.pk).update(renewed=True)
+        self.add("Oriental")
+        self.assertEqual(self.p.quotes.count(), 0)
+
+    def test_reminder_once_when_no_quote_and_never_when_there_is_one(self):
+        OutboundMessage.objects.all().delete()
+        Notification.objects.all().delete()
+        services.insurance_checks(today=self.today)
+        msgs = Notification.objects.filter(kind="insurance", user=self.admin, title__startswith="Ask for renewal quotes")
+        self.assertEqual(msgs.count(), 1)
+        self.assertIn("Q-1", msgs.get().body)
+        self.assertNotIn("40000", msgs.get().body)
+        services.insurance_checks(today=self.today + timedelta(days=1))
+        self.assertEqual(msgs.count(), 1)
+        self.p.refresh_from_db()
+        self.assertEqual(self.p.quote_alert_for, self.p.expiry_date)
+
+    def test_no_reminder_with_a_quote_far_ahead_or_when_switched_off(self):
+        self.add("Oriental")
+        Notification.objects.all().delete()
+        services.insurance_checks(today=self.today)
+        self.assertFalse(Notification.objects.filter(title__startswith="Ask for renewal quotes").exists())
+        self.p.quotes.all().delete()
+        SiteSettings.objects.update(insurance_quote_days=0)
+        services.insurance_checks(today=self.today)
+        self.assertFalse(Notification.objects.filter(title__startswith="Ask for renewal quotes").exists())
+        SiteSettings.objects.update(insurance_quote_days=30)
+        services.insurance_checks(today=self.today)  # ends in 60 days: outside the 30-day window
+        self.assertFalse(Notification.objects.filter(title__startswith="Ask for renewal quotes").exists())
+
+    def test_the_weekly_summary_lists_policies_without_quotes(self):
+        from .insurance_summary import build
+        titles = [t for t, _ in build(self.admin)]
+        self.assertIn("Ending soon with no renewal quote", titles)
+        self.add("Oriental")
+        self.assertNotIn("Ending soon with no renewal quote", [t for t, _ in (build(self.admin) or [])])

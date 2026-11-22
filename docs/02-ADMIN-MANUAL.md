@@ -340,6 +340,13 @@ yet paid, so the reminders, the Home card and the weekly summary keep working wi
 edit form is locked while a schedule exists. Remove all instalments to go back to a single date. Changes appear in the
 change history.
 
+**Renewal quotes.** Before a policy ends, record what each insurer offers in the **Renewal quotes** panel of the policy: insurer,
+premium and sum insured (only people who see money enter and see the amounts), how long the quote is valid, and a note. Choose
+**Choose** on the one you decide on; **Renew** then starts from that insurer and those amounts. DiagTrack sends one reminder
+(to the same people as the expiry reminders) when a policy is within 90 days of ending and has no quote recorded; change the 90
+in Settings (**Ask for renewal quotes this many days before expiry**, 0 switches it off). The weekly summary also lists policies
+ending soon with no quote. Quotes are not carried into the new policy; they stay with the old one.
+
 **Renewing.** Open the policy and choose **Renew**. The new policy starts the day after the old one ends and runs a year;
 change whatever differs and add the new document. The old policy is kept and marked Renewed, so the history stays.
 The form shows the policy being renewed and carries over everything else: insurer, number, broker, what is covered, centres,

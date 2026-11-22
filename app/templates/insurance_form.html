@@ -5,7 +5,8 @@
   <p class="sub">{% if old %}Renewing {{ old.cover_type.name }} {{ old.policy_number }}. The dates move forward a year; change anything that differs on the new policy. The old policy is marked Renewed when you save.{% else %}Dates and the policy document are required.{% endif %}</p></div></div>
 {% if old %}<section class="callout" role="note">{% icon 'rotate-ccw' %}<div><strong>The policy being renewed</strong>
   <p class="sub">{{ old.insurer }}, policy {{ old.policy_number }}, {{ old.start_date|date:"d M Y" }} to {{ old.expiry_date|date:"d M Y" }}{% if money and old.premium is not None %}, premium ₹{{ old.premium|floatformat:0 }}{% endif %}{% if money and old.sum_insured is not None %}, sum insured ₹{{ old.sum_insured|floatformat:0 }}{% endif %}.
-  Everything is carried over, including the machines, the people responsible and the next premium due (a year later). Check the new policy number, dates{% if money %}, premium and sum insured{% endif %}, then attach the new policy document.</p></div></section>{% endif %}
+  Everything is carried over, including the machines, the people responsible and the next premium due (a year later). Check the new policy number, dates{% if money %}, premium and sum insured{% endif %}, then attach the new policy document.</p>
+  {% if chosen %}<p class="sub"><b>Started from the chosen quote:</b> {{ chosen.insurer }}{% if money and chosen.premium is not None %}, premium ₹{{ chosen.premium|floatformat:0 }}{% endif %}.</p>{% endif %}</div></section>{% endif %}
 <form class="form-card" method="post" enctype="multipart/form-data" novalidate>
   {% csrf_token %}
   {% if old %}<input type="hidden" name="renew" value="{{ old.pk }}">{% endif %}

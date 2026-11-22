@@ -712,12 +712,14 @@ def insurance_checks(today=None):
     changing the next premium due date starts that reminder again.
     A policy that was already long over when it was recorded is not announced."""
     today = today or timezone.localdate()
-    default_first = SiteSettings.load().insurance_alert_days or 60
+    site = SiteSettings.load()
+    default_first = site.insurance_alert_days or 60
+    quote_days = site.insurance_quote_days
     admins = list(User.objects.filter(is_active=True).filter(Q(role=User.ADMIN) | Q(is_superuser=True)))
     holders = list(User.objects.filter(is_active=True, insurance_access__in=["own", "all", "manage"]).prefetch_related("centres"))
     sent = 0
     live = InsurancePolicy.objects.filter(cancelled=False, renewed=False).select_related(
-        "cover_type").prefetch_related("centres", "responsible")
+        "cover_type").prefetch_related("centres", "responsible", "quotes")
     for p in live:
         if p.alert_for != p.expiry_date:  # new policy, or the expiry date was changed: start again
             p.alert_for, p.alert_stage = p.expiry_date, 0
@@ -757,7 +759,17 @@ def insurance_checks(today=None):
                               urgent=pleft <= 1, kind="insurance", link=f"/insurance/{p.pk}/")
                     sent += 1
                 p.premium_alert_stage = pstage
-        p.save(update_fields=["alert_for", "alert_stage", "premium_alert_for", "premium_alert_stage"])
+
+        # Renewal is near and nobody has asked for quotes yet: one reminder per expiry date.
+        if quote_days and 0 <= left <= quote_days and not p.quotes.all() and p.quote_alert_for != p.expiry_date:
+            nt.notify(_insurance_people(p, admins, holders), None,
+                      f"Ask for renewal quotes: {p.cover_type.name} insurance for {p.location} ends in {left} day{'s' if left != 1 else ''}",
+                      f"Policy {p.policy_number} with {p.insurer} ends {p.expiry_date:%d %b %Y} and no renewal quote is recorded. "
+                      "Ask the insurers for quotes and record them on the policy.",
+                      urgent=False, kind="insurance", link=f"/insurance/{p.pk}/")
+            p.quote_alert_for = p.expiry_date
+            sent += 1
+        p.save(update_fields=["alert_for", "alert_stage", "premium_alert_for", "premium_alert_stage", "quote_alert_for"])
     return sent
 
 
