@@ -15,6 +15,7 @@ from decimal import Decimal, InvalidOperation
 
 from django import forms
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -1092,6 +1093,109 @@ def insurance_access_export(request):
     wb.save(buf)
     resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     resp["Content-Disposition"] = 'attachment; filename="insurance-access.xlsx"'
+    return resp
+
+
+ACTIVITY_KINDS = [("", "All kinds"), ("policy", "Policies"), ("licence", "Licences"), ("claim", "Claims"),
+                  ("instalment", "Instalments"), ("quote", "Renewal quotes")]
+_KIND_PREFIX = {"claim": "Claim", "instalment": "Instalment", "quote": ("Quote", "Renewal quote")}
+
+
+def _kind_of(text):
+    for k, pre in _KIND_PREFIX.items():
+        if text.startswith(pre):
+            return k
+    return "policy"
+
+
+def _activity_rows(request):
+    """Everything logged on policies, licences, claims, instalments and quotes that this person may see, newest first.
+    Entries about a record that was deleted for good are shown to administrators only: they no longer have centres."""
+    from . import views_licence as vl
+    from .models import InsuranceLog, LicenceLog
+    user, g = request.user, request.GET
+    f = {"kind": g.get("kind", "") if g.get("kind", "") in dict(ACTIVITY_KINDS) else "", "who": g.get("who", ""),
+         "centre": g.get("centre", ""), "q": g.get("q", "").strip(), "start": g.get("start", ""), "end": g.get("end", "")}
+    d1, d2 = _parse_date(f["start"]), _parse_date(f["end"])
+    pol = InsuranceLog.objects.select_related("actor", "policy")
+    lic = LicenceLog.objects.select_related("actor", "licence")
+    pol = pol.filter(Q(policy__in=_scoped(user, archived=None)) | Q(policy__isnull=user.is_admin))
+    lic = lic.filter(Q(licence__in=vl._scoped(user, archived=None)) | Q(licence__isnull=user.is_admin))
+    for qs_name in ("pol", "lic"):
+        qs = pol if qs_name == "pol" else lic
+        link = "policy" if qs_name == "pol" else "licence"
+        if d1:
+            qs = qs.filter(at__date__gte=d1)
+        if d2:
+            qs = qs.filter(at__date__lte=d2)
+        if f["who"] == "0":
+            qs = qs.filter(actor__isnull=True)
+        elif f["who"].isdigit():
+            qs = qs.filter(actor_id=int(f["who"]))
+        if f["centre"] == "0":
+            qs = qs.filter(**{f"{link}__centres__isnull": True})
+        elif f["centre"].isdigit():
+            qs = qs.filter(Q(**{f"{link}__centres": int(f["centre"])}) | Q(**{f"{link}__centres__isnull": True}))
+        if f["q"]:
+            qs = qs.filter(Q(text__icontains=f["q"]) | Q(label__icontains=f["q"]))
+        if qs_name == "pol":
+            pol = qs.distinct()
+        else:
+            lic = qs.distinct()
+    rows = []
+    if f["kind"] in ("", "licence"):
+        rows += [{"at": e.at, "who": e.actor.display_name if e.actor else "System", "kind": "licence", "label": e.label,
+                  "obj": e.licence, "text": e.text, "gone": e.licence_id is None} for e in lic]
+    if f["kind"] != "licence":
+        for e in pol:
+            k = _kind_of(e.text)
+            if f["kind"] in ("", k):
+                rows.append({"at": e.at, "who": e.actor.display_name if e.actor else "System", "kind": k, "label": e.label,
+                             "obj": e.policy, "text": e.text, "gone": e.policy_id is None})
+    rows.sort(key=lambda r: r["at"], reverse=True)
+    return rows, f
+
+
+@manager
+def insurance_activity(request):
+    rows, f = _activity_rows(request)
+    page = Paginator(rows, 100).get_page(request.GET.get("page"))
+    centres = Centre.objects.filter(active=True)
+    if not request.user.insurance_sees_all:
+        centres = centres.filter(pk__in=request.user.centres.all())
+    from .models import InsuranceLog, LicenceLog
+    actor_ids = set(InsuranceLog.objects.values_list("actor_id", flat=True)) | set(LicenceLog.objects.values_list("actor_id", flat=True))
+    people = User.objects.filter(pk__in={a for a in actor_ids if a}).order_by("first_name", "username")
+    q = request.GET.copy()
+    q.pop("page", None)
+    return render(request, "insurance_activity.html", {
+        "page": page, "f": f, "kinds": ACTIVITY_KINDS, "centres": centres, "people": people, "tab": "activity",
+        "total": len(rows), "query": q.urlencode()})
+
+
+@manager
+def insurance_activity_export(request):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    rows, _ = _activity_rows(request)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Activity"
+    ws.append(["When", "Who", "Kind", "Record", "What happened", "Record still exists"])
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    kinds = dict(ACTIVITY_KINDS)
+    for r in rows[:50000]:
+        ws.append([timezone.localtime(r["at"]).replace(tzinfo=None), r["who"], kinds[r["kind"]], r["label"], r["text"],
+                   "No, deleted for good" if r["gone"] else "Yes"])
+    for cell in ws["A"][1:]:
+        cell.number_format = "dd mmm yyyy hh:mm"
+    for i, w in enumerate([18, 22, 16, 50, 60, 18], start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = 'attachment; filename="insurance-activity.xlsx"'
     return resp
 
 
