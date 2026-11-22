@@ -322,6 +322,11 @@ The history is deleted with the policy.
 when DiagTrack is installed on a phone or desktop. The viewer has **Open in new tab** and **Download**; both are also beside each file.
 Some phones cannot show a PDF inside a page: use Download or Open in new tab there.
 
+**Printing the register.** On the Insurance and Licences pages choose **Print or PDF**. A paper-sized page opens with the
+policies (using the filters currently set on the Policies tab), the licences and certificates, claims still open, and valuable
+machines with no policy, as on today's date. Choose "Save as PDF" in the print window to make a PDF for an auditor or the
+bank. It shows only what the person printing may see, and the money columns only to people who see money.
+
 **Premium instalments.** For a premium paid in parts, open the policy and use **Premium instalments**: **Create schedule**
 (first due date, how often, how many, and the amount each if you see money) or add instalments one by one. Choose **Mark paid**
 when a payment is made (**Not paid** undoes it). The policy's **Next premium due** then always follows the first instalment not
