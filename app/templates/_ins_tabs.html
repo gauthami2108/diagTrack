@@ -4,6 +4,7 @@
   <a role="tab" href="{% url 'insurance_list' %}?tab=claims">Claims</a>
   <a role="tab" href="{% url 'licence_list' %}" {% if licences_tab %}aria-selected="true"{% endif %}>Licences</a>
   <a role="tab" href="{% url 'insurance_history' %}" {% if tab == 'history' %}aria-selected="true"{% endif %}>History</a>
+  {% if request.user.insurance_money %}<a role="tab" href="{% url 'insurance_premiums' %}" {% if tab == 'premiums' %}aria-selected="true"{% endif %}>Premiums</a>{% endif %}
   {% if request.user.can_manage_insurance %}<a role="tab" href="{% url 'insurance_activity' %}" {% if tab == 'activity' %}aria-selected="true"{% endif %}>Activity</a>{% endif %}
   {% if request.user.is_admin %}<a role="tab" href="{% url 'insurance_access' %}" {% if tab == 'access' %}aria-selected="true"{% endif %}>Access</a>{% endif %}
   {% if request.user.is_admin %}<a role="tab" href="{% url 'insurance_list' %}?tab=types">Cover types</a>{% endif %}

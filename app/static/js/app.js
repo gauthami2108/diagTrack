@@ -156,6 +156,19 @@
     }).catch(() => { window.location = url.replace(/\?preview=1$/, ""); });
   };
   $$("[data-drawer-close]").forEach(b => b.addEventListener("click", closeDrawer));
+  // Insurance list: tick policies to act on several at once
+  const bulk = $("[data-bulk-bar]");
+  if (bulk) {
+    const ones = $$("[data-bulk-one]"), all = $("[data-bulk-all]");
+    const sync = () => {
+      const n = ones.filter(c => c.checked).length;
+      bulk.hidden = n === 0;
+      $("[data-bulk-count]", bulk).textContent = n;
+      if (all) { all.checked = n > 0 && n === ones.length; all.indeterminate = n > 0 && n < ones.length; }
+    };
+    ones.forEach(c => c.addEventListener("change", sync));
+    if (all) all.addEventListener("change", () => { ones.forEach(c => { c.checked = all.checked; }); sync(); });
+  }
   $$("tr[data-href]").forEach(tr => tr.addEventListener("click", e => {
     if (e.target.closest("a, button, input, select")) return;
     if (tr.dataset.preview && !e.metaKey && !e.ctrlKey && innerWidth > 820) openDrawer(tr.dataset.preview, tr);

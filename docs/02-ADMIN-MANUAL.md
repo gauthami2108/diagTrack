@@ -318,6 +318,17 @@ or machines changed, documents added or removed, renewed, cancelled, and changes
 and notes are recorded as "changed" only, never with their values, so everyone who can open the policy may read the history.
 The history is kept for good, also if the policy is later deleted (the lines keep the policy's name).
 
+**Home card.** The Insurance and licences card on Home now says how many items need action in total (expired or ending
+policies and licences, premiums due, claims waiting too long) and has a tile for open claims.
+
+**Ticking policies.** People with Manage access can tick policies in the Policies list (the box in the header ticks the whole
+page). A bar appears with: Add as responsible or Remove (choose the person first), Download Excel (only the ticked policies) and
+Archive. Each change is written to the policy's history.
+
+**Premiums tab.** For people who may see money. Premium by type of cover for each financial year (April to March; a policy
+counts in the year it starts), a bar for each year's total with the change on the year before, a centre filter and Excel. Policies
+with no premium recorded and archived policies are left out.
+
 **Claims: progress and chasing.** Each open claim shows Filed, Review, Approved, Settled with the current step marked, and how many
 days it has been in that status. The top of the Claims tab counts open claims and the longest wait (and, for people who see
 money, the amount claimed and settled so far). When a claim stays in one status for the number of days set in Settings

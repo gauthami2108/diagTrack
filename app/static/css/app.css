@@ -1242,3 +1242,19 @@ details.fold.legend-box > summary h2 { font-size: 14px; font-weight: 600; }
 .claim-steps li.cs-done { background: var(--good-soft); color: var(--good); border-color: transparent; }
 .claim-steps li.cs-current { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
 td .claim-steps { margin-top: 8px; }
+
+/* Insurance list: ticking policies */
+.check-col { width: 36px; padding-right: 0 !important; }
+.check-col input { width: 18px; height: 18px; cursor: pointer; }
+.bulk-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 14px; margin-bottom: 10px; background: var(--accent-soft, var(--surface-2)); border: 1px solid var(--line); border-radius: var(--r-m, 10px); position: sticky; top: 8px; z-index: 5; }
+.bulk-bar[hidden] { display: none; }
+
+/* Premiums by year */
+.bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.bars li { display: grid; grid-template-columns: 90px 1fr; gap: 4px 12px; align-items: center; }
+.bars .bar { height: 14px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.bars .bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.bars .bar-v { grid-column: 2; }
+.bars .bar-l { font-weight: 600; font-size: 13px; }
+tr.total-row td { border-top: 2px solid var(--line); background: var(--surface-2); }
+.good-text { color: var(--good); }

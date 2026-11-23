@@ -10,12 +10,14 @@ Who sees what:
   administrators only                  add, change, renew, delete, upload documents, manage cover types
 """
 import io
+from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django import forms
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.urls import reverse
 from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -287,6 +289,8 @@ def insurance_list(request):
            "expired_count": status.count(InsurancePolicy.EXPIRED), "current_count": len(live)}
     if tab == "policies":
         rows, f = _filtered(request)
+        if user.can_manage_insurance:
+            ctx["people"] = User.objects.filter(is_active=True).exclude(role=User.REQUESTER).order_by("first_name", "username")
         ctx.update(rows=rows, f=f,
                    total_sum=sum((p.sum_insured or 0) for p in rows) if money else None,
                    total_premium=sum((p.premium or 0) for p in rows) if money else None)
@@ -853,16 +857,69 @@ def insurance_edit(request, pk):
 def insurance_archive(request, pk):
     """Keeps the policy, its documents, claims and history, but takes it out of the lists, reminders and checks."""
     p = get_object_or_404(_scoped(request.user), pk=pk)
-    p.archived_at, p.archived_by = timezone.now(), request.user
+    _archive_one(p, request.user)
+    messages.success(request, "Policy archived. Find it again under Status: Archived.")
+    return redirect("insurance_list")
+
+
+def _archive_one(p, user):
+    p.archived_at, p.archived_by = timezone.now(), user
     p.save(update_fields=["archived_at", "archived_by"])
-    ilog.record(p, request.user, "Archived")
+    ilog.record(p, user, "Archived")
     old = p.renewed_from
     if old and old.renewed and not old.renewals.filter(archived_at__isnull=True).exists():
         # this was the renewal: the policy it replaced is the current one again
         InsurancePolicy.objects.filter(pk=old.pk).update(renewed=False)
-        ilog.record(old, request.user, f"Current again: its renewal {p.policy_number} was archived")
-    messages.success(request, "Policy archived. Find it again under Status: Archived.")
-    return redirect("insurance_list")
+        ilog.record(old, user, f"Current again: its renewal {p.policy_number} was archived")
+
+
+@manager
+@require_POST
+def insurance_bulk(request):
+    """Actions on the policies ticked in the list: add or remove a responsible person, archive, or download."""
+    from django.utils.http import url_has_allowed_host_and_scheme
+    ids = [int(i) for i in request.POST.getlist("ids") if i.isdigit()]
+    back = request.POST.get("next", "")
+    if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}) or not back.startswith("/"):
+        back = reverse("insurance_list")
+    policies = list(_scoped(request.user, archived=None).filter(pk__in=ids).prefetch_related("responsible", "centres"))
+    action = request.POST.get("action", "")
+    if not policies:
+        messages.error(request, "Tick at least one policy first.")
+        return redirect(back)
+    if action == "export":
+        cfg, today = SiteSettings.load(), timezone.localdate()
+        for p in policies:
+            p.status, p.days_left = p.status_on(today, _soon(p, cfg)), (p.expiry_date - today).days
+        policies.sort(key=lambda p: (p.expiry_date, p.insurer, p.pk))
+        return _policy_xlsx(policies, _show_money(request.user, cfg))
+    if action in ("add_responsible", "remove_responsible"):
+        person = User.objects.filter(pk=request.POST.get("person") or 0, is_active=True).exclude(role=User.REQUESTER).first()
+        if not person:
+            messages.error(request, "Choose the person first.")
+            return redirect(back)
+        n = 0
+        for p in policies:
+            has = person in p.responsible.all()
+            if action == "add_responsible" and not has:
+                p.responsible.add(person)
+                ilog.record(p, request.user, f"Responsible person added: {person.display_name}")
+                n += 1
+            elif action == "remove_responsible" and has:
+                p.responsible.remove(person)
+                ilog.record(p, request.user, f"Responsible person removed: {person.display_name}")
+                n += 1
+        messages.success(request, f"{person.display_name} {'added to' if action == 'add_responsible' else 'removed from'} {n} "
+                                  f"polic{'y' if n == 1 else 'ies'}.")
+        return redirect(back)
+    if action == "archive":
+        todo = [p for p in policies if not p.archived_at]
+        for p in todo:
+            _archive_one(p, request.user)
+        messages.success(request, f"{len(todo)} polic{'y' if len(todo) == 1 else 'ies'} archived.")
+        return redirect(back)
+    messages.error(request, "Choose what to do with the ticked policies.")
+    return redirect(back)
 
 
 @manager
@@ -1016,7 +1073,12 @@ def home_card(user):
         (lic_x if st == Licence.EXPIRED else lic_e if st == Licence.EXPIRING else []).append(x)
     lic_items = ([{"l": x, "kind": "expired", "days": x.days_left} for x in sorted(lic_x, key=lambda x: -x.days_left)]
                  + [{"l": x, "kind": "expiring", "days": x.days_left} for x in sorted(lic_e, key=lambda x: x.days_left)])
-    return {"expired": len(expired), "expiring": len(expiring), "premiums": len(premiums),
+    open_claims = list(InsuranceClaim.objects.filter(policy__in=_scoped(user), status__in=InsuranceClaim.OPEN))
+    chase = cfg.insurance_claim_days
+    stuck = sum(1 for c in open_claims if chase and c.waiting_days >= chase)
+    needs = len(expired) + len(expiring) + len(premiums) + len(lic_x) + len(lic_e) + stuck
+    return {"claims_open": len(open_claims), "claims_stuck": stuck, "needs": needs,
+            "expired": len(expired), "expiring": len(expiring), "premiums": len(premiums),
             "lic_expired": len(lic_x), "lic_expiring": len(lic_e), "lic_items": lic_items[:4], "lic_more": max(0, len(lic_items) - 4),
             "no_document": sum(1 for p in rows if not p.doc_count), "gaps": _gap_count(user, centres, cfg),
             "uninsured": len(uninsured(user, centres, cfg)),
@@ -1135,6 +1197,81 @@ def insurance_access_export(request):
     wb.save(buf)
     resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     resp["Content-Disposition"] = 'attachment; filename="insurance-access.xlsx"'
+    return resp
+
+
+def _fy(d):
+    """Financial year (April to March) a date falls in, named by the year it starts."""
+    return d.year if d.month >= 4 else d.year - 1
+
+
+def _premium_data(request):
+    """Premium by cover type and financial year (by the policy's start date). None when the person may not see money."""
+    user, cfg = request.user, SiteSettings.load()
+    if not _show_money(user, cfg):
+        return None
+    centre = request.GET.get("centre", "")
+    qs = _scoped(user).filter(premium__isnull=False)
+    if centre == "0":
+        qs = qs.filter(centres__isnull=True)
+    elif centre.isdigit():
+        qs = qs.filter(Q(centres__id=int(centre)) | Q(centres__isnull=True)).distinct()
+    cell = defaultdict(lambda: [0, 0])
+    for p in qs:
+        c = cell[(p.cover_type.name, _fy(p.start_date))]
+        c[0] += p.premium
+        c[1] += 1
+    years = sorted({y for _, y in cell})[-6:]
+    names = sorted({n for n, _ in cell})
+    rows = []
+    for n in names:
+        cells = [cell.get((n, y)) for y in years]
+        rows.append({"name": n, "cells": cells, "total": sum(c[0] for c in cells if c)})
+    totals = [sum((cell[(n, y)][0] for n in names if (n, y) in cell), 0) for y in years]
+    counts = [sum((cell[(n, y)][1] for n in names if (n, y) in cell), 0) for y in years]
+    top = max(totals, default=0) or 1
+    cols = []
+    for i, y in enumerate(years):
+        change = None
+        if i and totals[i - 1]:
+            change = round((totals[i] - totals[i - 1]) * 100 / totals[i - 1])
+        cols.append({"label": f"{y}-{str(y + 1)[2:]}", "total": totals[i], "count": counts[i], "pct": round(totals[i] * 100 / top),
+                     "change": change})
+    return {"cols": cols, "rows": rows, "centre": centre, "grand": sum(totals)}
+
+
+@viewer
+def insurance_premiums(request):
+    data = _premium_data(request)
+    centres = Centre.objects.filter(active=True)
+    if not request.user.insurance_sees_all:
+        centres = centres.filter(pk__in=request.user.centres.all())
+    return render(request, "insurance_premiums.html", {"d": data, "centres": centres, "tab": "premiums"})
+
+
+@viewer
+def insurance_premiums_export(request):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    d = _premium_data(request)
+    if d is None:
+        raise Http404
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Premium by year"
+    ws.append(["Cover type"] + [f"FY {c['label']}" for c in d["cols"]] + ["Total"])
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for r in d["rows"]:
+        ws.append([r["name"]] + [float(c[0]) if c else None for c in r["cells"]] + [float(r["total"])])
+    ws.append(["All cover"] + [float(c["total"]) for c in d["cols"]] + [float(d["grand"])])
+    for c in ws[ws.max_row]:
+        c.font = Font(bold=True)
+    ws.column_dimensions["A"].width = 28
+    buf = io.BytesIO()
+    wb.save(buf)
+    resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = 'attachment; filename="insurance-premium-by-year.xlsx"'
     return resp
 
 
@@ -1371,10 +1508,12 @@ def insurance_print(request):
 
 @viewer
 def insurance_export(request):
+    return _policy_xlsx(_filtered(request)[0], _show_money(request.user))
+
+
+def _policy_xlsx(rows, money):
     from openpyxl import Workbook
     from openpyxl.styles import Font
-    money = _show_money(request.user)
-    rows, _ = _filtered(request)
     wb = Workbook()
     ws = wb.active
     ws.title = "Insurance"
