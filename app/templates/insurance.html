@@ -24,6 +24,7 @@
   <a role="tab" href="?tab=claims" {% if tab == 'claims' %}aria-selected="true"{% endif %}>Claims{% if open_claims %} <span class="count">{{ open_claims }}</span>{% endif %}</a>
   <a role="tab" href="{% url 'licence_list' %}">Licences</a>
   <a role="tab" href="{% url 'insurance_history' %}">History</a>
+  {% if request.user.insurance_money %}<a role="tab" href="{% url 'insurance_premiums' %}">Premiums</a>{% endif %}
   {% if can_edit %}<a role="tab" href="{% url 'insurance_activity' %}">Activity</a>{% endif %}
   {% if can_admin %}<a role="tab" href="{% url 'insurance_access' %}">Access</a>{% endif %}
   {% if can_admin %}<a role="tab" href="?tab=types" {% if tab == 'types' %}aria-selected="true"{% endif %}>Cover types</a>{% endif %}
@@ -39,10 +40,20 @@
   <select name="status" aria-label="Status">{% for v, l in status_filters %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
 </form>
 {% if rows %}
+<form method="post" action="{% url 'insurance_bulk' %}" id="bulk-form">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+{% if can_edit %}<div class="bulk-bar" hidden data-bulk-bar>
+  <span><b data-bulk-count>0</b> ticked</span>
+  <select name="person" aria-label="Person"><option value="">Choose a person</option>{% for u in people %}<option value="{{ u.pk }}">{{ u.display_name }}</option>{% endfor %}</select>
+  <button class="btn btn-s" name="action" value="add_responsible" type="submit">Add as responsible</button>
+  <button class="btn btn-s btn-ghost" name="action" value="remove_responsible" type="submit">Remove</button>
+  <button class="btn btn-s btn-ghost" name="action" value="export" type="submit">Download Excel</button>
+  <button class="btn btn-s btn-ghost" name="action" value="archive" type="submit" data-confirm="Archive the ticked policies? They are kept with their history and can be restored.">Archive</button>
+</div>{% endif %}
 <div class="table-wrap"><table class="table">
-  <thead><tr><th>Cover</th><th>Where</th><th>Insurer</th><th>Started</th><th>Expires</th><th>Status</th>{% if money %}<th class="num-col">Sum insured</th>{% endif %}</tr></thead>
+  <thead><tr>{% if can_edit %}<th class="check-col"><input type="checkbox" data-bulk-all aria-label="Tick all policies on this page"></th>{% endif %}<th>Cover</th><th>Where</th><th>Insurer</th><th>Started</th><th>Expires</th><th>Status</th>{% if money %}<th class="num-col">Sum insured</th>{% endif %}</tr></thead>
   <tbody>{% for p in rows %}
   <tr data-href="{% url 'insurance_detail' p.pk %}">
+    {% if can_edit %}<td class="check-col"><input type="checkbox" name="ids" value="{{ p.pk }}" data-bulk-one aria-label="Tick {{ p.cover_type.name }}, {{ p.location }}"></td>{% endif %}
     <td class="cell-title"><a href="{% url 'insurance_detail' p.pk %}">{{ p.cover_type.name }}</a><small>{{ p.policy_number }}{% if p.covers %} · {{ p.covers }}{% endif %}{% if not p.doc_count %} <span class="warn-text">No document</span>{% endif %}</small></td>
     <td data-l="Where">{{ p.location }}</td>
     <td data-l="Insurer">{{ p.insurer }}</td>
@@ -52,6 +63,7 @@
     {% if money %}<td data-l="Sum insured" class="num-col">{% if p.sum_insured is not None %}{{ p.sum_insured|inr }}{% else %}<span class="muted">-</span>{% endif %}</td>{% endif %}
   </tr>{% endfor %}</tbody>
 </table></div>
+</form>
 {% else %}
 <div class="empty-big">{% icon 'shield-check' %}<h2>No policies found</h2><p>{% if can_edit %}Use Add policy to record the first one, or change the filters above.{% else %}Nothing matches. Change the filters, or ask the administrator to add the policy.{% endif %}</p></div>
 {% endif %}

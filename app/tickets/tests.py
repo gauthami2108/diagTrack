@@ -2,7 +2,7 @@
 Automated checks for the rules in the blueprint.
 Run with:  python manage.py test
 """
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest import mock
 
 from django.conf import settings
@@ -4349,3 +4349,69 @@ class ClaimChaseTests(Base):
         self.assertContains(r, "Open claims")
         self.assertContains(r, "₹2,50,000")
         self.assertContains(r, "claim-steps")
+
+
+class Phase34Tests(Base):
+    """Home card figures, ticking policies in the list, and the premium-by-year page."""
+
+    def setUp(self):
+        _grant_insurance(self)
+        self.admin = User.objects.create_user("boss3", password="Demo@12345", role=User.ADMIN, first_name="Boss",
+                                              email="boss3@example.com")
+        self.today = timezone.localdate()
+        fire = InsuranceCoverType.objects.get(name="Fire")
+        self.a = self.pol(fire, "A-1", date(2025, 6, 1), 40000)
+        self.b = self.pol(fire, "A-2", date(2026, 6, 1), 50000)
+        self.c = self.pol(fire, "A-3", date(2026, 2, 1), 10000)  # financial year 2025-26, like A-1
+        SiteSettings.objects.update(insurance_quote_days=0)
+        self.client.force_login(self.admin)
+
+    def pol(self, cover, number, start, premium):
+        p = InsurancePolicy.objects.create(cover_type=cover, insurer="NIA", policy_number=number, start_date=start,
+                                           expiry_date=start + timedelta(days=364), premium=premium, sum_insured=1000000)
+        p.centres.set([self.kkp])
+        return p
+
+    def test_premiums_by_financial_year(self):
+        r = self.client.get(reverse("insurance_premiums"))
+        cols = r.context["d"]["cols"]
+        self.assertEqual([c["label"] for c in cols], ["2025-26", "2026-27"])
+        self.assertEqual([c["total"] for c in cols], [50000, 50000])
+        self.assertEqual(cols[1]["change"], 0)
+        self.assertContains(r, "₹50,000")
+        self.assertEqual(self.client.get(reverse("insurance_premiums_export")).status_code, 200)
+        SiteSettings.objects.update(insurance_show_money=False)
+        self.assertContains(self.client.get(reverse("insurance_premiums")), "switched off")
+        self.assertEqual(self.client.get(reverse("insurance_premiums_export")).status_code, 404)
+
+    def test_bulk_add_and_remove_responsible_export_and_archive(self):
+        person = User.objects.create_user("eng1", password="Demo@12345", role=User.AGENT, first_name="Eng")
+        ids = [self.a.pk, self.b.pk]
+        self.client.post(reverse("insurance_bulk"), {"ids": ids, "action": "add_responsible", "person": person.pk})
+        self.assertEqual(person.pk in self.a.responsible.values_list("pk", flat=True), True)
+        self.assertTrue(InsuranceLog.objects.filter(policy=self.b, text__startswith="Responsible person added").exists())
+        self.client.post(reverse("insurance_bulk"), {"ids": ids, "action": "remove_responsible", "person": person.pk})
+        self.assertFalse(self.a.responsible.exists())
+        r = self.client.post(reverse("insurance_bulk"), {"ids": ids, "action": "export"})
+        self.assertIn("spreadsheetml", r["Content-Type"])
+        r = self.client.post(reverse("insurance_bulk"), {"ids": ids, "action": "archive", "next": "/insurance/"})
+        self.assertEqual(r.status_code, 302)
+        self.a.refresh_from_db(); self.b.refresh_from_db(); self.c.refresh_from_db()
+        self.assertTrue(self.a.archived_at and self.b.archived_at and not self.c.archived_at)
+
+    def test_bulk_needs_a_selection_manage_access_and_a_safe_return_address(self):
+        r = self.client.post(reverse("insurance_bulk"), {"action": "archive", "next": "https://evil.example/"}, follow=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertNotIn("evil", r["Location"])
+        self.client.force_login(self.director)
+        self.assertEqual(self.client.post(reverse("insurance_bulk"), {"ids": [self.a.pk], "action": "archive"}).status_code, 403)
+
+    def test_home_card_counts_claims_and_what_needs_action(self):
+        InsurancePolicy.objects.filter(pk=self.a.pk).update(expiry_date=self.today + timedelta(days=5))
+        c = InsuranceClaim.objects.create(policy=self.a, incident_date=self.today, description="Fire")
+        InsuranceClaim.objects.filter(pk=c.pk).update(status_changed_on=self.today - timedelta(days=20))
+        from .views_insurance import home_card
+        card = home_card(self.admin)
+        self.assertEqual((card["claims_open"], card["claims_stuck"]), (1, 1))
+        self.assertGreaterEqual(card["needs"], 2)
+        self.assertContains(self.client.get(reverse("home")), "to do")

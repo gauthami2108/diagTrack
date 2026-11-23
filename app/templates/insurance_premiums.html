@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% load dt %}
+{% block title %}Premiums{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Premiums</h1><p class="sub">What the policies cost each financial year (April to March), by type of cover. A policy counts in the year it starts. Archived policies are left out.</p></div>
+  {% if d %}<div class="head-actions"><a class="btn" href="{% url 'insurance_premiums_export' %}?{{ request.GET.urlencode }}">{% icon 'download' %}Excel</a></div>{% endif %}
+</div>
+{% include "_ins_tabs.html" with tab="premiums" %}
+{% if not d %}<div class="empty-big">{% icon 'shield-check' %}<h2>Money figures are switched off</h2><p>Premiums are shown only to people who may see money. An administrator can change this in Settings.</p></div>
+{% else %}
+<form class="filters" method="get" data-autosubmit>
+  <select name="centre" aria-label="Centre"><option value="">All centres</option><option value="0" {% if d.centre == '0' %}selected{% endif %}>For all centres</option>
+    {% for c in centres %}<option value="{{ c.pk }}" {% if d.centre == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+</form>
+{% if d.cols %}
+<section class="panel"><header><h2>Total by year</h2></header>
+  <ul class="bars">{% for c in d.cols %}<li><span class="bar-l">FY {{ c.label }}</span><span class="bar"><i style="width:{{ c.pct }}%"></i></span>
+    <span class="bar-v"><b>{{ c.total|inr }}</b> <small class="muted">{{ c.count }} polic{{ c.count|pluralize:"y,ies" }}{% if c.change is not None %}, <span class="{% if c.change > 0 %}warn-text{% else %}good-text{% endif %}">{% if c.change > 0 %}+{% endif %}{{ c.change }}%</span> on the year before{% endif %}</small></span></li>{% endfor %}</ul>
+</section>
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Cover type</th>{% for c in d.cols %}<th class="num-col">FY {{ c.label }}</th>{% endfor %}<th class="num-col">Total</th></tr></thead>
+  <tbody>{% for r in d.rows %}<tr><td class="cell-title">{{ r.name }}</td>
+    {% for c in r.cells %}<td class="num-col" data-l="FY {{ forloop.counter }}">{% if c %}{{ c.0|inr }}<small class="muted"> ×{{ c.1 }}</small>{% else %}<span class="muted">-</span>{% endif %}</td>{% endfor %}
+    <td class="num-col"><b>{{ r.total|inr }}</b></td></tr>{% endfor %}
+  <tr class="total-row"><td class="cell-title">All cover</td>{% for c in d.cols %}<td class="num-col"><b>{{ c.total|inr }}</b></td>{% endfor %}<td class="num-col"><b>{{ d.grand|inr }}</b></td></tr></tbody>
+</table></div>
+{% else %}<p class="empty">No premiums recorded yet.</p>{% endif %}
+{% endif %}
+{% endblock %}
